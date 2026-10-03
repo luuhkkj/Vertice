@@ -1,0 +1,87 @@
+/* Cores, tipografia e estilos básicos do projeto. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+/* Cores do projeto (mudou uma cor? mude só aqui) */
+:root {
+    --azul: #4e67ca;            /* cabeçalho e painéis azuis */
+    --azul-medio: #344f92;      /* topo do degradê da sidebar */
+    --azul-escuro: #213d64;     /* fim do degradê da sidebar */
+    --azul-kpi: #1e3a5f;        /* cartão de KPI azul da Visão geral */
+    --creme: #fff8f0;           /* fundo das páginas */
+    --branco: #ffffff;          /* cartões */
+    --grafite: #232020;         /* botões, campos e textos fortes */
+    --cinza-texto: #5f5b57;     /* legendas e rótulos */
+    --cinza-borda: #e6e0d6;     /* bordas leves dos cartões */
+    --verde: #43a047;           /* semáforo */
+    --laranja: #f59e0b;
+    --vermelho: #e53935;
+
+    --raio-cartao: 12px;
+    --raio-botao: 8px;
+    --fonte: "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+/* Fundo e fonte */
+.stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"] {
+    background-color: var(--creme);
+    font-family: var(--fonte);
+    color: var(--grafite);
+}
+
+/* O cabeçalho do Vértice é nosso: some com a barra do Streamlit (Deploy e menu). */
+[data-testid="stHeader"] {
+    background: transparent;
+}
+[data-testid="stToolbar"],
+[data-testid="stAppDeployButton"],
+[data-testid="stMainMenu"] {
+    display: none;
+}
+
+/* Títulos e legendas */
+[data-testid="stMain"] h1 {
+    font-family: var(--fonte);
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--grafite);
+}
+[data-testid="stMain"] h2,
+[data-testid="stMain"] h3 {
+    font-family: var(--fonte);
+    font-weight: 700;
+    color: var(--grafite);
+}
+[data-testid="stCaptionContainer"] {
+    color: var(--cinza-texto);
+}
+
+/* Botões (escuros, texto branco) */
+[data-testid="stButton"] button,
+[data-testid="stDownloadButton"] button,
+[data-testid="stFormSubmitButton"] button {
+    background-color: var(--grafite) !important;
+    color: var(--branco) !important;
+    border: 1px solid var(--grafite);
+    border-radius: var(--raio-botao);
+    padding: 0.4rem 1.25rem;
+    font-family: var(--fonte);
+    font-weight: 600;
+}
+[data-testid="stButton"] button p,
+[data-testid="stDownloadButton"] button p,
+[data-testid="stFormSubmitButton"] button p {
+    color: inherit !important;
+}
+[data-testid="stButton"] button:hover,
+[data-testid="stDownloadButton"] button:hover,
+[data-testid="stFormSubmitButton"] button:hover {
+    background-color: #3d3838 !important;
+    border-color: #3d3838;
+}
+[data-testid="stButton"] button:disabled,
+[data-testid="stDownloadButton"] button:disabled,
+[data-testid="stFormSubmitButton"] button:disabled {
+    opacity: 0.4;
+}

@@ -1,0 +1,170 @@
+/* Estilos dos cartões de KPI, gráficos e tabelas. */
+
+[class*="st-key-card_"],
+[class*="st-key-kpi_"] {
+    background-color: var(--branco);
+    border: 1px solid var(--cinza-borda);
+    border-radius: var(--raio-cartao);
+    box-shadow: 0 1px 3px rgba(35, 32, 32, 0.06);
+    padding: 0.85rem 1rem;
+}
+
+/* Caixa com título (gráficos e tabelas) */
+[class*="st-key-card_"] h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+    padding: 0;
+}
+
+/* Cartão de KPI */
+[class*="st-key-kpi_"] [data-testid="stMetricLabel"] p {
+    font-size: 0.8rem;
+    color: var(--cinza-texto);
+}
+[class*="st-key-kpi_"] [data-testid="stMetricValue"] {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--grafite);
+}
+[class*="st-key-kpi_"] [data-testid="stCaptionContainer"] {
+    font-size: 0.75rem;
+}
+
+
+/* KPI colorido (Visão geral): card_kpi(..., cor="azul") */
+[class*="st-key-kpi_azul_"] {
+    background-color: var(--azul-kpi);
+    border-color: var(--azul-kpi);
+}
+[class*="st-key-kpi_verde_"] {
+    background-color: var(--verde);
+    border-color: var(--verde);
+}
+[class*="st-key-kpi_laranja_"] {
+    background-color: var(--laranja);
+    border-color: var(--laranja);
+}
+[class*="st-key-kpi_vermelho_"] {
+    background-color: var(--vermelho);
+    border-color: var(--vermelho);
+}
+
+/* Textos brancos nos cartões coloridos, e o rodapé separado por uma linha. */
+:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_verde_"],
+    [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"]) [data-testid="stMetricLabel"] p,
+:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_verde_"],
+    [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"]) [data-testid="stMetricValue"],
+:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_verde_"],
+    [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"]) [data-testid="stCaptionContainer"] {
+    color: var(--branco);
+}
+:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_verde_"],
+    [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"]) [data-testid="stCaptionContainer"] {
+    border-top: 1px solid rgba(255, 255, 255, 0.4);
+    padding-top: 0.4rem;
+    margin-top: 0.5rem;
+}
+
+/* Correção da legibilidade do rodapé dos KPIs */
+
+:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_verde_"],
+    [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"])
+    [data-testid="stCaptionContainer"],
+:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_verde_"],
+    [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"])
+    [data-testid="stCaptionContainer"] * {
+    color: #ffffff !important;
+    opacity: 1 !important;
+}
+
+
+
+/* Cartões de KPI da mesma linha com a mesma altura */
+[data-testid="stColumn"]:has([class*="st-key-kpi_"]) > [data-testid="stVerticalBlock"] {
+    height: 100%;
+}
+[data-testid="stColumn"]:has([class*="st-key-kpi_"]) > [data-testid="stVerticalBlock"] > [data-testid="stLayoutWrapper"] {
+    flex: 1;
+}
+[data-testid="stLayoutWrapper"] > [class*="st-key-kpi_"] {
+    height: 100%;
+}
+
+/* Ajustes da Visão Geral */
+
+/* Cards de indicadores */
+.st-key-kpi_azul_total_de_estudantes,
+.st-key-kpi_verde_frequencia_media,
+.st-key-kpi_laranja_estudantes_em_atencao,
+.st-key-kpi_vermelho_alto_risco_identificado {
+    min-height: 4.65rem;
+}
+
+/* Valor principal dos indicadores */
+.st-key-kpi_azul_total_de_estudantes [data-testid="stMetricValue"],
+.st-key-kpi_verde_frequencia_media [data-testid="stMetricValue"],
+.st-key-kpi_laranja_estudantes_em_atencao [data-testid="stMetricValue"],
+.st-key-kpi_vermelho_alto_risco_identificado [data-testid="stMetricValue"] {
+    font-size: 1.7rem;
+}
+
+/* Cards dos gráficos */
+.st-key-card_frequencia_media,
+.st-key-card_distribuicao_de_risco,
+.st-key-card_risco_por_serie,
+.st-key-card_notas_x_frequencia {
+    min-height: 13rem;
+}
+
+/* Espaçamento dos gráficos */
+.st-key-card_frequencia_media [data-testid="stPlotlyChart"],
+.st-key-card_distribuicao_de_risco [data-testid="stPlotlyChart"],
+.st-key-card_risco_por_serie [data-testid="stPlotlyChart"],
+.st-key-card_notas_x_frequencia [data-testid="stPlotlyChart"] {
+    margin-top: -0.25rem;
+}
+
+/* Tabela de estudantes */
+.st-key-card_estudantes_que_exigem_atencao {
+    margin-top: 0.15rem;
+}
+
+/* Ajuste visual dos cards de gráficos */
+
+.st-key-card_frequencia_media,
+.st-key-card_distribuicao_de_risco,
+.st-key-card_risco_por_serie,
+.st-key-card_notas_x_frequencia {
+    padding: 0.75rem 0.85rem;
+}
+
+/* Título dos cards */
+.st-key-card_frequencia_media h3,
+.st-key-card_distribuicao_de_risco h3,
+.st-key-card_risco_por_serie h3,
+.st-key-card_notas_x_frequencia h3 {
+    margin-top: 0;
+    margin-bottom: 0.35rem;
+    font-size: 0.95rem;
+}
+
+/* Texto secundário dos cards KPI */
+
+.st-key-kpi_azul_total_de_estudantes [data-testid="stMetricDelta"],
+.st-key-kpi_verde_frequencia_media [data-testid="stMetricDelta"],
+.st-key-kpi_laranja_estudantes_em_atencao [data-testid="stMetricDelta"],
+.st-key-kpi_vermelho_alto_risco_identificado [data-testid="stMetricDelta"] {
+    color: rgba(255, 255, 255, 0.9) !important;
+    opacity: 1 !important;
+    font-weight: 500;
+}
+
+/* Texto complementar dentro dos cards */
+.st-key-kpi_azul_total_de_estudantes p,
+.st-key-kpi_verde_frequencia_media p,
+.st-key-kpi_laranja_estudantes_em_atencao p,
+.st-key-kpi_vermelho_alto_risco_identificado p {
+    color: rgba(255, 255, 255, 0.9) !important;
+    opacity: 1 !important;
+}

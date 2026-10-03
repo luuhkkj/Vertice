@@ -1,0 +1,391 @@
+/* Estrutura geral: cabeçalho, menu lateral e área principal. */
+
+:root {
+    --altura-cabecalho: 3rem;
+    --largura-sidebar: 11.5rem;
+    --margem-pagina: 2rem;
+}
+
+
+/* Área principal */
+
+[data-testid="stMainBlockContainer"] {
+    padding:
+        calc(var(--altura-cabecalho) + 3rem)
+        var(--margem-pagina)
+        3rem
+        var(--margem-pagina)
+        !important;
+}
+
+
+/* Título principal das telas */
+[data-testid="stMain"] h1 {
+    margin-top: 0 !important;
+    margin-bottom: 0.7rem !important;
+
+    font-size: 1.8rem !important;
+    line-height: 1.15 !important;
+    font-weight: 700 !important;
+
+    color: var(--grafite) !important;
+}
+
+
+/* Subtítulos */
+[data-testid="stMain"] h2 {
+    margin-top: 1rem;
+    margin-bottom: 0.6rem;
+}
+
+
+/* Parágrafos */
+[data-testid="stMain"] p {
+    margin-bottom: 0.4rem;
+}
+
+
+/* Cabeçalho */
+
+.st-key-cabecalho {
+    position: fixed;
+
+    top: 0;
+    left: 0;
+    right: 0;
+
+    width: 100%;
+    height: var(--altura-cabecalho);
+
+    z-index: 999995;
+
+    box-sizing: border-box;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+
+    padding: 0 1.25rem;
+
+    background-color: #4E67CA;
+}
+
+
+/* Alinha verticalmente as três colunas */
+.st-key-cabecalho [data-testid="stHorizontalBlock"] {
+    align-items: center;
+}
+
+
+/* Remove margens internas */
+.st-key-cabecalho p {
+    margin: 0 !important;
+}
+
+
+/* Todos os textos do cabeçalho */
+.st-key-cabecalho p,
+.st-key-cabecalho strong {
+    color: #ffffff !important;
+}
+
+
+/* Nome Vértice */
+.st-key-cabecalho
+[data-testid="stColumn"]:nth-child(1) p {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+
+/* Nome da escola */
+.st-key-cabecalho
+[data-testid="stColumn"]:nth-child(2) p {
+    font-size: 0.9rem;
+    font-weight: 500;
+
+    text-align: center;
+}
+
+
+/* Coluna do botão sair */
+.st-key-cabecalho
+[data-testid="stColumn"]:nth-child(3)
+[data-testid="stVerticalBlock"] {
+    align-items: flex-end;
+}
+
+
+/* Botão sair */
+.st-key-cabecalho
+[data-testid="stButton"] button {
+    min-height: 2rem;
+
+    padding: 0.25rem 1rem;
+
+    background-color: transparent !important;
+
+    border: 1px solid rgba(255, 255, 255, 0.9) !important;
+    border-radius: 7px !important;
+
+    color: #ffffff !important;
+
+    box-shadow: none !important;
+}
+
+
+/* Texto do botão sair */
+.st-key-cabecalho
+[data-testid="stButton"] button p {
+    color: #ffffff !important;
+
+    font-size: 0.8rem !important;
+    font-weight: 500;
+}
+
+
+/* Hover */
+.st-key-cabecalho
+[data-testid="stButton"] button:hover {
+    background-color: rgba(255, 255, 255, 0.12) !important;
+
+    border-color: #ffffff !important;
+}
+
+
+/* Sidebar */
+
+[data-testid="stSidebar"] {
+    width: var(--largura-sidebar) !important;
+    min-width: var(--largura-sidebar) !important;
+    max-width: var(--largura-sidebar) !important;
+
+    background:
+        linear-gradient(
+            180deg,
+            #4E67CA 0%,
+            #1E3A5F 100%
+        );
+}
+
+
+/* Fundo interno transparente */
+[data-testid="stSidebarContent"] {
+    background: transparent !important;
+
+    padding: 0 !important;
+
+    scrollbar-gutter: auto !important;
+}
+
+
+/* Oculta barra padrão da sidebar */
+[data-testid="stSidebarHeader"] {
+    display: none !important;
+}
+
+
+/* Menu começa abaixo do cabeçalho */
+[data-testid="stSidebarUserContent"] {
+    padding:
+        calc(var(--altura-cabecalho) + 0.75rem)
+        0
+        0
+        0
+        !important;
+}
+
+
+/* Remove espaçamento automático do Streamlit */
+[data-testid="stSidebarUserContent"]
+[data-testid="stVerticalBlock"] {
+    gap: 0 !important;
+}
+
+
+/* Links da sidebar */
+
+[class*="st-key-menu_"]
+[data-testid="stPageLink-NavLink"] {
+    min-height: 2.15rem;
+
+    display: flex !important;
+    align-items: center !important;
+
+    padding: 0.42rem 1rem !important;
+
+    border-radius: 0 !important;
+
+    color: #ffffff !important;
+
+    text-decoration: none !important;
+
+    transition:
+        background-color 0.18s ease,
+        padding-left 0.18s ease;
+}
+
+
+/* Texto */
+[class*="st-key-menu_"]
+[data-testid="stPageLink-NavLink"] p {
+    margin: 0 !important;
+
+    color: #ffffff !important;
+
+    font-size: 0.78rem !important;
+    line-height: 1.2rem;
+
+    font-weight: 500;
+}
+
+
+/* Hover */
+[class*="st-key-menu_"]
+[data-testid="stPageLink-NavLink"]:hover {
+    background-color: rgba(255, 255, 255, 0.09) !important;
+
+    padding-left: 1.1rem !important;
+}
+
+
+/* Item ativo da sidebar */
+
+[class*="st-key-menu_ativo_"] {
+    position: relative;
+
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+
+/* Texto ativo */
+[class*="st-key-menu_ativo_"]
+[data-testid="stPageLink-NavLink"] p {
+    font-weight: 700 !important;
+}
+
+
+/* Seta apontando para o conteúdo */
+[class*="st-key-menu_ativo_"]::after {
+    content: "";
+
+    position: absolute;
+
+    right: 0;
+    top: 50%;
+
+    transform: translateY(-50%);
+
+    width: 0;
+    height: 0;
+
+    border-top: 0.7rem solid transparent;
+    border-bottom: 0.7rem solid transparent;
+    border-right: 0.7rem solid var(--creme);
+}
+
+
+/* O layout.py insere os ícones; aqui ficam apenas tamanho e alinhamento. */
+
+[class*="st-key-menu_"]
+[data-testid="stPageLink-NavLink"]::before {
+    width: 1.25rem !important;
+    height: 1.25rem !important;
+
+    min-width: 1.25rem !important;
+    flex: 0 0 1.25rem !important;
+
+    margin-right: 0.55rem !important;
+}
+
+
+/* Pílula usada para período e outros destaques da página. */
+
+.st-key-pilula {
+    width: fit-content;
+
+    margin-left: auto;
+
+    padding: 0.45rem 0.9rem;
+
+    border: 1px solid #DDE2EA;
+    border-radius: 999px;
+
+    background-color: #F1F3F7;
+}
+
+
+/* Remove espaçamentos criados pelo Streamlit */
+.st-key-pilula
+[data-testid="stElementContainer"],
+.st-key-pilula
+[data-testid="stMarkdownContainer"] {
+    margin: 0 !important;
+}
+
+
+/* Texto da pílula */
+.st-key-pilula p {
+    margin: 0 !important;
+
+    color: #374151 !important;
+
+    font-size: 0.7rem !important;
+    line-height: 1rem;
+
+    font-weight: 600;
+
+    text-align: center;
+}
+
+
+/* Ajustes responsivos */
+
+@media (max-width: 900px) {
+
+    :root {
+        --largura-sidebar: 11rem;
+        --margem-pagina: 2rem;
+    }
+
+}
+
+
+@media (max-width: 700px) {
+
+    :root {
+        --largura-sidebar: 9.5rem;
+        --margem-pagina: 1.5rem;
+    }
+
+    [class*="st-key-menu_"]
+    [data-testid="stPageLink-NavLink"] p {
+        font-size: 0.72rem !important;
+    }
+
+}
+
+/* Logo Vértice */
+
+.vertice-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.vertice-logo img {
+    width: 1.65rem;
+    height: 1.65rem;
+    object-fit: contain;
+
+    filter:
+        brightness(0)
+        invert(1);
+}
+
+.vertice-logo span {
+    color: #ffffff;
+
+    font-size: 1rem;
+    font-weight: 600;
+}

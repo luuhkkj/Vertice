@@ -1,0 +1,288 @@
+/* Estilos da tela Mapa de Acertos. */
+
+
+/* Filtros */
+
+.st-key-mapa_filtros {
+    margin-top: 0.7rem;
+    margin-bottom: 1rem;
+}
+
+
+.st-key-mapa_filtros
+[data-testid="stHorizontalBlock"] {
+    align-items: end !important;
+}
+
+
+.st-key-mapa_filtros label p {
+    color: #232020 !important;
+
+    font-size: 0.7rem !important;
+    font-weight: 500 !important;
+}
+
+
+.st-key-mapa_filtros
+[data-baseweb="select"] > div {
+    min-height: 2.4rem;
+
+    background-color: #D9D9D9 !important;
+
+    border: none !important;
+    border-radius: 8px !important;
+
+    box-shadow: none !important;
+}
+
+
+/* Gráfico */
+
+.st-key-mapa_grafico {
+    padding: 0.9rem 1rem 0.3rem;
+
+    background-color: #FFFFFF;
+
+    border: 1px solid #E0E0E0;
+    border-radius: 10px;
+}
+
+
+.st-key-mapa_grafico h3 {
+    margin: 0 0 0.4rem !important;
+
+    color: #232020 !important;
+
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+}
+
+
+.st-key-mapa_grafico
+[data-testid="stPlotlyChart"] {
+    margin: 0 !important;
+}
+
+
+/* Tabela */
+
+.st-key-mapa_tabela {
+    margin-top: 1rem;
+
+    overflow: hidden;
+
+    background-color: #FFFFFF;
+
+    border: 1px solid #E0E0E0;
+    border-radius: 10px;
+}
+
+
+.st-key-mapa_tabela
+[data-testid="stDataFrame"] {
+    margin: 0 !important;
+
+    border: none !important;
+}
+
+
+/* Detalhes da questão selecionada. */
+
+.st-key-mapa_detalhe {
+    min-height: 34rem;
+
+    padding: 0.9rem;
+
+    background-color: #FFFFFF;
+
+    border: 1px solid #E0E0E0;
+    border-radius: 10px;
+}
+
+
+/* Cabeçalho */
+.st-key-mapa_detalhe
+[data-testid="stHorizontalBlock"] {
+    align-items: center !important;
+}
+
+
+.st-key-mapa_detalhe h3 {
+    margin: 0 !important;
+
+    color: #232020 !important;
+
+    font-size: 1rem !important;
+    font-weight: 500 !important;
+}
+
+
+/* Botão x */
+
+.st-key-ma_fechar_detalhe button {
+    min-width: 2rem !important;
+    width: 2rem !important;
+
+    min-height: 2rem !important;
+    height: 2rem !important;
+
+    padding: 0 !important;
+
+    background: transparent !important;
+
+    border: none !important;
+
+    color: #232020 !important;
+
+    box-shadow: none !important;
+}
+
+
+.st-key-ma_fechar_detalhe button p {
+    font-size: 1.1rem !important;
+
+    color: #232020 !important;
+}
+
+
+/* Divisores */
+
+.st-key-mapa_detalhe hr {
+    margin: 0.7rem -0.9rem !important;
+
+    border-color: #E0E0E0 !important;
+}
+
+
+/* Resumo */
+
+.st-key-mapa_resumo_questao {
+    padding: 0.2rem 0;
+}
+
+
+.st-key-mapa_resumo_questao p {
+    margin: 0 0 0.55rem !important;
+
+    color: #232020 !important;
+
+    font-size: 0.72rem !important;
+}
+
+
+.st-key-mapa_resumo_questao strong {
+    font-size: 0.92rem !important;
+
+    font-weight: 500 !important;
+}
+
+
+/* Subtítulos */
+
+.st-key-mapa_detalhe h4 {
+    margin-top: 0.4rem !important;
+    margin-bottom: 0.7rem !important;
+
+    color: #232020 !important;
+
+    font-size: 0.82rem !important;
+    font-weight: 500 !important;
+}
+
+
+/* Distribuição das respostas */
+
+.st-key-mapa_detalhe
+[data-testid="stProgress"] {
+    margin-bottom: 0.35rem;
+}
+
+
+/* Barra */
+.st-key-mapa_detalhe
+[data-testid="stProgress"] > div > div {
+    border-radius: 4px !important;
+}
+
+
+/* Texto */
+.st-key-mapa_detalhe
+[data-testid="stProgress"] p {
+    color: #232020 !important;
+
+    font-size: 0.68rem !important;
+}
+
+
+/* Caption alternativa correta */
+.st-key-mapa_detalhe
+[data-testid="stCaptionContainer"] {
+    color: #43A047 !important;
+
+    font-size: 0.62rem !important;
+}
+
+
+/* Interpretação */
+
+.st-key-mapa_detalhe
+[data-testid="stMarkdownContainer"] p {
+    color: #232020;
+
+    font-size: 0.72rem;
+
+    line-height: 1.1rem;
+}
+
+
+/* Registrar ação */
+
+.st-key-btn_registrar_acao button {
+    width: 100%;
+
+    min-height: 2.3rem;
+
+    margin-top: 0.6rem;
+
+    background-color: #232020 !important;
+
+    border: 1px solid #232020 !important;
+    border-radius: 10px !important;
+
+    color: #FFFFFF !important;
+
+    box-shadow: none !important;
+}
+
+
+.st-key-btn_registrar_acao button p {
+    color: #FFFFFF !important;
+
+    font-size: 0.68rem !important;
+
+    font-weight: 500 !important;
+}
+
+
+/* Inserir avaliação */
+
+.st-key-btn_inserir_avaliacao button {
+    min-height: 2.3rem;
+
+    background-color: #334D8D !important;
+
+    border: 1px solid #334D8D !important;
+    border-radius: 8px !important;
+
+    color: #FFFFFF !important;
+
+    box-shadow: none !important;
+}
+
+
+.st-key-btn_inserir_avaliacao button p {
+    color: #FFFFFF !important;
+
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+}

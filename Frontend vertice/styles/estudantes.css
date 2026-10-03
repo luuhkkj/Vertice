@@ -1,0 +1,281 @@
+/* Estilos da tela Estudantes. */
+
+
+/* Título */
+
+.st-key-estudantes_filtros {
+    margin-top: 0.4rem;
+}
+
+
+/* Filtros */
+
+/* Rótulos */
+.st-key-estudantes_filtros label p {
+    color: #1f2937 !important;
+
+    font-size: 0.7rem !important;
+    font-weight: 500 !important;
+}
+
+
+/* Input de busca */
+.st-key-estudantes_filtros
+[data-testid="stTextInput"] input {
+    min-height: 2.55rem;
+
+    padding-left: 0.85rem;
+
+    background-color: #f1f3f7 !important;
+
+    border: 1px solid transparent !important;
+    border-radius: 10px !important;
+
+    color: #1f2937 !important;
+
+    font-size: 0.76rem !important;
+
+    box-shadow: none !important;
+}
+
+
+/* Placeholder */
+.st-key-estudantes_filtros
+[data-testid="stTextInput"] input::placeholder {
+    color: #8d96a5 !important;
+    opacity: 1;
+}
+
+
+/* Selectboxes */
+.st-key-estudantes_filtros
+[data-testid="stSelectbox"]
+div[data-baseweb="select"] > div {
+    min-height: 2.55rem;
+
+    background-color: #f1f3f7 !important;
+
+    border: 1px solid transparent !important;
+    border-radius: 10px !important;
+
+    box-shadow: none !important;
+}
+
+
+/* Texto dos selects */
+.st-key-estudantes_filtros
+[data-testid="stSelectbox"] {
+    color: #1f2937 !important;
+
+    font-size: 0.75rem !important;
+}
+
+
+/* Hover dos campos */
+.st-key-estudantes_filtros
+[data-testid="stTextInput"] input:hover,
+
+.st-key-estudantes_filtros
+[data-testid="stSelectbox"]
+div[data-baseweb="select"] > div:hover {
+    border-color: #cfd5df !important;
+}
+
+
+/* Foco */
+.st-key-estudantes_filtros
+[data-testid="stTextInput"] input:focus {
+    border-color: #4e67ca !important;
+
+    box-shadow:
+        0 0 0 1px #4e67ca !important;
+}
+
+
+/* Limpar filtros */
+
+.st-key-estudantes_filtros
+[data-testid="stButton"] button {
+    width: 100%;
+
+    min-height: 2.55rem;
+
+    padding: 0.35rem 0.65rem !important;
+
+    background-color: #f1f3f7 !important;
+
+    border: 1px solid transparent !important;
+    border-radius: 999px !important;
+
+    color: #374151 !important;
+
+    box-shadow: none !important;
+}
+
+
+/* Texto */
+.st-key-estudantes_filtros
+[data-testid="stButton"] button p {
+    color: #374151 !important;
+
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+
+    white-space: nowrap;
+}
+
+
+/* Hover */
+.st-key-estudantes_filtros
+[data-testid="stButton"] button:hover {
+    background-color: #e5e9f0 !important;
+
+    border-color: #d5dae3 !important;
+}
+
+
+/* Resumo e exportação */
+
+.st-key-estudantes_resumo {
+    margin-top: 1.25rem;
+    margin-bottom: 0.55rem;
+}
+
+
+/* Contador */
+.st-key-estudantes_resumo p {
+    margin: 0 !important;
+
+    color: #1f2937 !important;
+
+    font-size: 0.78rem !important;
+}
+
+
+/* Número em destaque */
+.st-key-estudantes_resumo strong {
+    font-weight: 600 !important;
+}
+
+
+/* Botão exportar */
+.st-key-estudantes_resumo
+[data-testid="stDownloadButton"] button {
+    width: 100%;
+
+    min-height: 2.3rem;
+
+    padding: 0.35rem 0.8rem !important;
+
+    background-color: #232020 !important;
+
+    border: 1px solid #232020 !important;
+    border-radius: 8px !important;
+
+    color: #ffffff !important;
+
+    box-shadow: none !important;
+}
+
+
+/* Texto exportar */
+.st-key-estudantes_resumo
+[data-testid="stDownloadButton"] button p {
+    color: #ffffff !important;
+
+    font-size: 0.72rem !important;
+    font-weight: 600 !important;
+
+    text-align: center;
+}
+
+
+/* Tabela */
+
+.st-key-estudantes_tabela {
+    margin-top: 0.2rem;
+}
+
+
+/* Caixa visual em volta da tabela */
+.st-key-estudantes_tabela
+[data-testid="stDataFrame"] {
+    overflow: hidden;
+
+    border: 1px solid #ded8cf;
+    border-radius: 10px;
+
+    background-color: #ffffff;
+
+    box-shadow:
+        0 1px 3px rgba(35, 32, 32, 0.05);
+}
+
+
+/* Remove excesso de espaço abaixo da tabela */
+.st-key-estudantes_tabela
+[data-testid="stDataFrame"] {
+    margin-bottom: 0.65rem;
+}
+
+
+/* Paginação */
+
+/* Texto inferior */
+.st-key-estudantes_tabela
+[data-testid="stCaptionContainer"] {
+    color: #9a948e !important;
+
+    font-size: 0.68rem !important;
+}
+
+
+/* Botões anterior e próxima */
+.st-key-estudantes_tabela
+[data-testid="stButton"] button {
+    min-height: 2rem;
+
+    padding: 0.25rem 0.65rem !important;
+
+    border-radius: 7px !important;
+
+    font-size: 0.68rem !important;
+}
+
+
+/* Botão ativo */
+.st-key-estudantes_tabela
+[data-testid="stButton"] button:not(:disabled) {
+    background-color: #232020 !important;
+
+    border-color: #232020 !important;
+
+    color: #ffffff !important;
+}
+
+
+/* Desabilitado */
+.st-key-estudantes_tabela
+[data-testid="stButton"] button:disabled {
+    background-color: #aaa6a2 !important;
+
+    border-color: #aaa6a2 !important;
+
+    color: #ffffff !important;
+
+    opacity: 0.75 !important;
+}
+
+
+/* Ajuste de espaçamentos internos do streamlit */
+
+.st-key-estudantes_filtros
+[data-testid="stVerticalBlock"],
+
+.st-key-estudantes_resumo
+[data-testid="stVerticalBlock"],
+
+.st-key-estudantes_tabela
+[data-testid="stVerticalBlock"] {
+    gap: 0.45rem;
+}

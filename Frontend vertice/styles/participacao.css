@@ -1,0 +1,194 @@
+/* Estilos da tela Participação. */
+
+
+/* Filtros */
+
+.st-key-participacao_filtros {
+    margin-top: 0.8rem;
+    margin-bottom: 1rem;
+}
+
+
+.st-key-participacao_filtros label p {
+    color: #232020 !important;
+
+    font-size: 0.7rem !important;
+    font-weight: 500 !important;
+}
+
+
+.st-key-participacao_filtros
+[data-baseweb="select"] > div {
+    min-height: 2.4rem;
+
+    background-color: #F1F3F7 !important;
+
+    border: 1px solid transparent !important;
+    border-radius: 9px !important;
+
+    box-shadow: none !important;
+}
+
+
+/* Botão inserir */
+
+.st-key-btn_inserir_atividade button {
+    min-height: 2.35rem;
+
+    background-color: #334D8D !important;
+
+    border: 1px solid #334D8D !important;
+    border-radius: 8px !important;
+
+    color: #FFFFFF !important;
+
+    box-shadow: none !important;
+}
+
+
+.st-key-btn_inserir_atividade button p {
+    color: #FFFFFF !important;
+
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+}
+
+
+/* Indicadores */
+
+.st-key-participacao_indicadores {
+    margin-top: 0.2rem;
+    margin-bottom: 1rem;
+}
+
+
+/*
+   Aproveita os cards KPI já usados
+   na Visão Geral.
+*/
+.st-key-participacao_indicadores
+[class*="st-key-kpi_"] {
+    min-height: 5rem;
+}
+
+
+/* Gráficos */
+
+.st-key-participacao_graficos {
+    margin-bottom: 1rem;
+}
+
+
+.st-key-participacao_graficos
+[class*="st-key-card_"] {
+    min-height: 20rem;
+
+    padding: 0.9rem 1rem;
+}
+
+
+.st-key-participacao_graficos
+[class*="st-key-card_"] h3 {
+    margin-top: 0 !important;
+    margin-bottom: 0.4rem !important;
+
+    color: #232020 !important;
+
+    font-size: 0.95rem !important;
+    font-weight: 600 !important;
+}
+
+
+/* Detalhes por aluno */
+
+.st-key-participacao_detalhes {
+    margin-top: 0.5rem;
+
+    padding: 0.9rem 1rem 1rem;
+
+    background-color: #FFFFFF;
+
+    border: 1px solid #E0E0E0;
+    border-radius: 10px;
+}
+
+
+.st-key-participacao_detalhes h3 {
+    margin: 0 0 0.7rem !important;
+
+    color: #232020 !important;
+
+    font-size: 0.95rem !important;
+    font-weight: 600 !important;
+}
+
+
+/* Tabela */
+.st-key-participacao_detalhes
+[data-testid="stDataFrame"] {
+    overflow: hidden;
+
+    border: 1px solid #E0E0E0;
+    border-radius: 8px;
+
+    margin-bottom: 0.7rem;
+}
+
+
+/* Botões de ação */
+
+.st-key-participacao_detalhes
+[data-testid="stButton"] button {
+    min-height: 2.2rem;
+
+    background-color: #232020 !important;
+
+    border: 1px solid #232020 !important;
+    border-radius: 8px !important;
+
+    color: #FFFFFF !important;
+
+    box-shadow: none !important;
+}
+
+
+.st-key-participacao_detalhes
+[data-testid="stButton"] button p {
+    color: #FFFFFF !important;
+
+    font-size: 0.68rem !important;
+    font-weight: 500 !important;
+}
+
+
+/* Desabilitado */
+.st-key-participacao_detalhes
+[data-testid="stButton"] button:disabled {
+    background-color: #B5B5B5 !important;
+
+    border-color: #B5B5B5 !important;
+
+    opacity: 0.65 !important;
+}
+
+
+/* Paginação / captions */
+
+.st-key-participacao_detalhes
+[data-testid="stCaptionContainer"] {
+    color: #8D8D8D !important;
+
+    font-size: 0.66rem !important;
+}
+
+
+/* Responsividade */
+
+@media (max-width: 900px) {
+
+    .st-key-participacao_graficos
+    [class*="st-key-card_"] {
+        min-height: 17rem;
+    }
+
+}

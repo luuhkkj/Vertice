@@ -1,0 +1,306 @@
+/* Card principal do assistente */
+
+.st-key-assistente_card {
+    margin-top: 1rem;
+    overflow: hidden;
+    background: #f8fafc;
+    border: 1px solid #232020;
+    border-radius: 16px;
+}
+
+/* Cabeçalho */
+
+.st-key-assistente_cabecalho {
+    min-height: 3.75rem;
+    display: flex;
+    align-items: center;
+    padding: 0 1.8rem;
+    background: #f8fafc;
+    border-bottom: 1px solid #232020;
+}
+
+.assistente-header-linha {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+
+.assistente-header-icone {
+    width: 1.65rem;
+    height: 1.65rem;
+    flex: 0 0 1.65rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+    line-height: 0;
+}
+
+.assistente-header-icone img {
+    width: 1.5rem;
+    height: 1.5rem;
+    display: block;
+    margin: 0;
+    padding: 0;
+    object-fit: contain;
+}
+
+.assistente-header-titulo {
+    height: 1.65rem;
+    display: flex;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    color: #232020;
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.st-key-assistente_cabecalho
+[data-testid="stElementContainer"] {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Mensagens */
+
+.st-key-assistente_mensagens {
+    min-height: 19rem;
+    padding: 1.4rem 1.55rem !important;
+    background: #f8fafc;
+}
+
+.st-key-assistente_mensagens
+[data-testid="stVerticalBlock"] {
+    gap: 0.95rem !important;
+}
+
+.st-key-assistente_mensagens
+[data-testid="stColumn"] {
+    padding: 0 !important;
+}
+
+[class*="st-key-chat_assistente_"],
+[class*="st-key-chat_usuario_"] {
+    width: 100%;
+    min-height: 2.8rem;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    padding: 0.65rem 0.9rem;
+    background: #fff;
+    border: 1px solid #232020;
+    border-radius: 16px;
+}
+
+[class*="st-key-chat_assistente_"] [data-testid="stMarkdownContainer"],
+[class*="st-key-chat_usuario_"] [data-testid="stMarkdownContainer"] {
+    width: 100%;
+}
+
+[class*="st-key-chat_assistente_"] p,
+[class*="st-key-chat_usuario_"] p {
+    margin: 0 !important;
+    color: #232020 !important;
+    font-size: 0.78rem !important;
+    line-height: 1.2rem !important;
+}
+
+/* Linha de envio */
+
+.st-key-assistente_rodape {
+    min-height: 4.5rem;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    padding: 0 1.7rem;
+    background: #f8fafc;
+    border-top: 1px solid #232020;
+}
+
+.st-key-assistente_rodape
+[data-testid="stForm"] {
+    width: 100%;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+}
+
+.st-key-assistente_rodape
+[data-testid="stForm"] [data-testid="stHorizontalBlock"] {
+    width: 100%;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.75rem !important;
+}
+
+.st-key-assistente_rodape
+[data-testid="stForm"] [data-testid="stColumn"] {
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.st-key-assistente_rodape
+[data-testid="stForm"] [data-testid="stElementContainer"] {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.assistente-envio {
+    width: 2.7rem;
+    height: 2.7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+    line-height: 0;
+}
+
+.assistente-envio img {
+    width: 1.45rem;
+    height: 1.45rem;
+    display: block;
+    margin: 0;
+    padding: 0;
+    object-fit: contain;
+    filter: brightness(0) saturate(100%) invert(28%) sepia(28%) saturate(1800%)
+        hue-rotate(183deg) brightness(87%) contrast(90%);
+}
+
+/* Campo de mensagem */
+
+.st-key-assistente_rodape
+[data-testid="stTextInput"] {
+    width: 100%;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* O raio fica no wrapper do BaseWeb para continuar redondo durante o foco. */
+.st-key-assistente_rodape
+[data-testid="stTextInput"] div[data-baseweb="input"] {
+    width: 100% !important;
+    height: 2.7rem !important;
+    min-height: 2.7rem !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #fff !important;
+    border: 1px solid #d5d9e1 !important;
+    border-radius: 999px !important;
+    outline: none !important;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
+}
+
+.st-key-assistente_rodape
+[data-testid="stTextInput"] div[data-baseweb="input"]:focus,
+.st-key-assistente_rodape
+[data-testid="stTextInput"] div[data-baseweb="input"]:focus-within,
+.st-key-assistente_rodape
+[data-testid="stTextInput"] div[data-baseweb="input"][data-focus="true"] {
+    background: #fff !important;
+    border: 1px solid #4e67ca !important;
+    border-radius: 999px !important;
+    outline: none !important;
+    box-shadow: 0 0 0 1px rgba(78, 103, 202, 0.2) !important;
+}
+
+.st-key-assistente_rodape
+[data-testid="stTextInput"] input {
+    width: 100% !important;
+    height: 2.7rem !important;
+    min-height: 2.7rem !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    padding: 0 1rem !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 999px !important;
+    outline: none !important;
+    box-shadow: none !important;
+    color: #232020 !important;
+    font-size: 0.75rem !important;
+    line-height: normal !important;
+}
+
+.st-key-assistente_rodape
+[data-testid="stTextInput"] input:focus,
+.st-key-assistente_rodape
+[data-testid="stTextInput"] input:active,
+.st-key-assistente_rodape
+[data-testid="stTextInput"] input:focus-visible {
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+.st-key-assistente_rodape
+[data-testid="stTextInput"] [aria-invalid="true"] {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+.st-key-assistente_rodape
+[data-testid="stTextInput"] input::placeholder {
+    color: #7b8491 !important;
+    opacity: 1;
+}
+
+.st-key-assistente_rodape
+[data-testid="InputInstructions"] {
+    display: none !important;
+}
+
+/* Botão de envio */
+
+.st-key-assistente_rodape
+[data-testid="stFormSubmitButton"] {
+    width: 100%;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.st-key-assistente_rodape
+[data-testid="stFormSubmitButton"] button {
+    width: 100% !important;
+    height: 2.7rem !important;
+    min-height: 2.7rem !important;
+    max-height: 2.7rem !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 0.85rem !important;
+    background: #334d8d !important;
+    border: 1px solid #334d8d !important;
+    border-radius: 10px !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+.st-key-assistente_rodape
+[data-testid="stFormSubmitButton"] button p {
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #fff !important;
+    font-size: 0.72rem !important;
+    font-weight: 500 !important;
+    line-height: 1 !important;
+}
+
+.st-key-assistente_rodape input:focus-visible,
+.st-key-assistente_rodape button:focus-visible {
+    outline: none !important;
+}

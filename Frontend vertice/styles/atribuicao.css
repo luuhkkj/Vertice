@@ -1,0 +1,159 @@
+/* Estilos da tela Atribuição de Turmas. */
+
+
+/* Cards principais */
+
+.st-key-atribuicao_formulario,
+.st-key-atribuicao_tabela {
+    min-height: 25rem;
+
+    padding: 1rem 1.1rem;
+
+    background-color: #FFFFFF;
+
+    border: 1px solid #E0E0E0;
+    border-radius: 12px;
+
+    box-shadow:
+        0 1px 3px
+        rgba(35, 32, 32, 0.05);
+}
+
+
+/* Títulos */
+
+.st-key-atribuicao_formulario h3,
+.st-key-atribuicao_tabela h3 {
+    margin: 0 0 0.25rem !important;
+
+    color: #232020 !important;
+
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+}
+
+
+/* Captions */
+.st-key-atribuicao_formulario
+[data-testid="stCaptionContainer"],
+.st-key-atribuicao_tabela
+[data-testid="stCaptionContainer"] {
+    margin-bottom: 0.7rem;
+
+    color: #7A7A7A !important;
+
+    font-size: 0.68rem !important;
+}
+
+
+/* Formulário */
+
+.st-key-atribuicao_formulario label p {
+    color: #232020 !important;
+
+    font-size: 0.7rem !important;
+    font-weight: 500 !important;
+}
+
+
+/* Selects */
+.st-key-atribuicao_formulario
+[data-baseweb="select"] > div {
+    min-height: 2.55rem;
+
+    background-color: #F1F3F7 !important;
+
+    border: 1px solid transparent !important;
+    border-radius: 9px !important;
+
+    box-shadow: none !important;
+}
+
+
+/* Hover */
+.st-key-atribuicao_formulario
+[data-baseweb="select"] > div:hover {
+    border-color: #C9CFDA !important;
+}
+
+
+/* Botão atribuir */
+
+.st-key-btn_atribuir_turma button {
+    width: 100%;
+
+    min-height: 2.5rem;
+
+    margin-top: 0.6rem;
+
+    background-color: #334D8D !important;
+
+    border: 1px solid #334D8D !important;
+    border-radius: 8px !important;
+
+    color: #FFFFFF !important;
+
+    box-shadow: none !important;
+}
+
+
+.st-key-btn_atribuir_turma button p {
+    color: #FFFFFF !important;
+
+    font-size: 0.72rem !important;
+    font-weight: 600 !important;
+}
+
+
+.st-key-btn_atribuir_turma button:hover {
+    background-color: #2B437E !important;
+
+    border-color: #2B437E !important;
+}
+
+
+/* Tabela */
+
+.st-key-atribuicao_tabela
+[data-testid="stDataFrame"] {
+    margin-top: 0.5rem;
+
+    overflow: hidden;
+
+    border: 1px solid #E0E0E0;
+    border-radius: 9px;
+
+    background-color: #FFFFFF;
+}
+
+
+/* Aviso interno */
+
+.st-key-atribuicao_tabela
+[data-testid="stAlert"] {
+    margin-top: 0.7rem;
+
+    border-radius: 8px;
+}
+
+
+/* Espaçamentos */
+
+.st-key-atribuicao_formulario
+[data-testid="stVerticalBlock"],
+.st-key-atribuicao_tabela
+[data-testid="stVerticalBlock"] {
+    gap: 0.55rem;
+}
+
+
+/* Responsividade */
+
+@media (max-width: 900px) {
+
+    .st-key-atribuicao_formulario,
+    .st-key-atribuicao_tabela {
+        min-height: auto;
+    }
+
+}
