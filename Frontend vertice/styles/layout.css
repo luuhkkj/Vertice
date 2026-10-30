@@ -1,4 +1,5 @@
-/* Estrutura geral: cabeçalho, menu lateral e área principal. */
+
+/* Layout principal do Vértice */
 
 :root {
     --altura-cabecalho: 3rem;
@@ -6,50 +7,59 @@
     --margem-pagina: 2rem;
 }
 
-
-/* Área principal */
+/* Conteúdo principal */
 
 [data-testid="stMainBlockContainer"] {
+    width: 100% !important;
+    max-width: none !important;
+    box-sizing: border-box;
+
     padding:
-        calc(var(--altura-cabecalho) + 3rem)
+        calc(var(--altura-cabecalho) + 0.01rem)
         var(--margem-pagina)
         3rem
         var(--margem-pagina)
         !important;
 }
 
+/* Reserva espaço horizontal para o menu */
 
-/* Título principal das telas */
+[data-testid="stMainBlockContainer"]:has(
+    .st-key-vertice_menu_lateral
+) {
+    padding-left:
+        calc(
+            var(--largura-sidebar)
+            + var(--margem-pagina)
+        ) !important;
+
+    padding-right: var(--margem-pagina) !important;
+}
+
+/* Títulos */
+
 [data-testid="stMain"] h1 {
     margin-top: 0 !important;
     margin-bottom: 0.7rem !important;
-
     font-size: 1.8rem !important;
     line-height: 1.15 !important;
     font-weight: 700 !important;
-
     color: var(--grafite) !important;
 }
 
-
-/* Subtítulos */
 [data-testid="stMain"] h2 {
     margin-top: 1rem;
     margin-bottom: 0.6rem;
 }
 
-
-/* Parágrafos */
 [data-testid="stMain"] p {
     margin-bottom: 0.4rem;
 }
 
-
-/* Cabeçalho */
+/* Cabeçalho fixo */
 
 .st-key-cabecalho {
-    position: fixed;
-
+    position: fixed !important;
     top: 0;
     left: 0;
     right: 0;
@@ -57,8 +67,7 @@
     width: 100%;
     height: var(--altura-cabecalho);
 
-    z-index: 999995;
-
+    z-index: 1000 !important;
     box-sizing: border-box;
 
     display: flex;
@@ -66,306 +75,176 @@
     justify-content: center;
 
     padding: 0 1.25rem;
-
     background-color: #4E67CA;
 }
 
-
-/* Alinha verticalmente as três colunas */
-.st-key-cabecalho [data-testid="stHorizontalBlock"] {
+.st-key-cabecalho
+[data-testid="stHorizontalBlock"] {
     align-items: center;
 }
 
-
-/* Remove margens internas */
 .st-key-cabecalho p {
     margin: 0 !important;
 }
 
-
-/* Todos os textos do cabeçalho */
 .st-key-cabecalho p,
 .st-key-cabecalho strong {
     color: #ffffff !important;
 }
 
-
-/* Nome Vértice */
-.st-key-cabecalho
-[data-testid="stColumn"]:nth-child(1) p {
-    font-size: 1rem;
-    font-weight: 700;
-}
-
-
-/* Nome da escola */
 .st-key-cabecalho
 [data-testid="stColumn"]:nth-child(2) p {
     font-size: 0.9rem;
     font-weight: 500;
-
     text-align: center;
 }
 
+/* Menu lateral */
 
-/* Coluna do botão sair */
-.st-key-cabecalho
-[data-testid="stColumn"]:nth-child(3)
-[data-testid="stVerticalBlock"] {
-    align-items: flex-end;
-}
+.st-key-vertice_menu_lateral {
+    position: fixed !important;
 
+    top: var(--altura-cabecalho);
+    left: 0;
+    bottom: 0;
 
-/* Botão sair */
-.st-key-cabecalho
-[data-testid="stButton"] button {
-    min-height: 2rem;
-
-    padding: 0.25rem 1rem;
-
-    background-color: transparent !important;
-
-    border: 1px solid rgba(255, 255, 255, 0.9) !important;
-    border-radius: 7px !important;
-
-    color: #ffffff !important;
-
-    box-shadow: none !important;
-}
-
-
-/* Texto do botão sair */
-.st-key-cabecalho
-[data-testid="stButton"] button p {
-    color: #ffffff !important;
-
-    font-size: 0.8rem !important;
-    font-weight: 500;
-}
-
-
-/* Hover */
-.st-key-cabecalho
-[data-testid="stButton"] button:hover {
-    background-color: rgba(255, 255, 255, 0.12) !important;
-
-    border-color: #ffffff !important;
-}
-
-
-/* Sidebar */
-
-[data-testid="stSidebar"] {
     width: var(--largura-sidebar) !important;
     min-width: var(--largura-sidebar) !important;
     max-width: var(--largura-sidebar) !important;
 
-    background:
-        linear-gradient(
-            180deg,
-            #4E67CA 0%,
-            #1E3A5F 100%
-        );
+    box-sizing: border-box;
+    padding: 0.8rem 0 1rem !important;
+
+    overflow-x: hidden;
+    overflow-y: auto;
+
+    background: linear-gradient(
+        180deg,
+        #4E67CA 0%,
+        #1E3A5F 100%
+    );
+
+    z-index: 900 !important;
 }
 
-
-/* Fundo interno transparente */
-[data-testid="stSidebarContent"] {
-    background: transparent !important;
-
-    padding: 0 !important;
-
-    scrollbar-gutter: auto !important;
-}
-
-
-/* Oculta barra padrão da sidebar */
-[data-testid="stSidebarHeader"] {
-    display: none !important;
-}
-
-
-/* Menu começa abaixo do cabeçalho */
-[data-testid="stSidebarUserContent"] {
-    padding:
-        calc(var(--altura-cabecalho) + 0.75rem)
-        0
-        0
-        0
-        !important;
-}
-
-
-/* Remove espaçamento automático do Streamlit */
-[data-testid="stSidebarUserContent"]
+.st-key-vertice_menu_lateral
 [data-testid="stVerticalBlock"] {
     gap: 0 !important;
 }
 
+/* Sidebar nativa do Streamlit */
 
-/* Links da sidebar */
+[data-testid="stSidebar"] {
+    display: none !important;
+}
+
+/* Links do menu */
 
 [class*="st-key-menu_"]
 [data-testid="stPageLink-NavLink"] {
-    min-height: 2.15rem;
-
     display: flex !important;
     align-items: center !important;
 
-    padding: 0.42rem 1rem !important;
+    min-height: 2.15rem;
 
+    padding: 0.42rem 1rem !important;
     border-radius: 0 !important;
 
+    text-decoration: none !important;
     color: #ffffff !important;
 
-    text-decoration: none !important;
-
     transition:
-        background-color 0.18s ease,
-        padding-left 0.18s ease;
+        background-color 180ms ease,
+        padding-left 180ms ease;
 }
 
-
-/* Texto */
 [class*="st-key-menu_"]
 [data-testid="stPageLink-NavLink"] p {
     margin: 0 !important;
 
     color: #ffffff !important;
-
     font-size: 0.78rem !important;
     line-height: 1.2rem;
-
     font-weight: 500;
 }
 
-
-/* Hover */
 [class*="st-key-menu_"]
 [data-testid="stPageLink-NavLink"]:hover {
-    background-color: rgba(255, 255, 255, 0.09) !important;
+    background: rgba(
+        255, 255, 255, 0.09
+    ) !important;
 
     padding-left: 1.1rem !important;
 }
 
-
-/* Item ativo da sidebar */
+/* Item selecionado */
 
 [class*="st-key-menu_ativo_"] {
     position: relative;
 
-    background-color: rgba(255, 255, 255, 0.07);
+    background: rgba(
+        255, 255, 255, 0.07
+    );
 }
 
-
-/* Texto ativo */
 [class*="st-key-menu_ativo_"]
 [data-testid="stPageLink-NavLink"] p {
     font-weight: 700 !important;
 }
 
-
-/* Seta apontando para o conteúdo */
 [class*="st-key-menu_ativo_"]::after {
     content: "";
-
     position: absolute;
-
     right: 0;
     top: 50%;
 
     transform: translateY(-50%);
-
-    width: 0;
-    height: 0;
 
     border-top: 0.7rem solid transparent;
     border-bottom: 0.7rem solid transparent;
     border-right: 0.7rem solid var(--creme);
 }
 
-
-/* O layout.py insere os ícones; aqui ficam apenas tamanho e alinhamento. */
+/* Ícones do menu */
 
 [class*="st-key-menu_"]
 [data-testid="stPageLink-NavLink"]::before {
     width: 1.25rem !important;
     height: 1.25rem !important;
-
     min-width: 1.25rem !important;
     flex: 0 0 1.25rem !important;
-
     margin-right: 0.55rem !important;
 }
 
+/* Navegação mobile */
 
-/* Pílula usada para período e outros destaques da página. */
+.st-key-nav_mobile,
+.st-key-menu_mobile_painel {
+    display: none !important;
+}
+
+/* Destaque ao lado dos títulos */
 
 .st-key-pilula {
     width: fit-content;
-
     margin-left: auto;
 
     padding: 0.45rem 0.9rem;
 
     border: 1px solid #DDE2EA;
     border-radius: 999px;
-
-    background-color: #F1F3F7;
+    background: #F1F3F7;
 }
 
-
-/* Remove espaçamentos criados pelo Streamlit */
-.st-key-pilula
-[data-testid="stElementContainer"],
-.st-key-pilula
-[data-testid="stMarkdownContainer"] {
-    margin: 0 !important;
-}
-
-
-/* Texto da pílula */
 .st-key-pilula p {
     margin: 0 !important;
-
     color: #374151 !important;
-
     font-size: 0.7rem !important;
-    line-height: 1rem;
-
     font-weight: 600;
-
     text-align: center;
 }
 
-
-/* Ajustes responsivos */
-
-@media (max-width: 900px) {
-
-    :root {
-        --largura-sidebar: 11rem;
-        --margem-pagina: 2rem;
-    }
-
-}
-
-
-@media (max-width: 700px) {
-
-    :root {
-        --largura-sidebar: 9.5rem;
-        --margem-pagina: 1.5rem;
-    }
-
-    [class*="st-key-menu_"]
-    [data-testid="stPageLink-NavLink"] p {
-        font-size: 0.72rem !important;
-    }
-
-}
-
-/* Logo Vértice */
+/* Logotipo */
 
 .vertice-logo {
     display: flex;
@@ -377,15 +256,137 @@
     width: 1.65rem;
     height: 1.65rem;
     object-fit: contain;
-
-    filter:
-        brightness(0)
-        invert(1);
+    filter: brightness(0) invert(1);
 }
 
 .vertice-logo span {
     color: #ffffff;
-
     font-size: 1rem;
     font-weight: 600;
+}
+
+/* Celular e tablet */
+
+@media (max-width: 800px) {
+
+    :root {
+        --margem-pagina: 1rem;
+    }
+
+    .st-key-vertice_menu_lateral {
+        display: none !important;
+    }
+
+    [data-testid="stMainBlockContainer"]:has(
+        .st-key-vertice_menu_lateral
+    ) {
+        padding-left:
+            var(--margem-pagina) !important;
+
+        padding-right:
+            var(--margem-pagina) !important;
+    }
+
+    .st-key-cabecalho {
+        padding-left: 0.65rem !important;
+        padding-right: 0.65rem !important;
+    }
+
+    .st-key-cabecalho
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+    }
+
+    .st-key-cabecalho
+    [data-testid="stColumn"] {
+        min-width: 0 !important;
+    }
+
+    .st-key-cabecalho
+    [data-testid="stColumn"]:nth-child(2) p {
+        font-size: 0.65rem !important;
+    }
+
+    .vertice-logo span {
+        font-size: 0.8rem !important;
+    }
+
+    /* O botão ☰ é controlado por layout.py */
+
+    .st-key-nav_mobile {
+        display: block !important;
+        width: auto !important;
+        flex: 0 0 auto;
+    }
+
+    .st-key-nav_mobile
+    [data-testid="stButton"] button {
+        min-width: 40px !important;
+        min-height: 34px !important;
+
+        padding: 0.2rem 0.6rem !important;
+
+        font-size: 1.15rem !important;
+        color: #ffffff !important;
+        cursor: pointer !important;
+    }
+
+    .st-key-menu_mobile_painel {
+        display: block !important;
+        position: fixed !important;
+
+        top: calc(var(--altura-cabecalho) + 0.3rem);
+        right: 0.7rem;
+
+        width: min(
+            300px,
+            calc(100vw - 1.4rem)
+        ) !important;
+
+        max-height: calc(100dvh - 5rem);
+
+        padding: 1rem !important;
+        overflow-y: auto;
+        box-sizing: border-box;
+
+        background: #ffffff !important;
+        border: 1px solid #E2E5ED;
+        border-radius: 12px;
+
+        box-shadow: 0 10px 28px rgba(
+            21, 34, 59, 0.18
+        );
+
+        z-index: 2000 !important;
+    }
+
+    .st-key-menu_mobile_painel
+    [data-testid="stVerticalBlock"] {
+        gap: 0.35rem !important;
+    }
+
+    .st-key-menu_mobile_painel p {
+        color: #243D78 !important;
+    }
+
+    .st-key-menu_mobile_painel
+    [data-testid="stPageLink-NavLink"] {
+        padding: 0.45rem 0.6rem !important;
+        border-radius: 7px !important;
+    }
+
+    .st-key-menu_mobile_painel
+    [data-testid="stPageLink-NavLink"]:hover {
+        background: #EEF2FF !important;
+    }
+}
+
+/* Preferência por menos animações */
+
+@media (prefers-reduced-motion: reduce) {
+
+    [class*="st-key-menu_"]
+    [data-testid="stPageLink-NavLink"] {
+        transition: none !important;
+    }
 }

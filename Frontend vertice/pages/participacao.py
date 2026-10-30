@@ -1,16 +1,14 @@
+
 """Tela: Participação."""
 
 import streamlit as st
 
 from components.cards import card, card_kpi
-from components.filtros import filtro_selecao
-from components.graficos import (
-    grafico_barras_horizontais,
-    grafico_linha,
-)
+from components.graficos import grafico_barras_horizontais
 from components.layout import titulo_pagina
 from components.tabelas import tabela_paginada
 from data import mock_data
+from data.atribuicoes import listar_atribuicoes
 from utils.formatacao import (
     decimal_br,
     numero_br,
@@ -18,43 +16,350 @@ from utils.formatacao import (
 )
 
 
+def aplicar_responsividade():
+    """Organiza a Participação em telas menores."""
+
+    st.html(
+        """
+        <style>
+            .st-key-participacao_cabecalho,
+            .st-key-participacao_filtros,
+            .st-key-participacao_indicadores,
+            .st-key-participacao_graficos,
+            .st-key-participacao_detalhes,
+            .st-key-participacao_acoes {
+                width: 100%;
+                max-width: 100%;
+                min-width: 0;
+                box-sizing: border-box;
+            }
+
+            .st-key-participacao_cabecalho
+            [data-testid="column"],
+            .st-key-participacao_filtros
+            [data-testid="column"],
+            .st-key-participacao_indicadores
+            [data-testid="column"],
+            .st-key-participacao_graficos
+            [data-testid="column"],
+            .st-key-participacao_acoes
+            [data-testid="column"] {
+                min-width: 0 !important;
+            }
+
+            .st-key-participacao_detalhes
+            [data-testid="stDataFrame"] {
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 0 !important;
+            }
+
+            /* Tablet: filtros e indicadores em duas colunas. */
+
+            @media (min-width: 601px) and (max-width: 1100px) {
+
+                .st-key-participacao_filtros
+                [data-testid="stHorizontalBlock"],
+                .st-key-participacao_indicadores
+                [data-testid="stHorizontalBlock"] {
+                    display: grid !important;
+                    grid-template-columns:
+                        repeat(2, minmax(0, 1fr)) !important;
+                    gap: 12px !important;
+                    width: 100% !important;
+                }
+
+                .st-key-participacao_graficos
+                [data-testid="stHorizontalBlock"] {
+                    display: grid !important;
+                    grid-template-columns:
+                        minmax(0, 1fr) !important;
+                    gap: 14px !important;
+                    width: 100% !important;
+                }
+
+                .st-key-participacao_filtros
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="column"],
+                .st-key-participacao_indicadores
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="column"],
+                .st-key-participacao_graficos
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="column"] {
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    max-width: 100% !important;
+                    flex: none !important;
+                }
+            }
+
+            /* Celular: conteúdo empilhado. */
+
+            @media (max-width: 600px) {
+
+                .st-key-participacao_cabecalho
+                [data-testid="stHorizontalBlock"],
+                .st-key-participacao_filtros
+                [data-testid="stHorizontalBlock"],
+                .st-key-participacao_indicadores
+                [data-testid="stHorizontalBlock"],
+                .st-key-participacao_graficos
+                [data-testid="stHorizontalBlock"],
+                .st-key-participacao_acoes
+                [data-testid="stHorizontalBlock"] {
+                    display: grid !important;
+                    grid-template-columns:
+                        minmax(0, 1fr) !important;
+                    gap: 12px !important;
+                    width: 100% !important;
+                }
+
+                .st-key-participacao_cabecalho
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="column"],
+                .st-key-participacao_filtros
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="column"],
+                .st-key-participacao_indicadores
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="column"],
+                .st-key-participacao_graficos
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="column"],
+                .st-key-participacao_acoes
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="column"] {
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    max-width: 100% !important;
+                    flex: none !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+
+                /* Botão Inserir atividade com largura completa. */
+
+                .st-key-participacao_cabecalho
+                [data-testid="stButton"],
+                .st-key-participacao_cabecalho
+                [data-testid="stButton"] button {
+                    width: 100% !important;
+                }
+
+                /* Evita que gráficos ultrapassem o celular. */
+
+                .st-key-participacao_graficos
+                [data-testid="stPlotlyChart"] {
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    max-width: 100% !important;
+                }
+
+                /* Botões de acompanhamento separados. */
+
+                .st-key-participacao_acoes
+                [data-testid="stButton"],
+                .st-key-participacao_acoes
+                [data-testid="stButton"] button {
+                    width: 100% !important;
+                }
+
+                .st-key-participacao_detalhes {
+                    overflow-x: auto;
+                }
+            }
+        </style>
+        """
+    )
+
+
+def obter_atribuicoes():
+    """Consulta as atribuições do perfil conectado."""
+
+    atribuicoes = listar_atribuicoes()
+
+    if st.session_state.get("perfil") == "administrador":
+        return atribuicoes
+
+    professor = st.session_state.get("professor_atual")
+
+    return [
+        item
+        for item in atribuicoes
+        if item["Professor"] == professor
+    ]
+
+
+def obter_dados_permitidos():
+    """Reúne entregas e dados dos estudantes autorizados."""
+
+    estudantes = mock_data.ESTUDANTES.copy()
+    entregas = mock_data.DETALHE_ALUNOS.copy()
+
+    estudantes["Turma completa"] = (
+        estudantes["Série"].str.replace(
+            " ano",
+            "",
+            regex=False,
+        )
+        + " "
+        + estudantes["Turma"]
+    )
+
+    dados = entregas.merge(
+        estudantes[
+            [
+                "Identificador",
+                "Série",
+                "Turma completa",
+                "Frequência",
+                "Média geral",
+                "Risco",
+            ]
+        ],
+        left_on="Estudante",
+        right_on="Identificador",
+        how="inner",
+    )
+
+    if st.session_state.get("perfil") == "administrador":
+        return dados
+
+    turmas = {
+        item["Turma"]
+        for item in obter_atribuicoes()
+    }
+
+    return dados[
+        dados["Turma completa"].isin(turmas)
+    ].copy()
+
+
+def obter_opcoes():
+    """Retorna disciplinas e turmas disponíveis."""
+
+    if st.session_state.get("perfil") == "administrador":
+        return (
+            list(mock_data.DISCIPLINAS),
+            list(mock_data.TURMAS_PARTICIPACAO),
+        )
+
+    atribuicoes = obter_atribuicoes()
+
+    disciplinas = sorted({
+        item["Disciplina"]
+        for item in atribuicoes
+    })
+
+    turmas = sorted({
+        item["Turma"]
+        for item in atribuicoes
+    })
+
+    return disciplinas, turmas
+
+
+def selecionar_opcao(
+    rotulo,
+    opcoes,
+    chave,
+    todas="Todas",
+):
+    """Mostra as opções e valida a seleção anterior."""
+
+    lista = ([todas] if todas else []) + list(opcoes)
+
+    if not lista:
+        return None
+
+    if st.session_state.get(chave) not in lista:
+        st.session_state[chave] = lista[0]
+
+    escolha = st.selectbox(
+        rotulo,
+        lista,
+        key=chave,
+    )
+
+    if todas and escolha == todas:
+        return None
+
+    return escolha
+
+
 @st.dialog("Inserir atividade")
 def _dialogo_inserir_atividade():
-    """Modal para inserir uma nova atividade."""
+    """Simula o cadastro de uma atividade."""
+
+    disciplinas, turmas = obter_opcoes()
+
+    if not disciplinas or not turmas:
+        st.warning(
+            "Não existem disciplinas ou turmas atribuídas."
+        )
+        return
 
     nome = st.text_input(
-        "Nome da atividade"
+        "Nome da atividade",
+        key="pa_nova_atividade",
     )
 
-    st.selectbox(
+    disciplina = st.selectbox(
         "Disciplina",
-        mock_data.DISCIPLINAS,
+        disciplinas,
+        key="pa_nova_disciplina",
     )
 
-    st.selectbox(
+    if st.session_state.get("perfil") == "professor":
+        turmas = sorted({
+            item["Turma"]
+            for item in obter_atribuicoes()
+            if item["Disciplina"] == disciplina
+        })
+
+    if not turmas:
+        st.warning(
+            "Não existem turmas para esta disciplina."
+        )
+        return
+
+    turma = st.selectbox(
         "Turma",
-        mock_data.TURMAS_PARTICIPACAO,
+        turmas,
+        key="pa_nova_turma",
     )
 
-    st.date_input(
+    data_entrega = st.date_input(
         "Data de entrega",
         format="DD/MM/YYYY",
+        key="pa_nova_data",
     )
 
     if st.button(
         "Salvar",
         type="primary",
+        key="pa_salvar_atividade",
     ):
         if not nome.strip():
-
-            st.error(
-                "Informe o nome da atividade."
-            )
-
+            st.error("Informe o nome da atividade.")
             return
 
+        atividades = st.session_state.setdefault(
+            "pa_atividades_criadas",
+            [],
+        )
+
+        atividades.append({
+            "Nome": nome.strip(),
+            "Disciplina": disciplina,
+            "Turma": turma,
+            "Data": data_entrega,
+        })
+
         st.session_state["pa_aviso"] = (
-            f'Atividade "{nome.strip()}" inserida.'
+            f'Atividade "{nome.strip()}" adicionada '
+            "nesta sessão."
         )
 
         st.rerun()
@@ -62,94 +367,89 @@ def _dialogo_inserir_atividade():
 
 @st.dialog("Estudante")
 def _dialogo_ver_estudante(aluno):
-    """Exibe informações do estudante selecionado."""
+    """Mostra as informações do estudante selecionado."""
 
-    ficha = (
-        mock_data
-        .ESTUDANTES
-        .set_index("Identificador")
-        .loc[aluno["Estudante"]]
-    )
-
-    st.subheader(
-        aluno["Estudante"]
-    )
+    st.subheader(aluno["Estudante"])
 
     st.write(
-        f"{ficha['Série']} • "
-        f"Turma {ficha['Turma']} • "
-        f"{ficha['Turno']}"
+        f"{aluno['Série']} • "
+        f"Turma {aluno['Turma completa']} • "
+        f"{aluno['Turno']}"
     )
 
     st.write(
         "Frequência: "
-        f"{percentual_br(ficha['Frequência'], 1)}"
+        f"{percentual_br(aluno['Frequência'], 1)}"
     )
 
     st.write(
         "Média geral: "
-        f"{decimal_br(ficha['Média geral'])}"
+        f"{decimal_br(aluno['Média geral'])}"
     )
 
     st.write(
-        "Nível de risco: "
-        f"{ficha['Risco']}"
+        f"Nível de risco: {aluno['Risco']}"
     )
 
     st.write(
-        f"Entregas: {aluno['Entregas']} "
-        f"de {mock_data.TOTAL_ATIVIDADES_POR_ALUNO}"
+        f"Entregas: {aluno['Entregas']} de "
+        f"{mock_data.TOTAL_ATIVIDADES_POR_ALUNO}"
     )
 
 
 @st.dialog("Registrar acompanhamento")
-def _dialogo_registrar_acompanhamento(
-    identificador,
-):
-    """Registra acompanhamento do estudante."""
+def _dialogo_registrar_acompanhamento(identificador):
+    """Registra uma anotação temporária na sessão."""
 
-    st.write(identificador)
+    st.write(f"Estudante: {identificador}")
 
     texto = st.text_area(
-        "Descreva o acompanhamento"
+        "Descreva o acompanhamento",
+        key="pa_texto_acompanhamento",
     )
 
     if st.button(
         "Salvar",
         type="primary",
+        key="pa_salvar_acompanhamento",
     ):
         if not texto.strip():
-
             st.error(
                 "Descreva o acompanhamento antes de salvar."
             )
-
             return
 
-        st.session_state.setdefault(
+        acompanhamentos = st.session_state.setdefault(
             "pa_acompanhamentos",
             {},
-        )[identificador] = texto.strip()
+        )
+
+        acompanhamentos[identificador] = texto.strip()
 
         st.session_state["pa_aviso"] = (
-            f"Acompanhamento registrado para "
-            f"{identificador}."
+            "Acompanhamento registrado para "
+            f"{identificador} nesta sessão."
         )
 
         st.rerun()
 
 
 def _formatar_para_tabela(dados):
-    """Formata dados para a tabela."""
+    """Prepara os valores da tabela de estudantes."""
 
-    tabela = dados.copy()
+    tabela = dados[
+        [
+            "Estudante",
+            "Turma completa",
+            "Turno",
+            "Entregas",
+            "Porcentagem de entregas",
+            "Status",
+        ]
+    ].copy()
 
-    tabela["Entregas"] = (
-        tabela["Entregas"]
-        .map(
-            lambda quantidade:
-            f"Entregou {quantidade}"
-        )
+    tabela["Entregas"] = tabela["Entregas"].map(
+        lambda quantidade: f"Entregou {quantidade}"
     )
 
     tabela["Porcentagem de entregas"] = (
@@ -157,241 +457,240 @@ def _formatar_para_tabela(dados):
         .map(percentual_br)
     )
 
-    return tabela
-
-
-def _indicadores():
-    """Renderiza os indicadores principais."""
-
-    entregaram = mock_data.ENTREGARAM
-    total = mock_data.TOTAL_ALUNOS_ATIVIDADE
-
-    taxa_entrega = (
-        entregaram
-        / total
-        * 100
+    return tabela.rename(
+        columns={
+            "Turma completa": "Turma",
+        }
     )
 
-    (
-        col1,
-        col2,
-        col3,
-        col4,
-    ) = st.columns(4)
 
-    with col1:
-        card_kpi(
-            numero_br(entregaram),
-            "Entregaram",
-            f"de {numero_br(total)} alunos",
-        )
+def _indicadores(dados):
+    """Calcula os indicadores dos estudantes filtrados."""
 
-    with col2:
-        card_kpi(
-            numero_br(
-                total - entregaram
-            ),
-            "Não entregaram",
-            "requer atenção",
-        )
+    total = len(dados)
 
-    with col3:
-        card_kpi(
-            percentual_br(
-                taxa_entrega
-            ),
-            "Taxa de entrega",
-            mock_data
-            .VARIACAO_TAXA_ENTREGA,
-        )
+    com_entregas = int(
+        (dados["Entregas"] > 0).sum()
+    )
 
-    with col4:
-        card_kpi(
-            mock_data.MEDIA_ATIVIDADE,
-            "Média da atividade",
-            "nesta atividade",
-        )
+    sem_entregas = total - com_entregas
+
+    total_possivel = (
+        total * mock_data.TOTAL_ATIVIDADES_POR_ALUNO
+    )
+
+    entregas_realizadas = int(
+        dados["Entregas"].sum()
+    )
+
+    taxa_entrega = (
+        entregas_realizadas / total_possivel * 100
+        if total_possivel
+        else 0
+    )
+
+    media_geral = (
+        dados["Média geral"].mean()
+        if total
+        else 0
+    )
+
+    indicadores = [
+        (
+            numero_br(com_entregas),
+            "Com entregas",
+            f"de {numero_br(total)} estudantes",
+        ),
+        (
+            numero_br(sem_entregas),
+            "Sem entregas",
+            "Nenhuma entrega registrada",
+        ),
+        (
+            percentual_br(taxa_entrega),
+            "Taxa de entregas",
+            "Proporção das entregas previstas",
+        ),
+        (
+            decimal_br(media_geral) if total else "—",
+            "Média geral",
+            "Média dos estudantes selecionados",
+        ),
+    ]
+
+    colunas = st.columns(
+        4,
+        gap="small",
+    )
+
+    for coluna, indicador in zip(
+        colunas,
+        indicadores,
+    ):
+        with coluna:
+            card_kpi(*indicador)
 
 
-def _graficos():
-    """Renderiza os dois gráficos da tela."""
+def _graficos(dados):
+    """Exibe os gráficos de participação."""
 
-    col_turma, col_evolucao = (
-        st.columns(
-            2,
-            gap="medium",
-        )
+    col_turma, col_evolucao = st.columns(
+        2,
+        gap="medium",
     )
 
     with col_turma:
+        with card("Entrega por turma"):
 
-        with card(
-            "Entrega por turma"
-        ):
-            figura = (
-                grafico_barras_horizontais(
-                    mock_data.ENTREGA_POR_TURMA,
+            if dados.empty:
+                st.info(
+                    "Nenhum dado disponível para o gráfico."
+                )
+            else:
+                agrupados = (
+                    dados.groupby("Turma completa")
+                    .agg(
+                        entregas=("Entregas", "sum"),
+                        estudantes=("Estudante", "count"),
+                    )
+                    .reset_index()
+                )
+
+                agrupados["Entrega (%)"] = (
+                    agrupados["entregas"]
+                    / (
+                        agrupados["estudantes"]
+                        * mock_data.TOTAL_ATIVIDADES_POR_ALUNO
+                    )
+                    * 100
+                )
+
+                agrupados["Situação"] = (
+                    agrupados["Entrega (%)"]
+                    .map(mock_data._classificar_entrega)
+                )
+
+                agrupados = agrupados.rename(
+                    columns={
+                        "Turma completa": "Turma",
+                    }
+                )
+
+                figura = grafico_barras_horizontais(
+                    agrupados,
                     "Entrega (%)",
                     "Turma",
                     cor="Situação",
                 )
-            )
 
-            figura.update_xaxes(
-                range=[0, 100],
-            )
+                figura.update_xaxes(
+                    range=[0, 100]
+                )
 
-            figura.update_traces(
-                texttemplate="%{x:.0f}%",
-                textposition="outside",
-            )
+                figura.update_traces(
+                    texttemplate="%{x:.0f}%",
+                    textposition="outside",
+                )
 
-            figura.update_layout(
-                height=290,
-                margin=dict(
-                    l=10,
-                    r=25,
-                    t=15,
-                    b=20,
-                ),
-            )
+                figura.update_layout(
+                    height=290,
+                    autosize=True,
+                    margin=dict(
+                        l=10,
+                        r=25,
+                        t=15,
+                        b=20,
+                    ),
+                )
 
-            st.plotly_chart(
-                figura,
-                width="stretch",
-                config={
-                    "displayModeBar": False
-                },
-            )
+                st.plotly_chart(
+                    figura,
+                    width="stretch",
+                    key="pa_grafico_turmas",
+                )
 
     with col_evolucao:
-
-        with card(
-            "Evolução da participação"
-        ):
-            figura = grafico_linha(
-                mock_data
-                .EVOLUCAO_PARTICIPACAO,
-                "Atividade",
-                "Participação (%)",
-            )
-
-            figura.update_yaxes(
-                range=[0, 100],
-            )
-
-            figura.update_traces(
-                mode="lines+markers+text",
-                texttemplate="%{y}%",
-                textposition="top center",
-            )
-
-            figura.update_layout(
-                height=290,
-                margin=dict(
-                    l=10,
-                    r=15,
-                    t=15,
-                    b=20,
-                ),
-            )
-
-            st.plotly_chart(
-                figura,
-                width="stretch",
-                config={
-                    "displayModeBar": False
-                },
+        with card("Evolução da participação"):
+            st.info(
+                "O histórico de participação por turma "
+                "ainda não está disponível nos dados "
+                "indisponíveis. Este gráfico será preenchido "
+                "quando houver registros por atividade "
+                "e período."
             )
 
 
 def _acoes_do_aluno(aluno):
-    """Ações do estudante selecionado."""
+    """Oferece ações para o estudante selecionado."""
 
-    escolhido = (
-        aluno is not None
-    )
-
-    if not escolhido:
-
+    if aluno is None:
         st.caption(
-            "Selecione um aluno na tabela "
-            "para ver as ações."
+            "Selecione um aluno na tabela para ver as ações."
         )
+        return
 
-    col_ver, col_acompanhar = (
-        st.columns(
+    with st.container(key="participacao_acoes"):
+
+        col_ver, col_acompanhar = st.columns(
             [1, 1.7],
             gap="small",
         )
+
+        with col_ver:
+            if st.button(
+                "Ver estudante",
+                use_container_width=True,
+            ):
+                _dialogo_ver_estudante(aluno)
+
+        with col_acompanhar:
+            if st.button(
+                "Registrar acompanhamento",
+                use_container_width=True,
+            ):
+                _dialogo_registrar_acompanhamento(
+                    aluno["Estudante"]
+                )
+
+    acompanhamento = (
+        st.session_state.get("pa_acompanhamentos", {})
+        .get(aluno["Estudante"])
     )
 
-    if col_ver.button(
-        "Ver estudante",
-        disabled=not escolhido,
-        use_container_width=True,
-    ):
-        _dialogo_ver_estudante(
-            aluno
+    if acompanhamento:
+        st.caption(
+            "Acompanhamento registrado: "
+            f"{acompanhamento}"
         )
-
-    if col_acompanhar.button(
-        "Registrar acompanhamento",
-        disabled=not escolhido,
-        use_container_width=True,
-    ):
-        _dialogo_registrar_acompanhamento(
-            aluno["Estudante"]
-        )
-
-    if escolhido:
-
-        acompanhamento = (
-            st.session_state
-            .get(
-                "pa_acompanhamentos",
-                {},
-            )
-            .get(
-                aluno["Estudante"]
-            )
-        )
-
-        if acompanhamento:
-
-            st.caption(
-                "Acompanhamento registrado: "
-                f"{acompanhamento}"
-            )
 
 
 def render():
-    """Renderiza a página Participação."""
+    """Renderiza a participação conforme o perfil conectado."""
 
-    # Título
-    col_titulo, col_inserir = st.columns(
-        [5, 1.3],
-        vertical_alignment="center",
-    )
+    aplicar_responsividade()
 
-    with col_titulo:
+    with st.container(key="participacao_cabecalho"):
 
-        titulo_pagina(
-            "Participação",
-            "Acompanhe a entrega e o "
-            "envolvimento dos estudantes.",
+        col_titulo, col_inserir = st.columns(
+            [5, 1.3],
+            vertical_alignment="center",
         )
 
-    with col_inserir:
+        with col_titulo:
+            titulo_pagina(
+                "Participação",
+                "Acompanhe a entrega e o "
+                "envolvimento dos estudantes.",
+            )
 
-        if st.button(
-            "Inserir atividade",
-            key="btn_inserir_atividade",
-            use_container_width=True,
-        ):
-            _dialogo_inserir_atividade()
+        with col_inserir:
+            if st.button(
+                "Inserir atividade",
+                key="btn_inserir_atividade",
+                use_container_width=True,
+            ):
+                _dialogo_inserir_atividade()
 
-    # Aviso
     aviso = st.session_state.pop(
         "pa_aviso",
         None,
@@ -400,10 +699,17 @@ def render():
     if aviso:
         st.success(aviso)
 
-    # Filtros
-    with st.container(
-        key="participacao_filtros"
-    ):
+    disciplinas, turmas_permitidas = obter_opcoes()
+
+    if not turmas_permitidas:
+        st.info(
+            "Nenhuma turma foi atribuída ao seu perfil."
+        )
+        return
+
+    dados_permitidos = obter_dados_permitidos()
+
+    with st.container(key="participacao_filtros"):
 
         (
             col_atividade,
@@ -416,76 +722,99 @@ def render():
         )
 
         with col_atividade:
-
-            filtro_selecao(
+            st.selectbox(
                 "Atividade",
                 mock_data.ATIVIDADES,
-                "pa_atividade",
-                todos="Todas",
+                key="pa_atividade",
+                disabled=True,
             )
 
         with col_disciplina:
-
-            filtro_selecao(
+            disciplina = selecionar_opcao(
                 "Disciplina",
-                mock_data.DISCIPLINAS,
+                disciplinas,
                 "pa_disciplina",
-                todos="Todas",
             )
 
-        with col_turma:
+        if (
+            st.session_state.get("perfil") == "professor"
+            and disciplina
+        ):
+            turmas = sorted({
+                item["Turma"]
+                for item in obter_atribuicoes()
+                if item["Disciplina"] == disciplina
+            })
+        else:
+            turmas = turmas_permitidas
 
-            filtro_selecao(
+        with col_turma:
+            turma = selecionar_opcao(
                 "Turma",
-                mock_data
-                .TURMAS_PARTICIPACAO,
+                turmas,
                 "pa_turma",
-                todos="Todas",
             )
 
         with col_periodo:
-
-            filtro_selecao(
+            st.selectbox(
                 "Período",
                 mock_data.PERIODOS,
-                "pa_periodo",
-                todos=None,
+                key="pa_periodo",
+                disabled=True,
             )
 
-    # Indicadores
-    with st.container(
-        key="participacao_indicadores"
-    ):
-        _indicadores()
+    st.caption(
+        "Atividade e período aguardam dados específicos "
+        "para permitir a filtragem. A disciplina organiza "
+        "as turmas autorizadas; os registros de entregas "
+        "ainda não estão vinculados a disciplinas."
+    )
 
-    # Gráficos
-    with st.container(
-        key="participacao_graficos"
-    ):
-        _graficos()
+    dados = dados_permitidos.copy()
 
-    # Detalhes
-    alunos = mock_data.DETALHE_ALUNOS
+    if turma:
+        dados = dados[
+            dados["Turma completa"] == turma
+        ]
 
-    with st.container(
-        key="participacao_detalhes"
-    ):
+    with st.container(key="participacao_indicadores"):
+        _indicadores(dados)
+
+    with st.container(key="participacao_graficos"):
+        _graficos(dados)
+
+    with st.container(key="participacao_detalhes"):
 
         st.markdown(
             "### Detalhes da atividade por aluno"
         )
 
+        if dados.empty:
+            st.info(
+                "Não existem registros de participação "
+                "para a turma selecionada."
+            )
+            return
+
+        dados = dados.reset_index(drop=True)
+
         posicao = tabela_paginada(
-            _formatar_para_tabela(
-                alunos
-            ),
+            _formatar_para_tabela(dados),
             tamanho_pagina=5,
             chave="pa_pagina",
             selecionavel=True,
+            reiniciar_quando=(
+                st.session_state.get("perfil"),
+                st.session_state.get("professor_atual"),
+                disciplina,
+                turma,
+            ),
         )
 
-        _acoes_do_aluno(
-            alunos.iloc[posicao]
+        aluno = (
+            dados.iloc[posicao]
             if posicao is not None
             else None
         )
+
+        _acoes_do_aluno(aluno)

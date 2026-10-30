@@ -1,4 +1,5 @@
-"""Estrutura comum a todas as telas: cabeçalho, menu lateral e título."""
+
+"""Cabeçalho, navegação e títulos das páginas do Vértice."""
 
 import base64
 import unicodedata
@@ -9,19 +10,16 @@ import streamlit as st
 from config import NOME_APP, NOME_ESCOLA
 
 
-PASTA_ICONS = (
-    Path(__file__).resolve().parent.parent
-    / "assets"
-    / "icons"
-)
+RAIZ = Path(__file__).resolve().parent.parent
+PASTA_ICONS = RAIZ / "assets" / "icons"
 
 
 def _icone_base64(nome):
-    """Converte um ícone local em base64."""
+    """Lê um ícone da pasta de recursos."""
 
     caminho = PASTA_ICONS / nome
 
-    if not caminho.exists():
+    if not caminho.is_file():
         return None
 
     return base64.b64encode(
@@ -29,56 +27,15 @@ def _icone_base64(nome):
     ).decode("utf-8")
 
 
-def render_header():
-    """Faixa superior com logo, nome da escola e botão de sair."""
-
-    capelo = _icone_base64("capelo.svg")
-
-    with st.container(key="cabecalho"):
-
-        col_logo, col_escola, col_sair = st.columns(
-            [1, 2, 1],
-            vertical_alignment="center",
-        )
-
-        with col_logo:
-
-            if capelo:
-                st.markdown(
-                    f"""
-                    <div class="vertice-logo">
-                        <img
-                            src="data:image/svg+xml;base64,{capelo}"
-                            alt=""
-                        >
-                        <span>{NOME_APP}</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            else:
-                st.markdown(f"**{NOME_APP}**")
-
-        with col_escola:
-            st.markdown(NOME_ESCOLA)
-
-        with col_sair:
-
-            if st.button(
-                "Sair",
-                key="btn_sair",
-            ):
-                st.session_state["logado"] = False
-                st.rerun()
-
-
 def carregar_icone(caminho):
-    """Converte um arquivo de ícone em base64."""
+    """Lê uma imagem pelo caminho informado."""
 
     arquivo = Path(caminho)
 
-    if not arquivo.exists():
+    if not arquivo.is_absolute():
+        arquivo = RAIZ / arquivo
+
+    if not arquivo.is_file():
         return None
 
     return base64.b64encode(
@@ -87,7 +44,7 @@ def carregar_icone(caminho):
 
 
 def normalizar_texto(texto):
-    """Remove acentos e padroniza texto para uso nas chaves."""
+    """Padroniza o identificador de uma página."""
 
     if not texto:
         return ""
@@ -98,17 +55,14 @@ def normalizar_texto(texto):
     )
 
     texto = (
-        texto
-        .encode("ascii", "ignore")
+        texto.encode("ascii", "ignore")
         .decode("utf-8")
         .lower()
         .strip()
     )
 
-    texto = texto.replace(" / ", "-")
-    texto = texto.replace("/", "-")
-    texto = texto.replace(" ", "-")
-    texto = texto.replace("_", "-")
+    for caractere in (" / ", "/", " ", "_"):
+        texto = texto.replace(caractere, "-")
 
     while "--" in texto:
         texto = texto.replace("--", "-")
@@ -117,41 +71,15 @@ def normalizar_texto(texto):
 
 
 def identificar_pagina(pagina):
-    """Cria um identificador estável para cada página."""
+    """Identifica a página utilizada na navegação."""
 
-    url_path = (
-        getattr(pagina, "url_path", "")
-        or ""
+    url = getattr(pagina, "url_path", "") or ""
+    titulo = getattr(pagina, "title", "") or ""
+
+    identificador = (
+        normalizar_texto(url)
+        or normalizar_texto(titulo)
     )
-
-    title = (
-        getattr(pagina, "title", "")
-        or ""
-    )
-
-    url_norm = normalizar_texto(url_path)
-    title_norm = normalizar_texto(title)
-
-    if (
-        not url_norm
-        or url_norm in {
-            "",
-            "/",
-            "home",
-            "inicio",
-            "index",
-        }
-    ):
-        if (
-            "visao" in title_norm
-            and "geral" in title_norm
-        ):
-            return "visao-geral"
-
-        if not title_norm:
-            return "visao-geral"
-
-    identificador = url_norm or title_norm
 
     aliases = {
         "visao-geral": "visao-geral",
@@ -164,171 +92,457 @@ def identificar_pagina(pagina):
         "atribuir-turmas": "atribuir-turmas",
         "atribuicao-de-turmas": "atribuir-turmas",
         "atribuicao-turmas": "atribuir-turmas",
+        "perfil": "meu-perfil",
+        "meu-perfil": "meu-perfil",
     }
 
     return aliases.get(
         identificador,
-        identificador,
+        identificador or "visao-geral",
     )
 
 
-def render_sidebar(
-    paginas,
-    pagina_atual,
-):
-    """Renderiza o menu lateral com ícones personalizados."""
+ICONES_MENU = {
+    "visao-geral": ("visao.svg", "image/svg+xml"),
+    "estudantes": ("estudantes.png", "image/png"),
+    "entrada-de-dados": ("dados.svg", "image/svg+xml"),
+    "assistente-ia": ("IA.svg", "image/svg+xml"),
+    "mapa-de-acertos": ("acertos.svg", "image/svg+xml"),
+    "participacao": ("participacao.svg", "image/svg+xml"),
+    "atribuir-turmas": ("atribuicao.svg", "image/svg+xml"),
+}
 
-    icones = {
-        "visao-geral": (
-            "assets/icons/visao.svg",
-            "image/svg+xml",
-        ),
-        "estudantes": (
-            "assets/icons/estudantes.png",
-            "image/png",
-        ),
-        "entrada-de-dados": (
-            "assets/icons/dados.svg",
-            "image/svg+xml",
-        ),
-        "assistente-ia": (
-            "assets/icons/IA.svg",
-            "image/svg+xml",
-        ),
-        "mapa-de-acertos": (
-            "assets/icons/acertos.svg",
-            "image/svg+xml",
-        ),
-        "participacao": (
-            "assets/icons/participacao.svg",
-            "image/svg+xml",
-        ),
-        "atribuir-turmas": (
-            "assets/icons/atribuicao.svg",
-            "image/svg+xml",
-        ),
-    }
 
-    estilos_icones = []
+def _icone_perfil_base64():
+    """Cria um ícone de perfil para o menu lateral."""
 
-    for identificador, (
-        caminho,
-        mime,
-    ) in icones.items():
+    svg = """
+    <svg xmlns="http://www.w3.org/2000/svg"
+         width="24" height="24"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="black"
+         stroke-width="1.8"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+        <circle cx="12" cy="8" r="4"/>
+        <path d="M4 21v-2a8 8 0 0 1 16 0v2"/>
+    </svg>
+    """
 
-        icone_base64 = carregar_icone(
-            caminho
-        )
+    return base64.b64encode(
+        svg.encode("utf-8")
+    ).decode("utf-8")
 
-        if not icone_base64:
+
+def _estilos_icones():
+    """Mantém todos os ícones do menu lateral brancos."""
+
+    regras = []
+
+    icones = dict(ICONES_MENU)
+
+    icones["meu-perfil"] = (
+        None,
+        "image/svg+xml",
+    )
+
+    for identificador, (arquivo, mime) in icones.items():
+
+        if identificador == "meu-perfil":
+            conteudo = _icone_perfil_base64()
+        else:
+            conteudo = _icone_base64(arquivo)
+
+        if not conteudo:
             continue
 
-        nome_css = identificador.replace(
-            "-",
-            "_",
-        )
+        nome = identificador.replace("-", "_")
 
-        estilos_icones.append(
+        regras.append(
             f"""
-            .st-key-menu_{nome_css}
+            .st-key-menu_{nome}
             [data-testid="stPageLink-NavLink"]::before,
-
-            .st-key-menu_ativo_{nome_css}
+            .st-key-menu_ativo_{nome}
             [data-testid="stPageLink-NavLink"]::before {{
-
                 content: "";
-
                 display: inline-block;
-
                 width: 25px;
                 height: 25px;
-
                 min-width: 25px;
                 flex: 0 0 25px;
-
+                margin-right: 10px;
                 background-color: #ffffff;
 
-                -webkit-mask-image:
-                    url("data:{mime};base64,{icone_base64}");
+                -webkit-mask:
+                    url("data:{mime};base64,{conteudo}")
+                    center / contain no-repeat;
 
-                mask-image:
-                    url("data:{mime};base64,{icone_base64}");
-
-                -webkit-mask-repeat: no-repeat;
-                mask-repeat: no-repeat;
-
-                -webkit-mask-position: center;
-                mask-position: center;
-
-                -webkit-mask-size: contain;
-                mask-size: contain;
-
-                margin-right: 10px;
+                mask:
+                    url("data:{mime};base64,{conteudo}")
+                    center / contain no-repeat;
             }}
             """
         )
 
-    with st.sidebar:
+    st.html(
+        "<style>"
+        + "\n".join(regras)
+        + """
+        /* Esconde o ícone original preto do Meu Perfil.
+           O ícone branco é desenhado acima com ::before. */
 
-        if estilos_icones:
+        .st-key-menu_meu_perfil
+        [data-testid="stPageLink-NavLink"] svg,
+        .st-key-menu_ativo_meu_perfil
+        [data-testid="stPageLink-NavLink"] svg {
+            display: none !important;
+        }
+        </style>
+        """
+    )
 
-            st.markdown(
-                f"""
-                <style>
-                    {''.join(estilos_icones)}
 
-                    [class*="st-key-menu_"]
-                    [data-testid="stPageLink-NavLink"] {{
-                        display: flex !important;
-                        align-items: center !important;
-                    }}
+def _sair():
+    """Encerra o acesso e retorna à tela de Login."""
 
-                    [class*="st-key-menu_"]
-                    [data-testid="stPageLink-NavLink"] p {{
-                        margin: 0 !important;
-                    }}
-                </style>
-                """,
-                unsafe_allow_html=True,
-            )
+    st.session_state["logado"] = False
+    st.session_state["perfil"] = "professor"
+    st.session_state["professor_atual"] = None
+    st.session_state["tela_auth"] = "login"
+    st.session_state["menu_mobile_aberto"] = False
 
-        pagina_atual_id = identificar_pagina(
-            pagina_atual
+    for chave in (
+        "login_email",
+        "login_senha",
+        "login_perfil",
+        "login_professor",
+        "email_atual",
+        "entrada_resultado",
+    ):
+        st.session_state.pop(chave, None)
+
+
+def _estilos_cabecalho():
+    """Centraliza a escola e posiciona os botões superiores."""
+
+    st.html(
+        """
+        <style>
+            /* Centralização real na janela inteira. */
+
+            .st-key-cabecalho .vertice-escola-central {
+                position: fixed !important;
+                top: 0.96rem !important;
+                left: 50vw !important;
+                transform: translateX(-50%) !important;
+
+                width: max-content !important;
+                max-width: 35vw !important;
+                margin: 0 !important;
+                padding: 0 !important;
+
+                color: #ffffff !important;
+                font-size: 13px !important;
+                font-weight: 600 !important;
+                text-align: center !important;
+                white-space: nowrap;
+
+                z-index: 1002 !important;
+                pointer-events: none !important;
+            }
+
+            /* Botão Sair: mantém a posição funcional. */
+
+            .st-key-logout_flutuante {
+                position: fixed !important;
+                top: 0.35rem !important;
+                right: 0.55rem !important;
+
+                width: 42px !important;
+                min-width: 42px !important;
+                max-width: 42px !important;
+
+                margin: 0 !important;
+                padding: 0 !important;
+
+                z-index: 2000000 !important;
+                pointer-events: auto !important;
+            }
+
+            /* Botão de perfil ao lado de Sair. */
+
+            .st-key-perfil_flutuante {
+                position: fixed !important;
+                top: 0.35rem !important;
+                right: 3.65rem !important;
+
+                width: 42px !important;
+                min-width: 42px !important;
+                max-width: 42px !important;
+
+                margin: 0 !important;
+                padding: 0 !important;
+
+                z-index: 2000000 !important;
+                pointer-events: auto !important;
+            }
+
+            /* Aparência igual para os dois botões. */
+
+            .st-key-logout_flutuante
+            [data-testid="stButton"],
+            .st-key-perfil_flutuante
+            [data-testid="stButton"] {
+                width: 42px !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            .st-key-logout_flutuante button,
+            .st-key-perfil_flutuante button {
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+
+                width: 42px !important;
+                min-width: 42px !important;
+                max-width: 42px !important;
+
+                height: 36px !important;
+                min-height: 36px !important;
+
+                padding: 0 !important;
+                margin: 0 !important;
+
+                border: 1px solid white !important;
+                border-radius: 7px !important;
+
+                color: white !important;
+                background: transparent !important;
+                cursor: pointer !important;
+                pointer-events: auto !important;
+            }
+
+            .st-key-logout_flutuante button:hover,
+            .st-key-perfil_flutuante button:hover {
+                background: rgba(
+                    255, 255, 255, .15
+                ) !important;
+            }
+
+            .st-key-logout_flutuante button svg,
+            .st-key-perfil_flutuante button svg {
+                width: 19px !important;
+                height: 19px !important;
+                color: white !important;
+                stroke: white !important;
+            }
+
+            /* Navegação mobile continua independente. */
+
+            .st-key-nav_mobile {
+                display: none !important;
+            }
+
+            @media (max-width: 800px) {
+
+                /* O nome da escola não aperta o cabeçalho. */
+
+                .st-key-cabecalho
+                .vertice-escola-central {
+                    display: none !important;
+                }
+
+                /* Distribui os três botões no celular:
+                   Perfil, Menu e Sair. */
+
+                .st-key-perfil_flutuante {
+                    right: 6.75rem !important;
+                }
+
+                .st-key-nav_mobile {
+                    display: block !important;
+                    position: fixed !important;
+
+                    top: 0.35rem !important;
+                    right: 3.65rem !important;
+
+                    width: 42px !important;
+                    min-width: 42px !important;
+                    max-width: 42px !important;
+
+                    margin: 0 !important;
+                    padding: 0 !important;
+
+                    z-index: 2000001 !important;
+                    pointer-events: auto !important;
+                }
+
+                .st-key-nav_mobile
+                [data-testid="stButton"] {
+                    width: 42px !important;
+                    pointer-events: auto !important;
+                }
+
+                .st-key-nav_mobile button {
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+
+                    width: 42px !important;
+                    height: 36px !important;
+                    min-height: 36px !important;
+
+                    margin: 0 !important;
+                    padding: 0 !important;
+
+                    border: 1px solid white !important;
+                    border-radius: 7px !important;
+
+                    color: white !important;
+                    background: transparent !important;
+                    cursor: pointer !important;
+                    pointer-events: auto !important;
+                }
+
+                .st-key-nav_mobile button p {
+                    margin: 0 !important;
+                    color: white !important;
+                    font-size: 20px !important;
+                }
+
+                .st-key-logout_flutuante {
+                    right: 0.45rem !important;
+                }
+            }
+        </style>
+        """
+    )
+
+
+@st.dialog("Navegação", width="small")
+def abrir_menu_mobile(paginas):
+    """Mostra as páginas disponíveis no celular."""
+
+    for pagina in paginas:
+        st.page_link(
+            pagina,
+            use_container_width=True,
         )
 
-        for pagina in paginas:
 
-            pagina_id = identificar_pagina(
-                pagina
+def _pagina_perfil(paginas):
+    """Encontra a página Meu Perfil já registrada no app."""
+
+    for pagina in paginas or []:
+        if identificar_pagina(pagina) == "meu-perfil":
+            return pagina
+
+    return None
+
+
+def render_header(paginas=None):
+    """Exibe o cabeçalho e os controles do sistema."""
+
+    capelo = _icone_base64("capelo.svg")
+
+    _estilos_cabecalho()
+
+    with st.container(key="cabecalho"):
+
+        col_logo, col_escola = st.columns(
+            [1, 2],
+            vertical_alignment="center",
+            gap="small",
+        )
+
+        with col_logo:
+            if capelo:
+                st.html(
+                    f"""
+                    <div class="vertice-logo">
+                        <img
+                            src="data:image/svg+xml;base64,{capelo}"
+                            alt="Vértice"
+                        >
+                        <span>{NOME_APP}</span>
+                    </div>
+                    """
+                )
+            else:
+                st.markdown(f"**{NOME_APP}**")
+
+        with col_escola:
+            st.html(
+                f"""
+                <div class="vertice-escola-central">
+                    {NOME_ESCOLA}
+                </div>
+                """
             )
+
+    with st.container(key="nav_mobile"):
+        if st.button(
+            "☰",
+            key="btn_menu_mobile",
+            help="Abrir navegação",
+        ):
+            abrir_menu_mobile(paginas or [])
+
+    pagina_perfil = _pagina_perfil(paginas)
+
+    if pagina_perfil is not None:
+        with st.container(key="perfil_flutuante"):
+            if st.button(
+                "",
+                icon=":material/person_outline:",
+                key="botao_perfil_cabecalho",
+                help="Meu Perfil",
+            ):
+                st.switch_page(pagina_perfil)
+
+    with st.container(key="logout_flutuante"):
+        st.button(
+            "",
+            icon=":material/logout:",
+            key="botao_logout",
+            help="Sair do sistema",
+            on_click=_sair,
+        )
+
+
+def render_sidebar(paginas, pagina_atual):
+    """Mantém a navegação azul fixa no desktop."""
+
+    _estilos_icones()
+
+    atual = identificar_pagina(pagina_atual)
+
+    with st.container(key="vertice_menu_lateral"):
+
+        for pagina in paginas:
+            identificador = identificar_pagina(pagina)
 
             prefixo = (
                 "menu_ativo"
-                if pagina_id == pagina_atual_id
+                if identificador == atual
                 else "menu"
             )
 
             chave = (
                 f"{prefixo}_"
-                f"{pagina_id.replace('-', '_')}"
+                f"{identificador.replace('-', '_')}"
             )
 
-            with st.container(
-                key=chave
-            ):
+            with st.container(key=chave):
                 st.page_link(pagina)
 
 
-def _titulo_e_subtitulo(
-    titulo,
-    subtitulo,
-):
-    """Renderiza título e subtítulo."""
+def _titulo_e_subtitulo(titulo, subtitulo):
+    """Renderiza o título e o subtítulo."""
 
-    st.title(
-        titulo,
-        anchor=False,
-    )
+    st.title(titulo, anchor=False)
 
     if subtitulo:
         st.caption(subtitulo)
@@ -339,34 +553,20 @@ def titulo_pagina(
     subtitulo=None,
     destaque=None,
 ):
-    """Título padrão das páginas."""
+    """Exibe o título padrão da página."""
 
     if destaque is None:
-
-        _titulo_e_subtitulo(
-            titulo,
-            subtitulo,
-        )
-
+        _titulo_e_subtitulo(titulo, subtitulo)
         return
 
-    col_titulo, col_destaque = (
-        st.columns(
-            [3, 2],
-            vertical_alignment="center",
-        )
+    col_titulo, col_destaque = st.columns(
+        [3, 2],
+        vertical_alignment="center",
     )
 
     with col_titulo:
-
-        _titulo_e_subtitulo(
-            titulo,
-            subtitulo,
-        )
+        _titulo_e_subtitulo(titulo, subtitulo)
 
     with col_destaque:
-
-        with st.container(
-            key="pilula"
-        ):
+        with st.container(key="pilula"):
             st.markdown(destaque)

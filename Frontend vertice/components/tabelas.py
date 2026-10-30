@@ -31,7 +31,6 @@ def tabela_paginada(dados, tamanho_pagina=5, chave="tabela", reiniciar_quando=No
 
     posicao_escolhida = None
     if selecionavel:
-        # A chave inclui a página: ao trocar de página a seleção começa vazia.
         posicao_na_pagina = tabela_selecionavel(dados.iloc[inicio:fim], f"{chave}_tabela_{pagina}")
         if posicao_na_pagina is not None:
             posicao_escolhida = inicio + posicao_na_pagina

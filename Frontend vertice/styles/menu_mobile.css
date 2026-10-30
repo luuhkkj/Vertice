@@ -1,0 +1,54 @@
+
+/* Botão de navegação do celular */
+
+.st-key-nav_mobile {
+    display: none !important;
+}
+
+@media (max-width: 800px) {
+    .st-key-nav_mobile {
+        display: block !important;
+
+        position: fixed !important;
+        top: 0.35rem !important;
+        right: 3.65rem !important;
+
+        width: 42px !important;
+        min-width: 42px !important;
+
+        margin: 0 !important;
+        padding: 0 !important;
+
+        z-index: 2000001 !important;
+        pointer-events: auto !important;
+    }
+
+    .st-key-nav_mobile button {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+
+        width: 42px !important;
+        min-width: 42px !important;
+        height: 36px !important;
+        min-height: 36px !important;
+
+        padding: 0 !important;
+
+        background: transparent !important;
+        border: 1px solid white !important;
+        border-radius: 7px !important;
+
+        color: white !important;
+        font-size: 20px !important;
+
+        cursor: pointer !important;
+        pointer-events: auto !important;
+    }
+
+    .st-key-nav_mobile button p {
+        color: white !important;
+        font-size: 20px !important;
+        margin: 0 !important;
+    }
+}

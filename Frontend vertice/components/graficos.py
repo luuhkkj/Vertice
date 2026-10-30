@@ -42,7 +42,6 @@ def grafico_barras_horizontais(dados, x, y, cor=None):
     """
     figura = px.bar(dados, x=x, y=y, color=cor, orientation="h",
                     color_discrete_map=COR_POR_CATEGORIA, color_discrete_sequence=SEQUENCIA_CORES)
-       # Ordem das barras = ordem dos dados, com a 1ª no topo (sem isso, elas se agrupam por cor).
     figura.update_yaxes(categoryorder="array", categoryarray=list(dados[y]), autorange="reversed")
     return _estilizar(figura)
 

@@ -1,12 +1,14 @@
+
 """Tela: Mapa de Acertos."""
 
 import streamlit as st
 
-from components.filtros import filtro_selecao
 from components.graficos import grafico_barras_horizontais
 from components.layout import titulo_pagina
 from components.tabelas import tabela_selecionavel
 from data import mock_data
+from data.atribuicoes import listar_atribuicoes
+from pages.entrada_dados import _arquivo_modelo
 from utils.formatacao import percentual_br
 
 
@@ -20,49 +22,310 @@ COLUNAS_TABELA = [
 ]
 
 
+def aplicar_responsividade():
+    """Adapta os filtros, gráficos e detalhes a telas menores."""
+
+    st.html(
+        """
+        <style>
+            /* Mantém os elementos dentro da largura da página. */
+
+            .st-key-mapa_botoes,
+            .st-key-mapa_filtros,
+            .st-key-mapa_grafico,
+            .st-key-mapa_tabela,
+            .st-key-mapa_colunas_detalhe,
+            .st-key-mapa_detalhe {
+                width: 100%;
+                max-width: 100%;
+                min-width: 0;
+                box-sizing: border-box;
+            }
+
+            .st-key-mapa_botoes
+            [data-testid="stColumn"],
+            .st-key-mapa_filtros
+            [data-testid="stColumn"],
+            .st-key-mapa_colunas_detalhe
+            [data-testid="stColumn"] {
+                min-width: 0 !important;
+            }
+
+            /* Gráfico e tabela respeitam o espaço disponível. */
+
+            .st-key-mapa_grafico
+            [data-testid="stPlotlyChart"] {
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+            }
+
+            .st-key-mapa_tabela {
+                overflow-x: auto;
+            }
+
+            .st-key-mapa_tabela
+            [data-testid="stDataFrame"] {
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+            }
+
+            /* Tablet */
+
+            @media (min-width: 601px) and (max-width: 1100px) {
+
+                .st-key-mapa_botoes
+                [data-testid="stHorizontalBlock"],
+                .st-key-mapa_filtros
+                [data-testid="stHorizontalBlock"] {
+                    display: grid !important;
+                    grid-template-columns:
+                        repeat(2, minmax(0, 1fr)) !important;
+                    gap: 12px !important;
+                    width: 100% !important;
+                }
+
+                /* O terceiro botão ocupa a linha seguinte. */
+
+                .st-key-mapa_botoes
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="stColumn"]:nth-child(3) {
+                    grid-column: 1 / -1;
+                }
+
+                /* Gráficos e detalhes ficam empilhados. */
+
+                .st-key-mapa_colunas_detalhe
+                [data-testid="stHorizontalBlock"] {
+                    display: grid !important;
+                    grid-template-columns:
+                        minmax(0, 1fr) !important;
+                    gap: 14px !important;
+                    width: 100% !important;
+                }
+
+                .st-key-mapa_botoes
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="stColumn"],
+                .st-key-mapa_filtros
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="stColumn"],
+                .st-key-mapa_colunas_detalhe
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="stColumn"] {
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    max-width: 100% !important;
+                    flex: none !important;
+                }
+            }
+
+            /* Celular */
+
+            @media (max-width: 600px) {
+
+                .st-key-mapa_botoes
+                [data-testid="stHorizontalBlock"],
+                .st-key-mapa_filtros
+                [data-testid="stHorizontalBlock"],
+                .st-key-mapa_colunas_detalhe
+                [data-testid="stHorizontalBlock"] {
+                    display: grid !important;
+                    grid-template-columns:
+                        minmax(0, 1fr) !important;
+                    gap: 10px !important;
+                    width: 100% !important;
+                }
+
+                .st-key-mapa_botoes
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="stColumn"],
+                .st-key-mapa_filtros
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="stColumn"],
+                .st-key-mapa_colunas_detalhe
+                [data-testid="stHorizontalBlock"]
+                > [data-testid="stColumn"] {
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    max-width: 100% !important;
+                    flex: none !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+
+                /* Downloads e cadastro com largura completa. */
+
+                .st-key-mapa_botoes button {
+                    width: 100% !important;
+                }
+
+                /* Os filtros não podem alargar o celular. */
+
+                .st-key-mapa_filtros
+                [data-testid="stSelectbox"] {
+                    width: 100% !important;
+                    min-width: 0 !important;
+                }
+
+                /* Área do gráfico. */
+
+                .st-key-mapa_grafico
+                [data-testid="stPlotlyChart"] {
+                    width: 100% !important;
+                    min-width: 0 !important;
+                    max-width: 100% !important;
+                }
+
+                /* Rolagem dentro da tabela. */
+
+                .st-key-mapa_tabela {
+                    max-width: 100% !important;
+                    overflow-x: auto !important;
+                }
+
+                /* Painel de detalhes. */
+
+                .st-key-mapa_detalhe {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                }
+
+                .st-key-mapa_detalhe p {
+                    overflow-wrap: anywhere;
+                }
+            }
+        </style>
+        """
+    )
+
+
+def _atribuicoes_permitidas():
+    """Retorna as atribuições permitidas ao usuário."""
+
+    atribuicoes = listar_atribuicoes()
+
+    if st.session_state.get("perfil") == "administrador":
+        return atribuicoes
+
+    professor = st.session_state.get("professor_atual")
+
+    return [
+        item
+        for item in atribuicoes
+        if item["Professor"] == professor
+    ]
+
+
+def _disciplinas_permitidas():
+    """Lista as disciplinas que o usuário pode visualizar."""
+
+    if st.session_state.get("perfil") == "administrador":
+        return list(mock_data.DISCIPLINAS)
+
+    return sorted({
+        item["Disciplina"]
+        for item in _atribuicoes_permitidas()
+    })
+
+
+def _turmas_permitidas(disciplina):
+    """Lista as turmas autorizadas para uma disciplina."""
+
+    if st.session_state.get("perfil") == "administrador":
+        return list(mock_data.TURMAS_AVALIACAO)
+
+    return sorted({
+        item["Turma"]
+        for item in _atribuicoes_permitidas()
+        if item["Disciplina"] == disciplina
+    })
+
+
 @st.dialog("Inserir avaliação")
 def _dialogo_inserir_avaliacao():
-    """Modal para inserir nova avaliação."""
+    """Cadastra uma avaliação na sessão atual."""
+
+    disciplinas = _disciplinas_permitidas()
+
+    if not disciplinas:
+        st.warning(
+            "Nenhuma disciplina atribuída ao seu perfil."
+        )
+        return
 
     nome = st.text_input(
-        "Nome da avaliação"
+        "Nome da avaliação",
+        key="ma_novo_nome",
     )
 
-    st.selectbox(
+    disciplina = st.selectbox(
         "Disciplina",
-        mock_data.DISCIPLINAS,
+        disciplinas,
+        key="ma_nova_disciplina",
     )
 
-    st.selectbox(
+    turmas = _turmas_permitidas(disciplina)
+
+    if not turmas:
+        st.info(
+            "Nenhuma turma disponível para esta disciplina."
+        )
+        return
+
+    if st.session_state.get("ma_nova_turma") not in turmas:
+        st.session_state["ma_nova_turma"] = turmas[0]
+
+    turma = st.selectbox(
         "Turma",
-        mock_data.TURMAS_AVALIACAO,
+        turmas,
+        key="ma_nova_turma",
     )
 
-    st.selectbox(
+    tipo = st.selectbox(
         "Tipo",
         mock_data.TIPOS_QUESTAO,
+        key="ma_novo_tipo",
     )
 
-    st.number_input(
+    quantidade = st.number_input(
         "Número de questões",
         min_value=1,
         max_value=100,
         value=10,
         step=1,
+        key="ma_nova_quantidade",
     )
 
     if st.button(
         "Salvar",
         type="primary",
+        key="ma_salvar_avaliacao",
     ):
         if not nome.strip():
-            st.error(
-                "Informe o nome da avaliação."
-            )
+            st.error("Informe o nome da avaliação.")
             return
 
+        st.session_state.setdefault(
+            "ma_avaliacoes_criadas",
+            [],
+        ).append({
+            "Nome": nome.strip(),
+            "Disciplina": disciplina,
+            "Turma": turma,
+            "Tipo": tipo,
+            "Questões": int(quantidade),
+            "Professor": (
+                st.session_state.get("professor_atual")
+                if st.session_state.get("perfil") == "professor"
+                else None
+            ),
+        })
+
         st.session_state["ma_aviso"] = (
-            f'Avaliação "{nome.strip()}" inserida.'
+            f'Avaliação "{nome.strip()}" cadastrada '
+            "nesta sessão. Aguardando resultados."
         )
 
         st.rerun()
@@ -70,7 +333,7 @@ def _dialogo_inserir_avaliacao():
 
 @st.dialog("Registrar ação pedagógica")
 def _dialogo_registrar_acao(nome_questao):
-    """Modal para registrar ação pedagógica."""
+    """Permite registrar uma ação pedagógica."""
 
     st.write(nome_questao)
 
@@ -83,11 +346,9 @@ def _dialogo_registrar_acao(nome_questao):
         type="primary",
     ):
         if not texto.strip():
-
             st.error(
                 "Descreva a ação antes de salvar."
             )
-
             return
 
         st.session_state.setdefault(
@@ -103,10 +364,9 @@ def _dialogo_registrar_acao(nome_questao):
 
 
 def _painel_questao(questao, detalhe):
-    """Painel lateral exibido somente após selecionar uma questão."""
+    """Exibe informações da questão selecionada."""
 
     total = mock_data.TOTAL_RESPONDENTES
-
     respostas = detalhe["respostas"]
 
     erradas = {
@@ -116,32 +376,22 @@ def _painel_questao(questao, detalhe):
     }
 
     errada_mais_escolhida = (
-        max(
-            erradas,
-            key=erradas.get,
-        )
+        max(erradas, key=erradas.get)
         if erradas
         else "-"
     )
 
     interpretacao = (
-        mock_data
-        .INTERPRETACAO_POR_DIFICULDADE[
+        mock_data.INTERPRETACAO_POR_DIFICULDADE[
             questao["Dificuldade"]
-        ]
-        .format(
+        ].format(
             correta=detalhe["correta"],
-            errada_mais_escolhida=(
-                errada_mais_escolhida
-            ),
+            errada_mais_escolhida=errada_mais_escolhida,
         )
     )
 
-    with st.container(
-        key="mapa_detalhe"
-    ):
+    with st.container(key="mapa_detalhe"):
 
-        # Cabeçalho
         col_titulo, col_fechar = st.columns(
             [5, 1],
             vertical_alignment="center",
@@ -153,7 +403,6 @@ def _painel_questao(questao, detalhe):
             )
 
         with col_fechar:
-
             if st.button(
                 "×",
                 key="ma_fechar_detalhe",
@@ -162,15 +411,11 @@ def _painel_questao(questao, detalhe):
                 st.session_state[
                     "ma_questao_selecionada"
                 ] = None
-
                 st.rerun()
 
         st.divider()
 
-        # Resumo
-        with st.container(
-            key="mapa_resumo_questao"
-        ):
+        with st.container(key="mapa_resumo_questao"):
 
             st.markdown(
                 f"**{questao['Acertos']}** "
@@ -194,7 +439,6 @@ def _painel_questao(questao, detalhe):
 
         st.divider()
 
-        # Distribuição
         st.markdown(
             "#### Distribuição de resposta"
         )
@@ -202,24 +446,15 @@ def _painel_questao(questao, detalhe):
         for letra, quantidade in respostas.items():
 
             percentual = (
-                quantidade
-                / total
-            )
-
-            percentual_texto = percentual_br(
-                percentual * 100,
-                0,
-            )
-
-            correta = (
-                letra
-                == detalhe["correta"]
+                quantidade / total
+                if total
+                else 0
             )
 
             rotulo = (
                 f"{letra}   "
                 f"{quantidade}   "
-                f"{percentual_texto}"
+                f"{percentual_br(percentual * 100, 0)}"
             )
 
             st.progress(
@@ -227,39 +462,24 @@ def _painel_questao(questao, detalhe):
                 text=rotulo,
             )
 
-            if correta:
+            if letra == detalhe["correta"]:
                 st.caption(
                     f"Alternativa correta: {letra}"
                 )
 
         st.divider()
 
-        # Interpretação
-        st.markdown(
-            "#### Interpretação"
-        )
+        st.markdown("#### Interpretação")
+        st.write(interpretacao)
 
-        st.write(
-            interpretacao
-        )
+        acao = st.session_state.get(
+            "ma_acoes",
+            {},
+        ).get(questao["Questão"])
 
-        # Ação pedagógica
-        acao_registrada = (
-            st.session_state
-            .get(
-                "ma_acoes",
-                {},
-            )
-            .get(
-                questao["Questão"]
-            )
-        )
-
-        if acao_registrada:
-
+        if acao:
             st.caption(
-                f"Ação registrada: "
-                f"{acao_registrada}"
+                f"Ação registrada: {acao}"
             )
 
         if st.button(
@@ -273,12 +493,9 @@ def _painel_questao(questao, detalhe):
 
 
 def _conteudo_principal(questoes):
-    """Gráfico e tabela da página."""
+    """Exibe o gráfico e a tabela de desempenho."""
 
-    # Gráfico
-    with st.container(
-        key="mapa_grafico"
-    ):
+    with st.container(key="mapa_grafico"):
 
         st.markdown(
             "### Desempenho por questão"
@@ -293,23 +510,14 @@ def _conteudo_principal(questoes):
 
         figura.update_xaxes(
             range=[0, 100],
-            tickvals=[
-                0,
-                20,
-                40,
-                60,
-                80,
-                100,
-            ],
+            tickvals=[0, 20, 40, 60, 80, 100],
             ticksuffix="%",
             title=None,
             showgrid=True,
             gridcolor="#E6E6E6",
         )
 
-        figura.update_yaxes(
-            title=None,
-        )
+        figura.update_yaxes(title=None)
 
         figura.update_traces(
             texttemplate="%{x:.0f}%",
@@ -318,6 +526,7 @@ def _conteudo_principal(questoes):
 
         figura.update_layout(
             height=355,
+            autosize=True,
             margin=dict(
                 l=10,
                 r=25,
@@ -336,56 +545,105 @@ def _conteudo_principal(questoes):
             width="stretch",
             config={
                 "displayModeBar": False,
+                "responsive": True,
             },
         )
 
-    # Tabela
-    with st.container(
-        key="mapa_tabela"
-    ):
+    with st.container(key="mapa_tabela"):
 
-        linha_escolhida = (
-            tabela_selecionavel(
-                questoes[
-                    COLUNAS_TABELA
-                ],
-                "ma_tabela",
-            )
+        linha_escolhida = tabela_selecionavel(
+            questoes[COLUNAS_TABELA],
+            "ma_tabela",
         )
 
     return linha_escolhida
 
 
-def render():
-    """Renderiza a tela Mapa de Acertos."""
 
-    # Estado
+def _botoes_cabecalho():
+    """Exibe as ações principais do Mapa de Acertos."""
+
+    titulo_pagina("Mapa de Acertos")
+
+    with st.container(key="mapa_botoes"):
+
+        col_csv, col_excel, col_inserir = st.columns(
+            [1, 1, 1.3],
+            gap="small",
+        )
+
+        with col_csv:
+            st.download_button(
+                "Baixar modelo CSV",
+                data=_arquivo_modelo(
+                    "Resultados de avaliações",
+                    "CSV",
+                ),
+                file_name="modelo_resultados_avaliacoes.csv",
+                mime="text/csv",
+                key="ma_modelo_csv",
+                use_container_width=True,
+            )
+
+        with col_excel:
+            st.download_button(
+                "Baixar modelo Excel",
+                data=_arquivo_modelo(
+                    "Resultados de avaliações",
+                    "Excel",
+                ),
+                file_name="modelo_resultados_avaliacoes.xlsx",
+                mime=(
+                    "application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"
+                ),
+                key="ma_modelo_excel",
+                use_container_width=True,
+            )
+
+        with col_inserir:
+            if st.button(
+                "Inserir avaliação",
+                key="btn_inserir_avaliacao",
+                use_container_width=True,
+            ):
+                _dialogo_inserir_avaliacao()
+
+    st.write("")
+
+    with st.container(key="mapa_acesso_modelos"):
+        col_modelos, col_espaco = st.columns(
+            [1.3, 2.7],
+            gap="small",
+        )
+
+        with col_modelos:
+            if st.button(
+                "Modelos de Prova",
+                icon=":material/description:",
+                key="ma_abrir_modelos",
+                use_container_width=True,
+            ):
+                pagina = st.session_state.get(
+                    "pagina_modelos_prova"
+                )
+
+                if pagina is not None:
+                    st.switch_page(pagina)
+
+
+def render():
+    """Renderiza o Mapa de Acertos conforme o perfil."""
+
+    aplicar_responsividade()
+
     st.session_state.setdefault(
         "ma_questao_selecionada",
         None,
     )
 
-    # Título
-    col_titulo, col_inserir = st.columns(
-        [5, 1.3],
-        vertical_alignment="center",
-    )
+    _botoes_cabecalho()
 
-    with col_titulo:
-        titulo_pagina(
-            "Mapa de Acertos"
-        )
-
-    with col_inserir:
-
-        if st.button(
-            "Inserir avaliação",
-            key="btn_inserir_avaliacao",
-            use_container_width=True,
-        ):
-            _dialogo_inserir_avaliacao()
-
-    # Aviso
     aviso = st.session_state.pop(
         "ma_aviso",
         None,
@@ -394,10 +652,16 @@ def render():
     if aviso:
         st.success(aviso)
 
-    # Filtros
-    with st.container(
-        key="mapa_filtros"
-    ):
+    disciplinas = _disciplinas_permitidas()
+
+    if not disciplinas:
+        st.info(
+            "Nenhuma disciplina foi atribuída "
+            "ao seu perfil."
+        )
+        return
+
+    with st.container(key="mapa_filtros"):
 
         (
             col_avaliacao,
@@ -409,111 +673,97 @@ def render():
             gap="small",
         )
 
-        with col_avaliacao:
-            filtro_selecao(
-                "Avaliação",
-                mock_data.AVALIACOES,
-                "ma_avaliacao",
-                todos=None,
+        with col_disciplina:
+
+            if (
+                st.session_state.get("ma_disciplina")
+                not in disciplinas
+            ):
+                st.session_state["ma_disciplina"] = (
+                    disciplinas[0]
+                )
+
+            disciplina = st.selectbox(
+                "Disciplina",
+                disciplinas,
+                key="ma_disciplina",
             )
 
-        with col_disciplina:
-            filtro_selecao(
-                "Disciplina",
-                mock_data.DISCIPLINAS,
-                "ma_disciplina",
-                todos=None,
+        turmas = _turmas_permitidas(disciplina)
+
+        if not turmas:
+            st.info(
+                "Nenhuma turma disponível "
+                "para esta disciplina."
             )
+            return
 
         with col_turma:
-            filtro_selecao(
+
+            if st.session_state.get("ma_turma") not in turmas:
+                st.session_state["ma_turma"] = turmas[0]
+
+            turma = st.selectbox(
                 "Turma",
-                mock_data.TURMAS_AVALIACAO,
-                "ma_turma",
-                todos=None,
+                turmas,
+                key="ma_turma",
+            )
+
+        perfil = st.session_state.get("perfil")
+        professor = st.session_state.get("professor_atual")
+
+        cadastradas = [
+            item["Nome"]
+            for item in st.session_state.get(
+                "ma_avaliacoes_criadas",
+                [],
+            )
+            if item["Disciplina"] == disciplina
+            and item["Turma"] == turma
+            and (
+                perfil == "administrador"
+                or item["Professor"] == professor
+            )
+        ]
+
+        with col_avaliacao:
+
+            opcoes_avaliacoes = [
+                "Nenhuma avaliação com resultados"
+            ] + cadastradas
+
+            if (
+                st.session_state.get("ma_avaliacao_nova")
+                not in opcoes_avaliacoes
+            ):
+                st.session_state["ma_avaliacao_nova"] = (
+                    opcoes_avaliacoes[0]
+                )
+
+            avaliacao = st.selectbox(
+                "Avaliação",
+                opcoes_avaliacoes,
+                key="ma_avaliacao_nova",
             )
 
         with col_tipo:
-            filtro_selecao(
+            st.selectbox(
                 "Tipo",
                 mock_data.TIPOS_QUESTAO,
-                "ma_tipo",
-                todos=None,
+                key="ma_tipo_novo",
+                disabled=True,
             )
 
-    # Dados
-    questoes = (
-        mock_data
-        .DESEMPENHO_QUESTOES
-        .copy()
-        .reset_index(drop=True)
+    if avaliacao != "Nenhuma avaliação com resultados":
+        st.caption(
+            f"Avaliação cadastrada: {avaliacao} • "
+            f"{disciplina} • {turma}. "
+            "Aguardando importação das respostas."
+        )
+
+    st.info(
+        "Ainda não há resultados de avaliações vinculados "
+        f"à turma {turma} e à disciplina {disciplina}. "
+        "Os gráficos e a tabela serão preenchidos após "
+        "a importação das respostas."
     )
-
-    questao_selecionada = (
-        st.session_state[
-            "ma_questao_selecionada"
-        ]
-    )
-
-    # Sem uma questão selecionada, gráfico e tabela usam toda a largura.
-
-    if questao_selecionada is None:
-
-        linha_escolhida = (
-            _conteudo_principal(
-                questoes
-            )
-        )
-
-        if linha_escolhida is not None:
-
-            st.session_state[
-                "ma_questao_selecionada"
-            ] = linha_escolhida
-
-            st.rerun()
-
-        return
-
-    # Ao selecionar uma questão, o detalhe aparece na coluna lateral.
-
-    col_principal, col_detalhe = (
-        st.columns(
-            [2.35, 1],
-            gap="large",
-            vertical_alignment="top",
-        )
-    )
-
-    with col_principal:
-
-        linha_escolhida = (
-            _conteudo_principal(
-                questoes
-            )
-        )
-
-        if (
-            linha_escolhida
-            is not None
-            and linha_escolhida
-            != questao_selecionada
-        ):
-
-            st.session_state[
-                "ma_questao_selecionada"
-            ] = linha_escolhida
-
-            st.rerun()
-
-    with col_detalhe:
-
-        _painel_questao(
-            questoes.iloc[
-                questao_selecionada
-            ],
-            mock_data
-            .RESPOSTAS_POR_QUESTAO[
-                questao_selecionada
-            ],
-        )
