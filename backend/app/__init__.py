@@ -1,0 +1,4 @@
+"""
+Vértice Backend Application Package.
+"""
+
