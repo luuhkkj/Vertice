@@ -3,13 +3,14 @@ Ponto de entrada principal da aplicação FastAPI - Backend Vértice.
 """
 
 from datetime import datetime, timezone
-from typing import Any
 import logging
+from typing import Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.router import api_router
@@ -51,6 +52,7 @@ async def http_exception_handler(
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail},
+        headers=getattr(exc, "headers", None),
     )
 
 
@@ -62,6 +64,32 @@ async def validation_exception_handler(
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={"detail": exc.errors()},
+    )
+
+
+@app.exception_handler(OperationalError)
+async def database_operational_error_handler(
+    request: Request, exc: OperationalError
+) -> JSONResponse:
+    """Tratamento específico para falhas de conexão com o banco de dados PostgreSQL."""
+    logger.error("Erro operacional de conexão com o banco de dados: %s", exc)
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "detail": "Serviço de banco de dados temporariamente indisponível. Verifique a conexão com o PostgreSQL."
+        },
+    )
+
+
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_error_handler(
+    request: Request, exc: SQLAlchemyError
+) -> JSONResponse:
+    """Tratamento para erros gerais de persistência do SQLAlchemy."""
+    logger.error("Erro de banco de dados: %s", exc)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Erro ao processar operação no banco de dados."},
     )
 
 
@@ -110,4 +138,3 @@ def health_check() -> dict[str, Any]:
 # Inclusão do roteador versionado v1
 # ==============================================================================
 app.include_router(api_router, prefix=settings.API_V1_STR)
-

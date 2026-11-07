@@ -6,6 +6,12 @@ Concentra e organiza os endpoints da versão 1 da aplicação Vértice.
 from fastapi import APIRouter
 
 from app.core.config import settings
+from app.modules.atribuicoes.router import router as atribuicoes_router
+from app.modules.auth.router import router as auth_router
+from app.modules.disciplinas.router import router as disciplinas_router
+from app.modules.escolas.router import router as escolas_router
+from app.modules.turmas.router import router as turmas_router
+from app.modules.usuarios.router import router as usuarios_router
 
 api_router = APIRouter()
 
@@ -24,14 +30,15 @@ def api_v1_health() -> dict[str, str]:
 
 
 # ==============================================================================
-# Inclusão futura de roteadores dos módulos de negócio:
-# Exemplo:
-# from app.modules.auth.router import router as auth_router
-# from app.modules.usuarios.router import router as usuarios_router
-# from app.modules.estudantes.router import router as estudantes_router
-#
-# api_router.include_router(auth_router, prefix="/auth", tags=["Autenticação"])
-# api_router.include_router(usuarios_router, prefix="/usuarios", tags=["Usuários"])
-# api_router.include_router(estudantes_router, prefix="/estudantes", tags=["Estudantes"])
+# Inclusão dos roteadores dos módulos de negócio (Fase 2)
 # ==============================================================================
-
+api_router.include_router(auth_router, prefix="/auth", tags=["Autenticação"])
+api_router.include_router(usuarios_router, prefix="/usuarios", tags=["Usuários"])
+api_router.include_router(escolas_router, prefix="/escolas", tags=["Escolas"])
+api_router.include_router(turmas_router, prefix="/turmas", tags=["Turmas"])
+api_router.include_router(
+    disciplinas_router, prefix="/disciplinas", tags=["Disciplinas"]
+)
+api_router.include_router(
+    atribuicoes_router, prefix="/atribuicoes", tags=["Atribuições"]
+)

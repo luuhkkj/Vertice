@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     # Aplicação
     PROJECT_NAME: str = "Vértice Backend API"
-    VERSION: str = "0.1.0"
+    VERSION: str = "0.2.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
     API_V1_STR: str = "/api/v1"
@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "postgres"
-    POSTGRES_DB: str = "vertice_db"
+    POSTGRES_DB: str = "postgres"
     DATABASE_URL: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
@@ -78,4 +78,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

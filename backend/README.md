@@ -1,17 +1,17 @@
 # Vértice - Backend API
 
-Fundação da API RESTful do sistema Vértice para gestão e análise de dados educacionais, acompanhamento pedagógico, indicadores de desempenho, modelos preditivos e assistente de IA.
+Backend RESTful do sistema **Vértice** para gestão e análise de dados educacionais, acompanhamento pedagógico, indicadores de desempenho, modelos preditivos e assistente de IA.
 
 ---
 
 ## 🛠️ Tecnologias Utilizadas
 
-- **Linguagem:** Python 3.11+ (Recomendado: Python 3.12)
+- **Linguagem:** Python 3.11+
 - **Framework Web:** [FastAPI](https://fastapi.tiangolo.com/) & [Uvicorn](https://www.uvicorn.org/)
 - **Validação e Tipagem:** [Pydantic v2](https://docs.pydantic.dev/) e `pydantic-settings`
 - **Banco de Dados & ORM:** PostgreSQL, [SQLAlchemy 2](https://docs.sqlalchemy.org/) e `psycopg 3`
 - **Migrações:** [Alembic](https://alembic.sqlalchemy.org/)
-- **Segurança & Tokens:** [PyJWT](https://pyjwt.readthedocs.io/) e [pwdlib](https://frankie567.github.io/pwdlib/) (com suporte nativo a Argon2)
+- **Segurança & Tokens:** [PyJWT](https://pyjwt.readthedocs.io/) e [pwdlib](https://frankie567.github.io/pwdlib/) (Argon2)
 - **Testes Automatizados:** [pytest](https://docs.pytest.org/) e [HTTPX](https://www.python-httpx.org/)
 
 ---
@@ -22,15 +22,19 @@ Fundação da API RESTful do sistema Vértice para gestão e análise de dados e
 backend/
 ├── app/
 │   ├── __init__.py
-│   ├── main.py                     # Inicialização do FastAPI, CORS, middlewares e rotas raiz
+│   ├── main.py                     # Inicialização do FastAPI, CORS, handlers de erro e rotas raiz
 │   ├── core/
 │   │   ├── __init__.py
 │   │   ├── config.py               # Configurações centralizadas via pydantic-settings
-│   │   └── security.py             # Funções de hashing de senhas e geração/validação de JWT
+│   │   ├── security.py             # Hashing de senhas (Argon2) e assinatura/validação de JWT
+│   │   └── dependencies.py         # Dependências de autenticação, RBAC e verificação de vínculo
 │   ├── database/
 │   │   ├── __init__.py
 │   │   ├── base.py                 # DeclarativeBase do SQLAlchemy 2
-│   │   └── connection.py           # Engine, SessionLocal e dependência get_db
+│   │   └── connection.py           # Engine, SessionLocal e dependência get_db com rollback seguro
+│   ├── scripts/
+│   │   ├── __init__.py
+│   │   └── create_admin.py         # Script CLI seguro para criação do primeiro administrador
 │   ├── api/
 │   │   ├── __init__.py
 │   │   └── v1/
@@ -38,164 +42,206 @@ backend/
 │   │       └── router.py           # Roteador central /api/v1
 │   ├── modules/                    # Módulos de domínio de negócio
 │   │   ├── __init__.py
-│   │   ├── auth/                   # Autenticação e tokens
-│   │   ├── usuarios/               # Gestão de usuários e permissões
-│   │   ├── estudantes/             # Cadastro e dados de estudantes
-│   │   ├── turmas/                 # Turmas e enturmações
-│   │   ├── importacao/             # Upload e processamento de planilhas
-│   │   ├── avaliacoes/             # Provas, gabaritos e notas
-│   │   ├── participacao/           # Frequência e taxas de engajamento
-│   │   ├── indicadores/            # Agregações estatísticas e KPIs
-│   │   └── acompanhamento/         # Planos de intervenção pedagógica
+│   │   ├── auth/                   # Login JWT, /me, /logout e /refresh
+│   │   ├── usuarios/               # Modelo Usuario, CRUD e controle de ativação/papel
+│   │   ├── escolas/                # Modelo Escola e gestão de unidades escolares
+│   │   ├── turmas/                 # Modelo Turma e filtragem por escopo do professor
+│   │   ├── disciplinas/            # Modelo Disciplina e catálogo curricular
+│   │   ├── atribuicoes/            # Modelo ProfessorTurma e vínculo professor-turma-disciplina
+│   │   ├── estudantes/             # Reservado para próximas fases
+│   │   ├── importacao/             # Reservado para próximas fases
+│   │   ├── avaliacoes/             # Reservado para próximas fases
+│   │   ├── participacao/           # Reservado para próximas fases
+│   │   ├── indicadores/            # Reservado para próximas fases
+│   │   └── acompanhamento/         # Reservado para próximas fases
 │   └── integrations/               # Serviços externos e inteligência
 │       ├── __init__.py
 │       ├── prediction/             # Modelos de Machine Learning preditivos
 │       └── assistant/              # Integração com assistente inteligente (LLMs)
 ├── tests/
 │   ├── __init__.py
-│   ├── conftest.py                 # Fixtures pytest e TestClient
-│   └── test_health.py              # Testes de inicialização, health check e segurança
+│   ├── conftest.py                 # Fixtures pytest com banco isolado em memória
+│   ├── test_health.py              # Testes de inicialização, health check e utilitários de segurança
+│   └── test_auth_and_models.py     # Testes de persistência, autenticação, RBAC e vínculos
 ├── alembic/
-│   ├── versions/                   # Histórico de revisões de migrações
-│   ├── env.py                      # Script de execução do Alembic
+│   ├── versions/                   # Migrações versionadas do banco de dados
+│   ├── env.py                      # Script de execução do Alembic conectado ao Base.metadata
 │   ├── script.py.mako              # Template de migração
 │   └── README
 ├── .env.example                    # Modelo de variáveis de ambiente
-├── .env                            # Arquivo de variáveis local
 ├── .gitignore                      # Regras de exclusão do Git
 ├── alembic.ini                     # Configuração base do Alembic
-├── requirements.txt                # Dependências fixadas do projeto
+├── requirements.txt                # Dependências do projeto
 └── README.md                       # Documentação do backend
 ```
 
 ---
 
-## 🚀 Como Executar o Projeto Localmente
+## ⚙️ Configuração do Ambiente e PostgreSQL
 
-### 1. Pré-requisitos
+### 1. Criar e Ativar o Ambiente Virtual
 
-- Python 3.11 ou superior instalado na máquina.
-- PostgreSQL (opcional para testes básicos de inicialização).
-
-### 2. Criar e Ativar o Ambiente Virtual
-
-Acesse a pasta do backend:
-
-```bash
+```powershell
 cd backend
-```
-
-Crie o ambiente virtual:
-
-- **Linux / macOS:**
-  ```bash
-  python3 -m venv .venv
-  source .venv/bin/activate
-  ```
-
-- **Windows (PowerShell):**
-  ```powershell
-  python -m venv .venv
-  .venv\Scripts\Activate.ps1
-  ```
-
-- **Windows (Prompt de Comando):**
-  ```cmd
-  python -m venv .venv
-  .venv\Scripts\activate.bat
-  ```
-
-### 3. Instalar as Dependências
-
-Com o ambiente virtual ativo:
-
-```bash
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-### 4. Configurar as Variáveis de Ambiente
+### 2. Configurar as Variáveis de Ambiente (`.env`)
 
 Copie o arquivo `.env.example` para `.env`:
 
-- **Linux / macOS:**
-  ```bash
-  cp .env.example .env
-  ```
+```powershell
+Copy-Item .env.example .env
+```
 
-- **Windows:**
-  ```powershell
-  Copy-Item .env.example .env
-  ```
+Edite o arquivo `backend/.env` com as credenciais do seu servidor PostgreSQL local (`localhost:5432`):
 
-Ajuste as configurações no `.env` conforme seu ambiente de banco de dados e chave secreta (`SECRET_KEY`).
+```env
+PROJECT_NAME="Vértice Backend API"
+VERSION="0.2.0"
+ENVIRONMENT="development"
+DEBUG=True
+API_V1_STR="/api/v1"
 
-### 5. Iniciar o Servidor de Desenvolvimento
+BACKEND_CORS_ORIGINS=["http://localhost:8501","http://127.0.0.1:8501","http://localhost:3000"]
 
-Execute o servidor Uvicorn a partir do diretório `backend`:
+POSTGRES_SERVER=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=SUA_SENHA_DO_POSTGRES
+POSTGRES_DB=postgres
 
-```bash
+SECRET_KEY=gere-uma-chave-secreta-aleatoria-com-pelo-menos-32-caracteres
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+```
+
+---
+
+## 🗄️ Execução das Migrações (Alembic)
+
+Nenhuma tabela deve ser criada manualmente fora do fluxo de migrações. Com o PostgreSQL ativo e configurado no `.env`, execute a partir da pasta `backend/`:
+
+```powershell
+# Aplicar todas as migrações pendentes no banco de dados
+alembic upgrade head
+
+# Verificar revisão atual aplicada
+alembic current
+
+# Gerar nova migração após futuras alterações nos modelos ORM
+alembic revision --autogenerate -m "descricao_da_alteracao"
+```
+
+---
+
+## 👤 Criação do Administrador Inicial
+
+Por segurança, **não existe endpoint público de auto-cadastro de administradores** e **não há credenciais padrão fixas no código**.
+
+Para criar o primeiro usuário com papel `administrador`, execute o script CLI seguro a partir da pasta `backend/`:
+
+### Opção A — Modo Interativo (Entrada Protegida)
+
+```powershell
+python -m app.scripts.create_admin
+```
+
+O script solicitará nome, e-mail e senha (com confirmação oculta no terminal via `getpass`).
+
+### Opção B — Via Variáveis de Ambiente
+
+```powershell
+$env:ADMIN_NOME="Administrador Vértice"
+$env:ADMIN_EMAIL="admin@vertice.edu.br"
+$env:ADMIN_SENHA="SuaSenhaForteAqui"
+python -m app.scripts.create_admin
+```
+
+---
+
+## 🔐 Autenticação e Uso do Token JWT
+
+### Endpoints de Autenticação
+
+| Método | Rota | Descrição | Autenticação |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/auth/login` | Autentica com `email` e `senha` e retorna `access_token` | Pública |
+| `GET` | `/api/v1/auth/me` | Retorna os dados do usuário autenticado | Bearer JWT |
+| `POST` | `/api/v1/auth/logout` | Orienta o descarte do token stateless pelo cliente | Bearer JWT |
+| `POST` | `/api/v1/auth/refresh` | Reservado para futura estratégia de refresh token (HTTP 501) | — |
+
+### 1. Como Obter o Token (`POST /api/v1/auth/login`)
+
+Envie uma requisição `POST` para `/api/v1/auth/login`:
+
+```json
+{
+  "email": "admin@vertice.edu.br",
+  "senha": "SuaSenhaForteAqui"
+}
+```
+
+Resposta (`200 OK`):
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_in": 3600,
+  "usuario": {
+    "id": "b17a541a-88eb-49f1-84c6-28d984c6514b",
+    "nome": "Administrador Vértice",
+    "email": "admin@vertice.edu.br",
+    "papel": "administrador",
+    "ativo": true
+  }
+}
+```
+
+### 2. Como Utilizar o Token nas Requisições
+
+Inclua o cabeçalho HTTP `Authorization` em todas as chamadas protegidas:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+No **Swagger UI** (`http://localhost:8000/docs`), clique no botão **Authorize** no topo direito, cole o valor de `access_token` e confirme.
+
+---
+
+## 🛡️ Papéis e Regras de Autorização (RBAC)
+
+A validação de permissões ocorre integralmente no backend através das dependências em `app/core/dependencies.py`:
+
+| Papel | Permissões no Sistema |
+| :--- | :--- |
+| **`administrador`** | Acesso administrativo total: cria e atualiza usuários (`POST /api/v1/usuarios`, `PATCH /api/v1/usuarios/{id}`), além de gerenciar escolas, turmas, disciplinas e atribuições. |
+| **`gestor`** | Acesso de gestão pedagógica: consulta usuários, cadastra e atualiza escolas, turmas, disciplinas e atribuições de professores, e visualiza todas as turmas. |
+| **`professor`** | Acesso restrito ao seu escopo pedagógico: visualiza apenas as turmas e atribuições às quais está vinculado na tabela `professor_turmas`. Tentativas de acessar turmas sem vínculo retornam `HTTP 403 Forbidden`. |
+
+---
+
+## 🚀 Iniciando o Servidor e Executando os Testes
+
+### Iniciar o Servidor
+
+```powershell
+cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
-O servidor iniciará em: [http://localhost:8000](http://localhost:8000)
-
----
-
-## 📖 Documentação Interativa da API (Swagger & Redoc)
-
-Com o servidor em execução, acesse pelo navegador:
-
 - **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **ReDoc:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
-- **Esquema OpenAPI JSON:** [http://localhost:8000/api/v1/openapi.json](http://localhost:8000/api/v1/openapi.json)
 
----
+### Executar a Suíte de Testes Automatizados
 
-## 🧪 Executando os Testes Automatizados
+Os testes utilizam banco SQLite em memória isolado por função de teste, não exigindo PostgreSQL ativo para execução da suíte unitária:
 
-Os testes automatizados verificam o funcionamento da API sem depender de um banco PostgreSQL em execução:
-
-A partir da pasta `backend`:
-
-```bash
+```powershell
+cd backend
 pytest -v
 ```
-
-Ou a partir da raiz do repositório:
-
-```bash
-pytest backend/tests -v
-```
-
----
-
-## 🗄️ Migrações de Banco de Dados com Alembic
-
-Para gerar uma nova migração com base nos modelos ORM:
-
-```bash
-alembic revision --autogenerate -m "descricao_da_migracao"
-```
-
-Para aplicar as migrações no banco configurado:
-
-```bash
-alembic upgrade head
-```
-
----
-
-## 🔜 Próximas Etapas de Desenvolvimento
-
-1. **Mapeamento de Entidades ORM e Migração Inicial:**
-   - Modelos de Usuários (`Usuario`), Estudantes (`Estudante`), Turmas (`Turma`), Avaliações (`Avaliacao`, `Questao`, `Nota`).
-2. **Autenticação e Autorização:**
-   - Endpoint de login `/api/v1/auth/token` gerando JWT.
-   - Dependência `get_current_user` com verificação de papéis (RBAC).
-3. **Módulo de Importação:**
-   - Ingestão de planilhas de notas e presenças (`.xlsx`, `.csv`).
-4. **Módulo de Indicadores & Estatísticas:**
-   - Agregações para abastecer os gráficos do frontend Streamlit.
-5. **Integrações Inteligentes:**
-   - Modelos preditivos de risco e assistente pedagógico com IA.
-
