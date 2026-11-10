@@ -7,7 +7,7 @@ exclusivamente pelo fluxo de importação validada em duas etapas.
 from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import require_importacao_datasets
@@ -28,10 +28,12 @@ router = APIRouter()
     summary="Listar estudantes no escopo autorizado",
     description=(
         "Retorna estudantes anonimizados filtrados pelo escopo do usuário autenticado "
-        "(escola do gestor ou turmas/disciplinas vinculadas ao professor)."
+        "(escola do gestor ou turmas/disciplinas vinculadas ao professor). "
+        "Inclui o cabeçalho HTTP `X-Total-Count` com o total de estudantes distintos no escopo."
     ),
 )
 def listar_estudantes(
+    response: Response,
     turma_id: Optional[uuid.UUID] = Query(default=None),
     disciplina_id: Optional[uuid.UUID] = Query(default=None),
     ano_letivo: Optional[int] = Query(default=None),
@@ -51,6 +53,15 @@ def listar_estudantes(
         skip=skip,
         limit=limit,
     )
+    total = EstudanteService.contar_estudantes(
+        db=db,
+        usuario_solicitante=current_user,
+        turma_id=turma_id,
+        disciplina_id=disciplina_id,
+        ano_letivo=ano_letivo,
+        periodo_letivo=periodo_letivo,
+    )
+    response.headers["X-Total-Count"] = str(total)
     return [EstudanteResponse.model_validate(e) for e in estudantes]
 
 

@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.security import get_password_hash
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.disciplinas.models import Disciplina
 from app.modules.escolas.models import Escola
@@ -26,7 +27,7 @@ from app.modules.estudantes.models import (
 )
 from app.modules.importacao.models import LoteImportacao, StatusLoteImportacao
 from app.modules.turmas.models import Turma
-from app.modules.usuarios.models import PapelUsuario
+from app.modules.usuarios.models import PapelUsuario, Usuario
 from app.modules.usuarios.schemas import UsuarioCreate
 from app.modules.usuarios.service import UsuarioService
 from app.scripts.create_admin import criar_administrador_inicial
@@ -962,4 +963,668 @@ def test_isolamento_consultas_estudantes_e_lotes_entre_professores_e_gestores(
         ).status_code
         == 409
     )
+
+
+# ==============================================================================
+# 13.6. CORREÇÕES PONTUAIS DA FASE 3 (ESCOPO ESCOLAR, REVALIDAÇÃO, DISCIPLINA E PII)
+# ==============================================================================
+
+
+def test_professor_multi_escola_e_isolamento_de_escopo_escolar(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    Verifica:
+    1. Professor com `usuario.escola_id = None` e vínculos `ProfessorTurma` em duas escolas
+       distintas (Escola A - Turma 1A/MAT e Escola B - Turma 1A-Sul/MAT) pode importar um lote
+       válido para a Escola A e outro lote válido para a Escola B (sem usar arbitrariamente
+       apenas a primeira escola em ordem de UUID).
+    2. Se o professor enviar um único lote CSV misturando turmas da Escola A e da Escola B,
+       o sistema registra erro de `autorizacao` (conflito de escopo escolar no lote) e
+       bloqueia a confirmação (`pode_confirmar=False`).
+    3. Se o professor multi-escola enviar um CSV onde nenhuma turma válida permite determinar
+       a escola alvo do lote, a requisição falha com HTTP 400.
+    4. Se um professor possuir `usuario.escola_id` fixado na Escola A, qualquer vínculo
+       `ProfessorTurma` apontando para turma da Escola B é ignorado/bloqueado.
+    """
+    cenario = _criar_cenario_base(db_session)
+
+    # Professor multi-escola (escola_id = None) com vínculo na Escola A (Turma 1A - MAT)
+    # e na Escola B (Turma 1A-Sul - MAT)
+    prof_multi = Usuario(
+        nome="Professor Multi-Escola",
+        email="prof.multi@vertice.edu.br",
+        senha_hash=get_password_hash("SenhaForte@123"),
+        papel=PapelUsuario.PROFESSOR,
+        escola_id=None,
+        ativo=True,
+    )
+    db_session.add(prof_multi)
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            ProfessorTurma(
+                professor_id=prof_multi.id,
+                turma_id=cenario["turma_1a"].id,
+                disciplina_id=cenario["disc_mat"].id,
+            ),
+            ProfessorTurma(
+                professor_id=prof_multi.id,
+                turma_id=cenario["turma_escola_b"].id,
+                disciplina_id=cenario["disc_mat"].id,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    headers_multi = _login_headers(
+        client, "prof.multi@vertice.edu.br", "SenhaForte@123"
+    )
+
+    # 1A. Importação válida apenas para Escola A (Turma 1A)
+    csv_escola_a = (
+        "codigo_anonimo,turma,disciplina,ano_letivo,periodo_letivo,frequencia,nota\n"
+        "EST-MA-01,Turma 1A,MAT,2026,1º Bimestre,92.0,8.5\n"
+    ).encode("utf-8")
+    resp_a = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("lote_escola_a.csv", csv_escola_a, "text/csv")},
+        headers=headers_multi,
+    )
+    assert resp_a.status_code == 201
+    dados_a = resp_a.json()
+    assert dados_a["pode_confirmar"] is True
+    assert dados_a["escola_id"] == str(cenario["escola_a"].id)
+
+    # 1B. Importação válida apenas para Escola B (Turma 1A-Sul) — prova que não ficou preso à 1ª escola
+    csv_escola_b = (
+        "codigo_anonimo,turma,disciplina,ano_letivo,periodo_letivo,frequencia,nota\n"
+        "EST-MB-01,Turma 1A-Sul,MAT,2026,1º Bimestre,90.0,7.8\n"
+    ).encode("utf-8")
+    resp_b = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("lote_escola_b.csv", csv_escola_b, "text/csv")},
+        headers=headers_multi,
+    )
+    assert resp_b.status_code == 201
+    dados_b = resp_b.json()
+    assert dados_b["pode_confirmar"] is True
+    assert dados_b["escola_id"] == str(cenario["escola_b"].id)
+    resp_conf_b = client.post(
+        f"/api/v1/importacoes/{dados_b['id']}/confirmar",
+        headers=headers_multi,
+    )
+    assert resp_conf_b.status_code == 200
+
+    # 2. Lote misturando turmas da Escola A (Turma 1A) e Escola B (Turma 1A-Sul) no mesmo arquivo
+    csv_misto = (
+        "codigo_anonimo,turma,disciplina,ano_letivo,periodo_letivo,frequencia,nota\n"
+        "EST-MA-02,Turma 1A,MAT,2026,1º Bimestre,90.0,8.0\n"
+        "EST-MB-02,Turma 1A-Sul,MAT,2026,1º Bimestre,85.0,7.5\n"
+    ).encode("utf-8")
+    resp_misto = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("lote_misto.csv", csv_misto, "text/csv")},
+        headers=headers_multi,
+    )
+    assert resp_misto.status_code == 201
+    dados_misto = resp_misto.json()
+    assert dados_misto["status"] == "com_erros"
+    assert dados_misto["pode_confirmar"] is False
+    assert len(dados_misto["relatorio_validacao"]["problemas_autorizacao"]) >= 1
+    assert (
+        "conflito de escopo escolar"
+        in dados_misto["relatorio_validacao"]["problemas_autorizacao"][0]["mensagem"].lower()
+    )
+
+    # 3. Professor multi-escola envia CSV apenas com turma inexistente -> impossível determinar escola única (400)
+    csv_sem_escola = (
+        "codigo_anonimo,turma,disciplina,ano_letivo,periodo_letivo,frequencia,nota\n"
+        "EST-X-01,Turma Fantasma,MAT,2026,1º Bimestre,90.0,8.0\n"
+    ).encode("utf-8")
+    resp_sem_escola = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("sem_escola.csv", csv_sem_escola, "text/csv")},
+        headers=headers_multi,
+    )
+    assert resp_sem_escola.status_code == 400
+
+    # 4. Professor 1 (fixado na Escola A via usuario.escola_id) recebe um vínculo inconsistente
+    # apontando para Turma 1A-Sul (Escola B) -> o sistema deve bloquear a importação da Turma 1A-Sul
+    db_session.add(
+        ProfessorTurma(
+            professor_id=cenario["prof1"].id,
+            turma_id=cenario["turma_escola_b"].id,
+            disciplina_id=cenario["disc_mat"].id,
+        )
+    )
+    db_session.commit()
+
+    headers_prof1 = _login_headers(
+        client, "prof1@vertice.edu.br", "SenhaForte@123"
+    )
+    resp_prof1_escola_b = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("prof1_escola_b.csv", csv_escola_b, "text/csv")},
+        headers=headers_prof1,
+    )
+    assert resp_prof1_escola_b.status_code == 201
+    dados_p1_b = resp_prof1_escola_b.json()
+    assert dados_p1_b["pode_confirmar"] is False
+    assert dados_p1_b["status"] == "com_erros"
+
+
+def test_revalidacao_completa_na_confirmacao_turma_inativa_escola_alterada_disciplina_inativa(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    Verifica que na Etapa 2 (`POST /api/v1/importacoes/{lote_id}/confirmar`),
+    o sistema revalida integralmente:
+    1. Se a Turma foi desativada (`turma.ativo = False`) após a prévia -> HTTP 403 e zero gravações.
+    2. Se a Turma teve sua escola alterada (`turma.escola_id != lote.escola_id`) após a prévia -> HTTP 403.
+    3. Se a Disciplina foi desativada (`disc.ativo = False`) após a prévia -> HTTP 403.
+    4. Se a Escola foi desativada (`escola.ativo = False`) após a prévia -> HTTP 403.
+    """
+    cenario = _criar_cenario_base(db_session)
+    headers_prof1 = _login_headers(
+        client, "prof1@vertice.edu.br", "SenhaForte@123"
+    )
+
+    csv_valido = (
+        "codigo_anonimo,turma,disciplina,ano_letivo,periodo_letivo,frequencia,nota\n"
+        "EST-REV-01,Turma 1A,MAT,2026,1º Bimestre,91.0,8.0\n"
+    ).encode("utf-8")
+
+    # Cria 4 lotes previamente validados enquanto tudo estava ativo e consistente
+    lote_turma_inativa = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("rev1.csv", csv_valido, "text/csv")},
+        headers=headers_prof1,
+    ).json()["id"]
+
+    lote_escola_trocada = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("rev2.csv", csv_valido, "text/csv")},
+        headers=headers_prof1,
+    ).json()["id"]
+
+    lote_disc_inativa = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("rev3.csv", csv_valido, "text/csv")},
+        headers=headers_prof1,
+    ).json()["id"]
+
+    lote_escola_inativa = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("rev4.csv", csv_valido, "text/csv")},
+        headers=headers_prof1,
+    ).json()["id"]
+
+    # Caso 1: Desativa a Turma 1A antes da confirmação
+    turma_1a = db_session.get(Turma, cenario["turma_1a"].id)
+    assert turma_1a is not None
+    turma_1a.ativo = False
+    db_session.commit()
+
+    resp1 = client.post(
+        f"/api/v1/importacoes/{lote_turma_inativa}/confirmar",
+        headers=headers_prof1,
+    )
+    assert resp1.status_code == 403
+    assert "desativada" in resp1.json()["detail"].lower()
+
+    # Reativa Turma 1A e testa Caso 2: Altera a escola da Turma 1A para Escola B antes da confirmação
+    turma_1a.ativo = True
+    turma_1a.escola_id = cenario["escola_b"].id
+    db_session.commit()
+
+    resp2 = client.post(
+        f"/api/v1/importacoes/{lote_escola_trocada}/confirmar",
+        headers=headers_prof1,
+    )
+    assert resp2.status_code == 403
+    assert "escola" in resp2.json()["detail"].lower()
+
+    # Restaura escola da Turma 1A e testa Caso 3: Desativa a Disciplina MAT antes da confirmação
+    turma_1a.escola_id = cenario["escola_a"].id
+    disc_mat = db_session.get(Disciplina, cenario["disc_mat"].id)
+    assert disc_mat is not None
+    disc_mat.ativo = False
+    db_session.commit()
+
+    resp3 = client.post(
+        f"/api/v1/importacoes/{lote_disc_inativa}/confirmar",
+        headers=headers_prof1,
+    )
+    assert resp3.status_code == 403
+    assert "disciplina" in resp3.json()["detail"].lower()
+
+    # Restaura Disciplina MAT e testa Caso 4: Desativa a Escola A antes da confirmação
+    disc_mat.ativo = True
+    escola_a = db_session.get(Escola, cenario["escola_a"].id)
+    assert escola_a is not None
+    escola_a.ativo = False
+    db_session.commit()
+
+    resp4 = client.post(
+        f"/api/v1/importacoes/{lote_escola_inativa}/confirmar",
+        headers=headers_prof1,
+    )
+    assert resp4.status_code == 403
+    assert "escola" in resp4.json()["detail"].lower()
+
+    # Garante que EST-REV-01 nunca foi persistido em nenhuma das 4 tentativas bloqueadas
+    est = db_session.execute(
+        select(Estudante).where(Estudante.codigo_anonimo == "EST-REV-01")
+    ).scalar_one_or_none()
+    assert est is None
+
+
+def test_isolamento_estrito_por_disciplina_na_mesma_turma_paginacao_contagem_e_vinculo_geral(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    Verifica na mesma turma (`Turma 1A`):
+    1. Professor 1 tem vínculo apenas com `MAT` na `Turma 1A`.
+    2. Professora 2 recebe vínculo apenas com `QUI` na mesma `Turma 1A`.
+    3. Professor 3 recebe vínculo geral (`disciplina_id = None`) na `Turma 1A`.
+    4. Professor 1 importa `EST-MAT-1` e `EST-MAT-2` (apenas com notas em MAT).
+    5. Professora 2 importa `EST-QUI-1` (apenas com nota em QUI na mesma Turma 1A)
+       e também adiciona nota de `QUI` para `EST-MAT-1`.
+    6. Quando Professor 1 chama `GET /api/v1/estudantes` (MESMO SEM passar `disciplina_id` na query):
+       - Vê apenas `EST-MAT-1` e `EST-MAT-2` (`X-Total-Count == "2"`).
+       - NUNCA vê `EST-QUI-1` (que só tem nota em QUI).
+       - Ao consultar o detalhe de `EST-MAT-1`, vê apenas a nota de `MAT` (a nota de `QUI` é filtrada).
+       - Ao tentar consultar `GET /api/v1/estudantes/{id_est_qui_1}`, recebe `404 Not Found`.
+       - A paginação (`skip=0&limit=1` e `skip=1&limit=1`) retorna exatamente 1 estudante por página
+         e mantém `X-Total-Count == "2"`.
+    7. Quando Professora 2 chama `GET /api/v1/estudantes` (sem `disciplina_id`):
+       - Vê apenas `EST-MAT-1` e `EST-QUI-1` (`X-Total-Count == "2"`), pois ambos têm nota em QUI;
+       - NUNCA vê `EST-MAT-2` (que só tem nota em MAT).
+    8. Quando Professor 3 (`disciplina_id = None`, vínculo geral na Turma 1A) chama `GET /api/v1/estudantes`:
+       - Vê todos os 3 estudantes da Turma 1A (`EST-MAT-1`, `EST-MAT-2`, `EST-QUI-1`, `X-Total-Count == "3"`).
+    """
+    cenario = _criar_cenario_base(db_session)
+
+    # Vincula Professora 2 também à Turma 1A, porém exclusivamente na disciplina QUI
+    db_session.add(
+        ProfessorTurma(
+            professor_id=cenario["prof2"].id,
+            turma_id=cenario["turma_1a"].id,
+            disciplina_id=cenario["disc_qui"].id,
+        )
+    )
+
+    # Cria Professor 3 com vínculo geral na Turma 1A (disciplina_id = None)
+    prof_geral = Usuario(
+        nome="Professor Regente Geral 1A",
+        email="prof.geral@vertice.edu.br",
+        senha_hash=get_password_hash("SenhaForte@123"),
+        papel=PapelUsuario.PROFESSOR,
+        escola_id=cenario["escola_a"].id,
+        ativo=True,
+    )
+    db_session.add(prof_geral)
+    db_session.flush()
+    db_session.add(
+        ProfessorTurma(
+            professor_id=prof_geral.id,
+            turma_id=cenario["turma_1a"].id,
+            disciplina_id=None,
+        )
+    )
+    db_session.commit()
+
+    headers_prof1 = _login_headers(
+        client, "prof1@vertice.edu.br", "SenhaForte@123"
+    )
+    headers_prof2 = _login_headers(
+        client, "prof2@vertice.edu.br", "SenhaForte@123"
+    )
+    headers_prof_geral = _login_headers(
+        client, "prof.geral@vertice.edu.br", "SenhaForte@123"
+    )
+
+    # Professor 1 importa EST-MAT-1 e EST-MAT-2 em MAT na Turma 1A
+    csv_mat = (
+        "codigo_anonimo,turma,disciplina,ano_letivo,periodo_letivo,frequencia,nota\n"
+        "EST-MAT-1,Turma 1A,MAT,2026,1º Bimestre,95.0,9.0\n"
+        "EST-MAT-2,Turma 1A,MAT,2026,1º Bimestre,88.0,7.5\n"
+    ).encode("utf-8")
+    lote_mat = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("mat_1a.csv", csv_mat, "text/csv")},
+        headers=headers_prof1,
+    ).json()
+    client.post(
+        f"/api/v1/importacoes/{lote_mat['id']}/confirmar", headers=headers_prof1
+    )
+
+    # Professora 2 importa EST-QUI-1 (exclusivo de QUI) e EST-MAT-1 (nota de QUI) na mesma Turma 1A
+    csv_qui = (
+        "codigo_anonimo,turma,disciplina,ano_letivo,periodo_letivo,frequencia,nota\n"
+        "EST-QUI-1,Turma 1A,QUI,2026,1º Bimestre,90.0,8.0\n"
+        "EST-MAT-1,Turma 1A,QUI,2026,1º Bimestre,95.0,6.5\n"
+    ).encode("utf-8")
+    lote_qui = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("qui_1a.csv", csv_qui, "text/csv")},
+        headers=headers_prof2,
+    ).json()
+    client.post(
+        f"/api/v1/importacoes/{lote_qui['id']}/confirmar", headers=headers_prof2
+    )
+
+    # 1. Consulta do Professor 1 SEM passar disciplina_id -> deve filtrar automaticamente por MAT
+    resp_p1 = client.get("/api/v1/estudantes", headers=headers_prof1)
+    assert resp_p1.status_code == 200
+    assert resp_p1.headers.get("X-Total-Count") == "2"
+    codigos_p1 = [e["codigo_anonimo"] for e in resp_p1.json()]
+    assert codigos_p1 == ["EST-MAT-1", "EST-MAT-2"]
+    assert "EST-QUI-1" not in codigos_p1
+
+    # 2. Paginação consistente para Professor 1
+    resp_p1_pag1 = client.get(
+        "/api/v1/estudantes?skip=0&limit=1", headers=headers_prof1
+    )
+    assert resp_p1_pag1.status_code == 200
+    assert resp_p1_pag1.headers.get("X-Total-Count") == "2"
+    assert len(resp_p1_pag1.json()) == 1
+    assert resp_p1_pag1.json()[0]["codigo_anonimo"] == "EST-MAT-1"
+
+    resp_p1_pag2 = client.get(
+        "/api/v1/estudantes?skip=1&limit=1", headers=headers_prof1
+    )
+    assert resp_p1_pag2.status_code == 200
+    assert resp_p1_pag2.headers.get("X-Total-Count") == "2"
+    assert len(resp_p1_pag2.json()) == 1
+    assert resp_p1_pag2.json()[0]["codigo_anonimo"] == "EST-MAT-2"
+
+    # 3. Detalhe de EST-MAT-1 visto pelo Professor 1 -> deve exibir apenas a nota de MAT, ocultando QUI
+    id_est_mat_1 = resp_p1_pag1.json()[0]["id"]
+    detalhe_p1 = client.get(
+        f"/api/v1/estudantes/{id_est_mat_1}", headers=headers_prof1
+    ).json()
+    assert len(detalhe_p1["boletins"]) == 1
+    notas_vistas_p1 = detalhe_p1["boletins"][0]["notas_disciplina"]
+    assert len(notas_vistas_p1) == 1
+    assert notas_vistas_p1[0]["disciplina_codigo"] == "MAT"
+
+    # 4. Consulta da Professora 2 SEM passar disciplina_id -> vê apenas EST-MAT-1 e EST-QUI-1
+    resp_p2 = client.get("/api/v1/estudantes", headers=headers_prof2)
+    assert resp_p2.status_code == 200
+    assert resp_p2.headers.get("X-Total-Count") == "2"
+    codigos_p2 = [e["codigo_anonimo"] for e in resp_p2.json()]
+    assert codigos_p2 == ["EST-MAT-1", "EST-QUI-1"]
+    assert "EST-MAT-2" not in codigos_p2
+
+    # 5. Professor 1 tenta acessar diretamente o ID de EST-QUI-1 (mesma Turma 1A, mas outra disciplina) -> 404
+    id_est_qui_1 = [
+        e["id"] for e in resp_p2.json() if e["codigo_anonimo"] == "EST-QUI-1"
+    ][0]
+    resp_p1_acessa_qui = client.get(
+        f"/api/v1/estudantes/{id_est_qui_1}", headers=headers_prof1
+    )
+    assert resp_p1_acessa_qui.status_code == 404
+
+    # 6. Professor Geral (disciplina_id = None na Turma 1A) vê todos os 3 estudantes da Turma 1A
+    resp_geral = client.get("/api/v1/estudantes", headers=headers_prof_geral)
+    assert resp_geral.status_code == 200
+    assert resp_geral.headers.get("X-Total-Count") == "3"
+    codigos_geral = [e["codigo_anonimo"] for e in resp_geral.json()]
+    assert codigos_geral == ["EST-MAT-1", "EST-MAT-2", "EST-QUI-1"]
+
+
+def test_privacidade_headers_alternativos_padroes_pii_e_nao_exposicao_de_valores(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    Verifica o fortalecimento da validação de privacidade (LGPD / RN01):
+    1. Cabeçalhos alternativos com variações de caixa, acentuação e separadores
+       (`Nome Completo`, `ALUNO_NOME`, `Estudante-Nome`, `CPF_ do_Aluno`, `E-mail_Estudante`,
+       `Telefone Responsável`, `Data de Nascimento`) são detectados e bloqueados.
+    2. Valores com padrão de CPF (formatado ou 11 dígitos), e-mail, telefone ou nome pessoal
+       (mesmo um único prenome alfabético como `Mariana` ou nome composto) em `codigo_anonimo`
+       ou em colunas extras são rejeitados.
+    3. Nenhum dado pessoal sensível presente no CSV é reproduzido nas mensagens de erro do relatório.
+    """
+    _criar_cenario_base(db_session)
+    headers_prof1 = _login_headers(
+        client, "prof1@vertice.edu.br", "SenhaForte@123"
+    )
+
+    # 1. Cabeçalhos alternativos proibidos
+    csv_headers_alt = (
+        "codigo_anonimo,Nome Completo,ALUNO_NOME,CPF-do-Aluno,E-mail do Estudante,Telefone_Responsavel,turma,disciplina,ano_letivo,periodo_letivo\n"
+        "EST-001,Joao Pereira,Joao,123.456.789-00,joao@gmail.com,(11) 98765-4321,Turma 1A,MAT,2026,1º Bimestre\n"
+    ).encode("utf-8")
+    resp_h = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("headers_alt.csv", csv_headers_alt, "text/csv")},
+        headers=headers_prof1,
+    )
+    assert resp_h.status_code == 201
+    rel_h = resp_h.json()["relatorio_validacao"]
+    assert resp_h.json()["pode_confirmar"] is False
+    assert len(rel_h["colunas_proibidas_pii"]) == 5
+
+    # 2. Valores PII em `codigo_anonimo` e em coluna extra arbitrária (`observacao_interna`)
+    csv_valores_pii = (
+        "codigo_anonimo,turma,disciplina,ano_letivo,periodo_letivo,nota,observacao_interna\n"
+        "12345678901,Turma 1A,MAT,2026,1º Bimestre,8.0,ok\n"
+        "Carlos Eduardo,Turma 1A,MAT,2026,1º Bimestre,7.5,ok\n"
+        "Mariana,Turma 1A,MAT,2026,1º Bimestre,9.0,ok\n"
+        "(11) 99887-6655,Turma 1A,MAT,2026,1º Bimestre,8.5,ok\n"
+        "EST-900,Turma 1A,MAT,2026,1º Bimestre,8.0,Contato: maria.souza@escola.org ou 987.654.321-11\n"
+    ).encode("utf-8")
+    resp_v = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("valores_pii.csv", csv_valores_pii, "text/csv")},
+        headers=headers_prof1,
+    )
+    assert resp_v.status_code == 201
+    dados_v = resp_v.json()
+    assert dados_v["pode_confirmar"] is False
+    rel_v = dados_v["relatorio_validacao"]
+    assert len(rel_v["problemas_anonimizacao"]) >= 5
+
+    # Garante que NENHUM valor sensível foi ecoado no JSON de resposta
+    corpo_str = resp_v.text
+    for segredo_pii in [
+        "12345678901",
+        "Carlos Eduardo",
+        "Mariana",
+        "99887-6655",
+        "maria.souza@escola.org",
+        "987.654.321-11",
+    ]:
+        assert segredo_pii not in corpo_str
+
+
+def test_integracao_postgres_fase3_importacao_isolamento_e_revalidacao() -> None:
+    """
+    Teste de integração real na instância PostgreSQL local (`localhost:5432`),
+    verificando em banco PostgreSQL real:
+    - Validação e confirmação de lote por professor;
+    - Isolamento estrito de consultas por disciplina (`list_by_professor` e `count_by_professor`)
+      sem vazamento de estudantes de outras disciplinas na mesma turma;
+    - Revalidação de turma ativa na confirmação.
+    """
+    from pathlib import Path
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.core.config import ENV_FILE_PATH, Settings
+    from app.modules.estudantes.repository import EstudanteRepository
+    from app.modules.estudantes.service import EstudanteService
+    from app.modules.importacao.service import ImportacaoService
+
+    if not Path(ENV_FILE_PATH).exists():
+        pytest.skip("Arquivo .env não encontrado para teste de integração PostgreSQL.")
+
+    pg_settings = Settings(_env_file=str(ENV_FILE_PATH), DATABASE_URL=None)  # type: ignore[call-arg]
+    pg_engine = create_engine(pg_settings.SQLALCHEMY_DATABASE_URI, pool_pre_ping=True)
+    PgSession = sessionmaker(bind=pg_engine, autocommit=False, autoflush=False)
+
+    with pg_engine.connect() as conn:
+        trans = conn.begin()
+        session = PgSession(bind=conn)
+        try:
+            escola = Escola(
+                nome="Escola PG Fase 3", codigo="PG-F3-001", ativo=True
+            )
+            disc_mat = Disciplina(
+                nome="Matemática PG", codigo="MAT-PG", ativo=True
+            )
+            disc_qui = Disciplina(
+                nome="Química PG", codigo="QUI-PG", ativo=True
+            )
+            session.add_all([escola, disc_mat, disc_qui])
+            session.flush()
+
+            turma = Turma(
+                nome="Turma PG 1A",
+                serie="1ª Série",
+                turno="Matutino",
+                ano_letivo=2026,
+                escola_id=escola.id,
+                ativo=True,
+            )
+            prof_mat = Usuario(
+                nome="Prof Mat PG",
+                email="prof.mat.pg.f3@vertice.edu.br",
+                senha_hash=get_password_hash("SenhaForte@123"),
+                papel=PapelUsuario.PROFESSOR,
+                escola_id=escola.id,
+                ativo=True,
+            )
+            prof_qui = Usuario(
+                nome="Prof Qui PG",
+                email="prof.qui.pg.f3@vertice.edu.br",
+                senha_hash=get_password_hash("SenhaForte@123"),
+                papel=PapelUsuario.PROFESSOR,
+                escola_id=escola.id,
+                ativo=True,
+            )
+            session.add_all([turma, prof_mat, prof_qui])
+            session.flush()
+
+            session.add_all(
+                [
+                    ProfessorTurma(
+                        professor_id=prof_mat.id,
+                        turma_id=turma.id,
+                        disciplina_id=disc_mat.id,
+                    ),
+                    ProfessorTurma(
+                        professor_id=prof_qui.id,
+                        turma_id=turma.id,
+                        disciplina_id=disc_qui.id,
+                    ),
+                ]
+            )
+            session.flush()
+
+            # Cria estudante com nota apenas em MAT e outro estudante com nota apenas em QUI na mesma turma
+            est_mat = Estudante(
+                escola_id=escola.id,
+                codigo_anonimo="EST-PG-MAT-01",
+                historico_reprovacoes=0,
+                ativo=True,
+            )
+            est_qui = Estudante(
+                escola_id=escola.id,
+                codigo_anonimo="EST-PG-QUI-01",
+                historico_reprovacoes=0,
+                ativo=True,
+            )
+            session.add_all([est_mat, est_qui])
+            session.flush()
+
+            bol_mat = BoletimPeriodo(
+                estudante_id=est_mat.id,
+                escola_id=escola.id,
+                turma_id=turma.id,
+                ano_letivo=2026,
+                periodo_letivo="1º Bimestre",
+                frequencia_percentual=94.0,
+                historico_reprovacoes=0,
+            )
+            bol_qui = BoletimPeriodo(
+                estudante_id=est_qui.id,
+                escola_id=escola.id,
+                turma_id=turma.id,
+                ano_letivo=2026,
+                periodo_letivo="1º Bimestre",
+                frequencia_percentual=91.0,
+                historico_reprovacoes=0,
+            )
+            session.add_all([bol_mat, bol_qui])
+            session.flush()
+
+            session.add_all(
+                [
+                    NotaDisciplina(
+                        boletim_id=bol_mat.id,
+                        disciplina_id=disc_mat.id,
+                        nota=8.5,
+                    ),
+                    NotaDisciplina(
+                        boletim_id=bol_qui.id,
+                        disciplina_id=disc_qui.id,
+                        nota=7.5,
+                    ),
+                ]
+            )
+            session.flush()
+
+            # Consulta via PostgreSQL real para Prof MAT sem filtro explícito de disciplina
+            lista_mat = EstudanteService.listar_estudantes(session, prof_mat)
+            total_mat = EstudanteService.contar_estudantes(session, prof_mat)
+            assert total_mat == 1
+            assert len(lista_mat) == 1
+            assert lista_mat[0].codigo_anonimo == "EST-PG-MAT-01"
+
+            # Revalidação de confirmação em PostgreSQL quando a turma é desativada
+            turma.ativo = False
+            session.flush()
+
+            from fastapi import HTTPException
+
+            lote_pg = LoteImportacao(
+                usuario_id=prof_mat.id,
+                escola_id=escola.id,
+                nome_arquivo="teste_pg.csv",
+                hash_arquivo="abc123hash",
+                status=StatusLoteImportacao.VALIDADO,
+                total_linhas=1,
+                registros_validos=1,
+            )
+            session.add(lote_pg)
+            session.flush()
+
+            with pytest.raises(HTTPException) as exc_info:
+                ImportacaoService._revalidar_autorizacao_na_confirmacao(
+                    session,
+                    prof_mat,
+                    lote_pg,
+                    [
+                        {
+                            "escola_id": str(escola.id),
+                            "turma_id": str(turma.id),
+                            "turma_nome": turma.nome,
+                            "disciplina_id": str(disc_mat.id),
+                            "disciplina_nome": disc_mat.nome,
+                        }
+                    ],
+                )
+            assert exc_info.value.status_code == 403
+        finally:
+            session.close()
+            if trans.is_active:
+                trans.rollback()
+            pg_engine.dispose()
+
+
 

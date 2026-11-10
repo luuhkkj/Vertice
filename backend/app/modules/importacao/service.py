@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import garantir_escopo_importacao_usuario
 from app.modules.atribuicoes.models import ProfessorTurma
+from app.modules.disciplinas.models import Disciplina
+from app.modules.escolas.models import Escola
 from app.modules.estudantes.models import (
     BoletimPeriodo,
     Estudante,
@@ -185,34 +187,86 @@ class ImportacaoService:
     def _revalidar_autorizacao_na_confirmacao(
         db: Session,
         usuario: Usuario,
+        lote: LoteImportacao,
         registros_previa: list[dict[str, Any]],
     ) -> None:
         """
-        Revalida no momento da confirmação se o usuário autenticado continua possuindo
-        todos os vínculos de escola, turma e disciplina exigidos pelos registros do lote.
+        Revalida integralmente no momento da confirmação (Etapa 2):
+        1. Se o usuário responsável continua ativo e com perfil autorizado.
+        2. Se a escola do lote existe, continua ativa e pertence ao escopo autorizado do usuário.
+        3. Se cada turma ainda existe, continua ativa (`Turma.ativo == True`) e continua pertencendo
+           à escola autorizada do lote (`turma.escola_id == lote.escola_id`).
+        4. Se cada disciplina (quando informada) ainda existe e continua ativa (`Disciplina.ativo == True`).
+        5. Para professores, se o vínculo em `ProfessorTurma` continua existindo para a combinação
+           exata de `(turma_id, disciplina_id)` (ou vínculo geral `disciplina_id IS NULL`).
         """
+        if not usuario.ativo:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Autorização negada na confirmação: usuário inativo.",
+            )
         garantir_escopo_importacao_usuario(usuario)
 
+        stmt_escola = select(Escola).where(
+            Escola.id == lote.escola_id,
+            Escola.ativo.is_(True),
+        )
+        escola_lote = db.execute(stmt_escola).scalar_one_or_none()
+        if escola_lote is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Autorização negada na confirmação: a unidade escolar do lote não existe ou foi desativada.",
+            )
+
         if usuario.papel == PapelUsuario.GESTOR:
-            escola_gestor = usuario.escola_id
+            if usuario.escola_id is None or usuario.escola_id != lote.escola_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Autorização negada na confirmação: gestor não pertence à unidade escolar deste lote.",
+                )
             for reg in registros_previa:
                 turma_id = uuid.UUID(str(reg["turma_id"]))
-                stmt_t = select(Turma).where(
-                    Turma.id == turma_id,
-                    Turma.ativo.is_(True),
-                )
+                reg_escola_id = uuid.UUID(str(reg["escola_id"]))
+                disc_id_raw = reg.get("disciplina_id")
+                disc_id = uuid.UUID(str(disc_id_raw)) if disc_id_raw else None
+
+                stmt_t = select(Turma).where(Turma.id == turma_id)
                 turma = db.execute(stmt_t).scalar_one_or_none()
-                if turma is None or turma.escola_id != escola_gestor:
+                if (
+                    turma is None
+                    or not turma.ativo
+                    or turma.escola_id != lote.escola_id
+                    or reg_escola_id != lote.escola_id
+                ):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail=(
                             f"Autorização negada na confirmação: a turma '{reg.get('turma_nome')}' "
-                            "não está ativa ou não pertence à escola vinculada ao gestor."
+                            "não existe, foi desativada ou não pertence à escola vinculada ao gestor."
                         ),
                     )
+                if disc_id is not None:
+                    stmt_d = select(Disciplina).where(
+                        Disciplina.id == disc_id,
+                        Disciplina.ativo.is_(True),
+                    )
+                    if db.execute(stmt_d).scalar_one_or_none() is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail=(
+                                f"Autorização negada na confirmação: a disciplina '{reg.get('disciplina_nome')}' "
+                                "não existe ou foi desativada."
+                            ),
+                        )
             return
 
         if usuario.papel == PapelUsuario.PROFESSOR:
+            if usuario.escola_id is not None and usuario.escola_id != lote.escola_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Autorização negada na confirmação: o lote não pertence à escola autorizada do professor.",
+                )
+
             stmt_atrib = select(ProfessorTurma).where(
                 ProfessorTurma.professor_id == usuario.id
             )
@@ -225,8 +279,44 @@ class ImportacaoService:
 
             for reg in registros_previa:
                 turma_id = uuid.UUID(str(reg["turma_id"]))
+                reg_escola_id = uuid.UUID(str(reg["escola_id"]))
                 disc_id_raw = reg.get("disciplina_id")
                 disc_id = uuid.UUID(str(disc_id_raw)) if disc_id_raw else None
+
+                stmt_t = select(Turma).where(Turma.id == turma_id)
+                turma = db.execute(stmt_t).scalar_one_or_none()
+                if turma is None or not turma.ativo:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Autorização negada na confirmação: a turma '{reg.get('turma_nome')}' "
+                            "não existe ou foi desativada."
+                        ),
+                    )
+
+                if (
+                    turma.escola_id != lote.escola_id
+                    or reg_escola_id != lote.escola_id
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Autorização negada na confirmação: a turma '{reg.get('turma_nome')}' "
+                            "não pertence à unidade escolar autorizada para o lote."
+                        ),
+                    )
+
+                if (
+                    usuario.escola_id is not None
+                    and turma.escola_id != usuario.escola_id
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Autorização negada na confirmação: a turma '{reg.get('turma_nome')}' "
+                            "pertence a uma escola fora do escopo do professor."
+                        ),
+                    )
 
                 if turma_id not in mapa_vinculos:
                     raise HTTPException(
@@ -236,6 +326,7 @@ class ImportacaoService:
                             f"com a turma '{reg.get('turma_nome')}'."
                         ),
                     )
+
                 discs_aut = mapa_vinculos[turma_id]
                 if None not in discs_aut and disc_id not in discs_aut:
                     raise HTTPException(
@@ -245,6 +336,20 @@ class ImportacaoService:
                             f"com a disciplina '{reg.get('disciplina_nome')}' na turma '{reg.get('turma_nome')}'."
                         ),
                     )
+
+                if disc_id is not None:
+                    stmt_d = select(Disciplina).where(
+                        Disciplina.id == disc_id,
+                        Disciplina.ativo.is_(True),
+                    )
+                    if db.execute(stmt_d).scalar_one_or_none() is None:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail=(
+                                f"Autorização negada na confirmação: a disciplina '{reg.get('disciplina_nome')}' "
+                                "não existe ou foi desativada."
+                            ),
+                        )
             return
 
         raise HTTPException(
@@ -307,7 +412,7 @@ class ImportacaoService:
 
         # Revalida vínculos de autorização no momento exato da confirmação
         ImportacaoService._revalidar_autorizacao_na_confirmacao(
-            db, usuario_autenticado, registros_previa
+            db, usuario_autenticado, lote, registros_previa
         )
 
         inseridos = 0

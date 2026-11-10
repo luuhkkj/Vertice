@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.disciplinas.models import Disciplina
+from app.modules.escolas.models import Escola
 from app.modules.estudantes.models import SituacaoFinalPeriodo
 from app.modules.estudantes.repository import EstudanteRepository
 from app.modules.importacao.schemas import (
@@ -90,33 +91,87 @@ COLUNAS_OBRIGATORIAS = (
     "periodo_letivo",
 )
 
-# Colunas de identificação pessoal direta estritamente proibidas pela LGPD / RN01
+# Colunas exatas de identificação pessoal direta estritamente proibidas pela LGPD / RN01
 PADROES_COLUNAS_PII_PROIBIDAS = {
     "nome",
     "nome_completo",
     "nome_estudante",
+    "estudante_nome",
+    "nome_do_estudante",
     "nome_aluno",
+    "aluno_nome",
+    "nome_do_aluno",
+    "nome_discente",
+    "discente_nome",
+    "primeiro_nome",
+    "sobrenome",
+    "nome_social",
     "aluno",
+    "estudante",
+    "discente",
+    "cpf",
+    "cpf_aluno",
+    "aluno_cpf",
+    "cpf_estudante",
+    "estudante_cpf",
+    "nr_cpf",
+    "numero_cpf",
+    "rg",
+    "rg_aluno",
+    "documento",
+    "cns",
+    "nis",
+    "inep_aluno",
+    "endereco",
+    "endereco_aluno",
+    "logradouro",
+    "cep",
+    "bairro",
+    "telefone",
+    "telefone_aluno",
+    "celular",
+    "celular_aluno",
+    "whatsapp",
+    "contato",
+    "email",
+    "e_mail",
+    "email_pessoal",
+    "email_aluno",
+    "aluno_email",
+    "email_estudante",
+    "estudante_email",
+    "biometria",
+    "digital",
+    "data_nascimento",
+    "dt_nascimento",
+    "nascimento",
+    "filiacao",
+    "nome_mae",
+    "mae",
+    "nome_pai",
+    "pai",
+    "responsavel",
+    "nome_responsavel",
+    "cpf_responsavel",
+    "telefone_responsavel",
+}
+
+# Tokens que, quando presentes em qualquer coluna que não seja alias técnico válido
+# (como nome_turma / nome_disciplina / email_professor), indicam coluna de dado pessoal
+TOKENS_PII_SENSIVEIS = {
     "cpf",
     "rg",
-    "documento",
     "endereco",
     "logradouro",
     "telefone",
     "celular",
     "whatsapp",
-    "email",
-    "e_mail",
-    "email_pessoal",
-    "email_aluno",
-    "email_estudante",
     "biometria",
-    "digital",
-    "data_nascimento",
-    "nascimento",
     "filiacao",
-    "nome_mae",
-    "nome_pai",
+    "nascimento",
+    "sobrenome",
+    "mae",
+    "pai",
     "responsavel",
 }
 
@@ -127,13 +182,20 @@ COLUNAS_AUTORIA_IGNORADAS = {
     "usuario_id",
     "id_usuario",
     "professor",
+    "nome_professor",
+    "professor_nome",
     "email_professor",
+    "professor_email",
     "escola_id",
     "id_escola",
 }
 
-REGEX_CPF = re.compile(r"^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$")
-REGEX_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+REGEX_CPF_EXATO = re.compile(r"^\d{3}\.?\d{3}\.?\d{3}[-\.]?\d{2}$")
+REGEX_CPF_EMBUTIDO = re.compile(r"(?<!\d)\d{3}\.\d{3}\.\d{3}-\d{2}(?!\d)")
+REGEX_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+REGEX_TELEFONE_BR = re.compile(
+    r"^(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?9?\d{4}[-\s]\d{4}$"
+)
 REGEX_CODIGO_ANONIMO_VALIDO = re.compile(r"^[A-Za-z0-9_\-\.]{2,50}$")
 # Nome pessoal composto apenas por letras e espaços (sem dígitos), ex: "Maria da Silva"
 REGEX_NOME_PESSOAL = re.compile(r"^[A-Za-zÀ-ÖØ-öø-ÿ]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ]+)+$")
@@ -148,6 +210,56 @@ def normalizar_identificador_coluna(nome: str) -> str:
     )
     limpo = re.sub(r"[^a-zA-Z0-9]+", "_", sem_acento).strip("_").lower()
     return limpo
+
+
+def _eh_coluna_pii_proibida(norm_col: str) -> bool:
+    """
+    Avalia se um nome de coluna normalizado representa informação pessoal proibida (PII).
+    Reconhece tanto nomes exatos quanto combinações por tokens (ex: `aluno_nome`, `cpf_do_estudante`,
+    `email_pessoal_aluno`, `telefone_contato`), preservando colunas técnicas legítimas
+    (`nome_turma`, `nome_disciplina`, `email_professor`).
+    """
+    if norm_col in MAPA_COLUNAS_CANONICAS or norm_col in COLUNAS_AUTORIA_IGNORADAS:
+        return False
+    if norm_col in PADROES_COLUNAS_PII_PROIBIDAS:
+        return True
+
+    tokens = set(norm_col.split("_"))
+    if tokens & TOKENS_PII_SENSIVEIS:
+        return True
+    if "nome" in tokens and tokens not in (
+        {"nome", "turma"},
+        {"turma", "nome"},
+        {"nome", "disciplina"},
+        {"disciplina", "nome"},
+        {"nome", "escola"},
+        {"escola", "nome"},
+    ):
+        return True
+    if ("email" in tokens or "mail" in tokens) and "professor" not in tokens:
+        return True
+
+    return False
+
+
+def _valor_contem_padrao_pii(valor_raw: Any) -> Optional[str]:
+    """
+    Verifica se o valor textual de qualquer célula contém padrão explícito de CPF,
+    e-mail ou telefone pessoal. Retorna o tipo de padrão detectado ('CPF', 'e-mail', 'telefone')
+    sem incluir o valor sensível.
+    """
+    texto = str(valor_raw).strip() if valor_raw is not None else ""
+    if not texto or texto.lower() in ("null", "none", "nan", "-"):
+        return None
+    if REGEX_CPF_EXATO.match(texto) or REGEX_CPF_EMBUTIDO.search(texto) or (
+        texto.isdigit() and len(texto) == 11
+    ):
+        return "CPF"
+    if REGEX_EMAIL.search(texto):
+        return "endereço de e-mail"
+    if REGEX_TELEFONE_BR.match(texto):
+        return "número de telefone"
+    return None
 
 
 def validar_arquivo_upload(
@@ -407,7 +519,7 @@ def validar_codigo_anonimo(
 ) -> Optional[str]:
     """
     Verifica se o identificador do estudante é um código anônimo válido e não contém
-    CPF, e-mail ou nome pessoal completo (proteção de privacidade LGPD / RN01).
+    CPF, e-mail, telefone ou nome pessoal completo (proteção de privacidade LGPD / RN01).
     Nunca inclui o dado pessoal sensível na mensagem de erro.
     """
     texto = str(valor_raw).strip() if valor_raw is not None else ""
@@ -422,29 +534,16 @@ def validar_codigo_anonimo(
         )
         return None
 
-    if REGEX_CPF.match(texto) or (texto.isdigit() and len(texto) == 11):
+    tipo_pii = _valor_contem_padrao_pii(texto)
+    if tipo_pii is not None:
         problemas_anonimizacao.append(
             ItemProblemaValidacao(
                 linha=linha_num,
                 categoria="anonimizacao",
                 campo="codigo_anonimo",
                 mensagem=(
-                    "Violação de privacidade detectada: o identificador do estudante "
-                    "parece conter um CPF. Utilize apenas códigos anônimos (ex: EST-001)."
-                ),
-            )
-        )
-        return None
-
-    if REGEX_EMAIL.match(texto):
-        problemas_anonimizacao.append(
-            ItemProblemaValidacao(
-                linha=linha_num,
-                categoria="anonimizacao",
-                campo="codigo_anonimo",
-                mensagem=(
-                    "Violação de privacidade detectada: o identificador do estudante "
-                    "contém um endereço de e-mail. Utilize apenas códigos anônimos."
+                    f"Violação de privacidade detectada em 'codigo_anonimo': o valor apresenta "
+                    f"padrão de {tipo_pii}. Utilize apenas códigos anônimos (ex: EST-001)."
                 ),
             )
         )
@@ -457,8 +556,24 @@ def validar_codigo_anonimo(
                 categoria="anonimizacao",
                 campo="codigo_anonimo",
                 mensagem=(
-                    "Violação de privacidade detectada: o identificador do estudante "
+                    "Violação de privacidade detectada em 'codigo_anonimo': o valor "
                     "parece ser um nome pessoal. Utilize apenas códigos anônimos alfanuméricos."
+                ),
+            )
+        )
+        return None
+
+    # Exige ao menos um caractere numérico no código anônimo para evitar nomes simples (ex: "Maria")
+    if texto.isalpha():
+        problemas_anonimizacao.append(
+            ItemProblemaValidacao(
+                linha=linha_num,
+                categoria="anonimizacao",
+                campo="codigo_anonimo",
+                mensagem=(
+                    "Formato de identificador anônimo inválido em 'codigo_anonimo': "
+                    "identificadores puramente alfabéticos não são permitidos por risco de exposição "
+                    "de nomes pessoais. Utilize um código alfanumérico (ex: EST-001)."
                 ),
             )
         )
@@ -485,15 +600,24 @@ def _carregar_contexto_autorizacao(
     db: Session,
     usuario: Usuario,
 ) -> tuple[
-    uuid.UUID,
+    set[uuid.UUID],
     list[Turma],
     dict[uuid.UUID, set[Optional[uuid.UUID]]],
     dict[uuid.UUID, Disciplina],
 ]:
     """
-    Determina a escola escopo do usuário autenticado, as turmas da escola,
-    o mapa de vínculos `(turma_id -> {disciplina_id})` quando for professor,
+    Determina o conjunto de escolas autorizadas para o usuário autenticado,
+    as turmas ativas, o mapa de vínculos `(turma_id -> {disciplina_id})` quando for professor,
     e o catálogo ativo de disciplinas.
+
+    Regras de escopo escolar do professor:
+    - O professor só pode importar para turmas ativas e pertencentes a escolas ativas
+      onde possua vínculo válido em `ProfessorTurma`.
+    - Se `usuario.escola_id` estiver definido no cadastro do professor, apenas turmas
+      dessa escola específica são consideradas autorizadas.
+    - Se `usuario.escola_id` for `None`, o professor pode possuir vínculos em uma ou mais
+      escolas ativas (`escolas_autorizadas`), mas cada lote de importação deve referenciar
+      turmas de uma única escola de forma inequívoca.
     """
     stmt_discs = select(Disciplina).where(Disciplina.ativo.is_(True))
     disciplinas_ativas = list(db.execute(stmt_discs).scalars().all())
@@ -505,21 +629,34 @@ def _carregar_contexto_autorizacao(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Acesso negado: gestor não possui uma unidade escolar vinculada.",
             )
+        stmt_escola = select(Escola).where(
+            Escola.id == usuario.escola_id,
+            Escola.ativo.is_(True),
+        )
+        escola_ativa = db.execute(stmt_escola).scalar_one_or_none()
+        if escola_ativa is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: a unidade escolar vinculada ao gestor não está ativa.",
+            )
+
         escola_id = usuario.escola_id
         stmt_turmas = select(Turma).where(
             Turma.escola_id == escola_id,
             Turma.ativo.is_(True),
         )
         turmas_escola = list(db.execute(stmt_turmas).scalars().all())
-        return escola_id, turmas_escola, {}, mapa_disciplinas_por_id
+        return {escola_id}, turmas_escola, {}, mapa_disciplinas_por_id
 
     if usuario.papel == PapelUsuario.PROFESSOR:
         stmt_atrib = (
-            select(ProfessorTurma, Turma)
+            select(ProfessorTurma, Turma, Escola)
             .join(Turma, ProfessorTurma.turma_id == Turma.id)
+            .join(Escola, Turma.escola_id == Escola.id)
             .where(
                 ProfessorTurma.professor_id == usuario.id,
                 Turma.ativo.is_(True),
+                Escola.ativo.is_(True),
             )
         )
         rows = db.execute(stmt_atrib).all()
@@ -530,22 +667,33 @@ def _carregar_contexto_autorizacao(
             )
 
         mapa_vinculos: dict[uuid.UUID, set[Optional[uuid.UUID]]] = {}
-        escolas_vinculadas: set[uuid.UUID] = set()
-        for atrib, turma in rows:
+        escolas_autorizadas: set[uuid.UUID] = set()
+        for atrib, turma, _escola in rows:
+            # Se o professor tiver escola_id definida no seu perfil, restringe seus vínculos
+            # de importação exclusivamente às turmas daquela escola
+            if usuario.escola_id is not None and turma.escola_id != usuario.escola_id:
+                continue
+            # Se o vínculo especifica uma disciplina, exige que ela esteja ativa no catálogo
+            if (
+                atrib.disciplina_id is not None
+                and atrib.disciplina_id not in mapa_disciplinas_por_id
+            ):
+                continue
             mapa_vinculos.setdefault(turma.id, set()).add(atrib.disciplina_id)
-            escolas_vinculadas.add(turma.escola_id)
+            escolas_autorizadas.add(turma.escola_id)
 
-        escola_id = (
-            usuario.escola_id
-            if usuario.escola_id is not None
-            else sorted(escolas_vinculadas, key=str)[0]
-        )
+        if not mapa_vinculos or not escolas_autorizadas:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Acesso negado: professor não possui vínculos válidos na escola autorizada "
+                    "para realizar importação."
+                ),
+            )
 
-        # Carrega todas as turmas das escolas vinculadas e de todas as escolas para distinguir
-        # "turma não vinculada" de "turma inexistente"
         stmt_todas_turmas = select(Turma).where(Turma.ativo.is_(True))
         todas_turmas = list(db.execute(stmt_todas_turmas).scalars().all())
-        return escola_id, todas_turmas, mapa_vinculos, mapa_disciplinas_por_id
+        return escolas_autorizadas, todas_turmas, mapa_vinculos, mapa_disciplinas_por_id
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -559,19 +707,19 @@ def _resolver_turma(
     serie_raw: Optional[str],
     turno_raw: Optional[str],
     usuario: Usuario,
-    escola_id_contexto: uuid.UUID,
+    escolas_autorizadas: set[uuid.UUID],
     turmas_candidatas: list[Turma],
     mapa_vinculos_prof: dict[uuid.UUID, set[Optional[uuid.UUID]]],
 ) -> tuple[Optional[Turma], Optional[str], Optional[str]]:
     """
-    Localiza a turma a partir do identificador/nome no CSV.
+    Localiza a turma a partir do identificador/nome no CSV e garante explicitamente
+    que ela pertence a uma escola autorizada e ao escopo de vínculos do usuário.
     Retorna `(turma, categoria_erro, mensagem_erro)`.
     """
     chave = valor_turma_raw.strip()
     if not chave:
         return None, "valor_invalido", "Identificação da turma está vazia."
 
-    # 1. Tenta casar por UUID exato
     correspondencias: list[Turma] = []
     try:
         turma_uuid = uuid.UUID(chave)
@@ -609,21 +757,10 @@ def _resolver_turma(
             correspondencias = filtradas_turno
 
     if usuario.papel == PapelUsuario.GESTOR:
-        # Gestor: verifica se a turma existe na própria escola
         na_escola = [
-            t for t in correspondencias if t.escola_id == escola_id_contexto
+            t for t in correspondencias if t.escola_id in escolas_autorizadas
         ]
         if not na_escola:
-            # Verifica se existe em outra escola para reportar violação de autorização
-            stmt_outra = select(Turma).where(
-                (Turma.nome.ilike(chave))
-                | (
-                    Turma.id == uuid.UUID(chave)
-                    if _is_uuid(chave)
-                    else False
-                )
-            )
-            _ = stmt_outra  # consulta feita pelo service se necessário
             return (
                 None,
                 "valor_invalido_ou_escopo",
@@ -642,26 +779,46 @@ def _resolver_turma(
         return (
             None,
             "valor_invalido",
-            f"Turma '{chave}' não encontrada no cadastro do sistema.",
+            f"Turma '{chave}' não encontrada no cadastro ativo do sistema.",
         )
 
-    # Prioriza verificar se alguma correspondência está vinculada ao professor
-    vinculadas = [
-        t for t in correspondencias if t.id in mapa_vinculos_prof
+    # Filtra turmas nas quais o professor possui vínculo E que pertencem a escola autorizada
+    vinculadas_autorizadas = [
+        t
+        for t in correspondencias
+        if t.id in mapa_vinculos_prof and t.escola_id in escolas_autorizadas
     ]
-    if not vinculadas:
+    if not vinculadas_autorizadas:
+        # Distingue tentativa de importar turma de outra escola sem autorização vs turma sem vínculo
+        em_outra_escola = any(
+            t.escola_id not in escolas_autorizadas for t in correspondencias
+        )
+        if em_outra_escola:
+            return (
+                None,
+                "autorizacao",
+                (
+                    f"Acesso negado: a turma '{chave}' pertence a uma unidade escolar "
+                    "fora do escopo autorizado do professor."
+                ),
+            )
         return (
             None,
             "autorizacao",
             f"Professor não possui vínculo autorizado com a turma '{chave}'.",
         )
-    if len(vinculadas) > 1:
+
+    if len(vinculadas_autorizadas) > 1:
         return (
             None,
             "valor_invalido",
-            f"Múltiplas turmas vinculadas com o nome '{chave}'. Especifique ano_letivo, serie ou turno.",
+            (
+                f"Ambiguidade ao identificar a turma '{chave}': o professor possui vínculo com "
+                "múltiplas turmas de mesmo nome (ou em escolas distintas). Utilize o UUID da turma "
+                "ou especifique ano_letivo, serie e turno."
+            ),
         )
-    return vinculadas[0], None, None
+    return vinculadas_autorizadas[0], None, None
 
 
 def _is_uuid(val: str) -> bool:
@@ -687,7 +844,6 @@ def _resolver_disciplina(
     texto = valor_disc_raw.strip() if valor_disc_raw else ""
 
     if texto:
-        # Procura por UUID, código ou nome
         disc_encontrada: Optional[Disciplina] = None
         if _is_uuid(texto):
             disc_encontrada = mapa_disciplinas_por_id.get(uuid.UUID(texto))
@@ -729,7 +885,6 @@ def _resolver_disciplina(
         discs_autorizadas = mapa_vinculos_prof.get(turma.id, set())
         discs_nao_nulas = [d_id for d_id in discs_autorizadas if d_id is not None]
         if len(discs_nao_nulas) == 1 and None not in discs_autorizadas:
-            # Inferência segura e não ambígua a partir do vínculo único do professor na turma
             disc_inferida = mapa_disciplinas_por_id.get(discs_nao_nulas[0])
             return disc_inferida, None, None
         if len(discs_nao_nulas) > 1:
@@ -741,10 +896,9 @@ def _resolver_disciplina(
                     "com múltiplas disciplinas nesta turma. Informe a coluna 'disciplina' no arquivo."
                 ),
             )
-        # Vínculo geral na turma (disciplina_id IS NULL)
+        # Vínculo geral explícito na turma (disciplina_id IS NULL)
         return None, None, None
 
-    # Gestor sem disciplina especificada -> boletim geral do período
     return None, None, None
 
 
@@ -755,14 +909,13 @@ def processar_e_validar_dataframe(
 ) -> tuple[uuid.UUID, RelatorioValidacaoSchema, list[dict[str, Any]]]:
     """
     Executa todas as verificações de cabeçalho, privacidade (PII), tipos, intervalos,
-    duplicidades, vínculos de turma/disciplina e classifica registros em novos vs existentes.
+    duplicidades, vínculos de turma/disciplina e consistência de escola única por lote.
     Não persiste nenhum dado acadêmico no banco de dados.
     """
-    escola_id_contexto, turmas_candidatas, mapa_vinculos_prof, mapa_disciplinas_por_id = (
+    escolas_autorizadas, turmas_candidatas, mapa_vinculos_prof, mapa_disciplinas_por_id = (
         _carregar_contexto_autorizacao(db, usuario)
     )
 
-    # Verifica também todas as turmas do banco para detectar tentativa de gestor importar de outra escola
     stmt_todas_turmas_banco = select(Turma).where(Turma.ativo.is_(True))
     todas_turmas_banco = list(db.execute(stmt_todas_turmas_banco).scalars().all())
 
@@ -777,7 +930,7 @@ def processar_e_validar_dataframe(
 
     for col_orig in colunas_originais:
         norm = normalizar_identificador_coluna(col_orig)
-        if norm in PADROES_COLUNAS_PII_PROIBIDAS:
+        if _eh_coluna_pii_proibida(norm):
             colunas_pii_detectadas.append(str(col_orig))
             continue
         if norm in COLUNAS_AUTORIA_IGNORADAS:
@@ -830,22 +983,46 @@ def processar_e_validar_dataframe(
             )
             relatorio.erros.append(prob)
 
-    # Se faltam colunas obrigatórias ou há colunas PII proibidas no cabeçalho, encerra validação estrutural
+    # Se faltam colunas obrigatórias ou há colunas PII proibidas no cabeçalho,
+    # encerra validação estrutural. Se o professor tiver múltiplas escolas e o cabeçalho falhou,
+    # exige que o escopo seja determinável ou retorna 400 se ambíguo.
     if relatorio.colunas_ausentes or relatorio.colunas_proibidas_pii:
         relatorio.quantidade_erros = len(relatorio.erros)
         relatorio.quantidade_avisos = len(relatorio.avisos)
-        return escola_id_contexto, relatorio, []
+        if len(escolas_autorizadas) == 1:
+            escola_fallback = next(iter(escolas_autorizadas))
+        elif usuario.escola_id is not None and usuario.escola_id in escolas_autorizadas:
+            escola_fallback = usuario.escola_id
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Não foi possível determinar uma escola única para o lote: o arquivo possui "
+                    "erros estruturais de cabeçalho e o professor possui vínculos em múltiplas escolas."
+                ),
+            )
+        return escola_fallback, relatorio, []
 
-    # Inverte mapeamento canônico -> coluna original
     canon_para_orig: dict[str, str] = {}
     for orig, canon in mapa_orig_para_canon.items():
         if canon not in canon_para_orig:
             canon_para_orig[canon] = orig
 
-    chaves_vistas_no_arquivo: dict[tuple[str, uuid.UUID, Optional[uuid.UUID], int, str], int] = {}
+    # Colunas extras não mapeadas também são inspecionadas linha a linha contra vazamento de PII
+    colunas_extras = [
+        str(col_orig)
+        for col_orig in colunas_originais
+        if col_orig not in mapa_orig_para_canon
+        and normalizar_identificador_coluna(col_orig) not in COLUNAS_AUTORIA_IGNORADAS
+    ]
+
+    chaves_vistas_no_arquivo: dict[
+        tuple[str, uuid.UUID, Optional[uuid.UUID], int, str], int
+    ] = {}
     turmas_identificadas_set: set[str] = set()
     disciplinas_identificadas_set: set[str] = set()
-    escola_inferida_professor: Optional[uuid.UUID] = None
+    escolas_no_lote: set[uuid.UUID] = set()
+    primeira_escola_lote: Optional[uuid.UUID] = None
 
     for idx, row in df.iterrows():
         linha_num = int(idx) + 2  # Cabeçalho é linha 1
@@ -855,6 +1032,45 @@ def processar_e_validar_dataframe(
             + len(relatorio.duplicidades)
             + len(relatorio.problemas_anonimizacao)
         )
+
+        # 0. Inspeção de privacidade (PII) em todas as células de colunas não-código
+        for col_inspecao in colunas_originais:
+            if col_inspecao == canon_para_orig.get("codigo_anonimo"):
+                continue
+            if (
+                normalizar_identificador_coluna(col_inspecao)
+                in COLUNAS_AUTORIA_IGNORADAS
+            ):
+                continue
+            val_celula = row.get(col_inspecao, "")
+            tipo_pii_cel = _valor_contem_padrao_pii(val_celula)
+            if tipo_pii_cel is not None:
+                relatorio.problemas_anonimizacao.append(
+                    ItemProblemaValidacao(
+                        linha=linha_num,
+                        categoria="pii_proibido",
+                        campo=str(col_inspecao),
+                        mensagem=(
+                            f"Violação de privacidade detectada na coluna '{col_inspecao}': "
+                            f"o valor informado apresenta padrão de dado pessoal ({tipo_pii_cel})."
+                        ),
+                    )
+                )
+            elif (
+                str(col_inspecao) in colunas_extras
+                and REGEX_NOME_PESSOAL.match(str(val_celula).strip())
+            ):
+                relatorio.problemas_anonimizacao.append(
+                    ItemProblemaValidacao(
+                        linha=linha_num,
+                        categoria="pii_proibido",
+                        campo=str(col_inspecao),
+                        mensagem=(
+                            f"Violação de privacidade detectada na coluna '{col_inspecao}': "
+                            "o valor informado parece conter um nome pessoal."
+                        ),
+                    )
+                )
 
         # 1. Código anônimo do estudante
         codigo_anonimo = validar_codigo_anonimo(
@@ -919,18 +1135,17 @@ def processar_e_validar_dataframe(
                 serie_raw=serie_raw,
                 turno_raw=turno_raw,
                 usuario=usuario,
-                escola_id_contexto=escola_id_contexto,
+                escolas_autorizadas=escolas_autorizadas,
                 turmas_candidatas=turmas_candidatas,
                 mapa_vinculos_prof=mapa_vinculos_prof,
             )
             if turma_obj is None and msg_erro:
-                # Distingue se a turma pertence a outra escola (violação de autorização) ou não existe
                 existe_outra_escola = any(
                     (
                         t.nome.strip().lower() == turma_raw.lower()
                         or (_is_uuid(turma_raw) and t.id == uuid.UUID(turma_raw))
                     )
-                    and t.escola_id != escola_id_contexto
+                    and t.escola_id not in escolas_autorizadas
                     for t in todas_turmas_banco
                 )
                 if existe_outra_escola:
@@ -958,7 +1173,7 @@ def processar_e_validar_dataframe(
                 serie_raw=serie_raw,
                 turno_raw=turno_raw,
                 usuario=usuario,
-                escola_id_contexto=escola_id_contexto,
+                escolas_autorizadas=escolas_autorizadas,
                 turmas_candidatas=turmas_candidatas,
                 mapa_vinculos_prof=mapa_vinculos_prof,
             )
@@ -981,6 +1196,25 @@ def processar_e_validar_dataframe(
                             mensagem=msg_erro,
                         )
                     )
+
+        # Verifica consistência de escola única dentro do mesmo lote de importação
+        if turma_obj is not None:
+            escolas_no_lote.add(turma_obj.escola_id)
+            if primeira_escola_lote is None:
+                primeira_escola_lote = turma_obj.escola_id
+            elif turma_obj.escola_id != primeira_escola_lote:
+                relatorio.problemas_autorizacao.append(
+                    ItemProblemaValidacao(
+                        linha=linha_num,
+                        categoria="autorizacao",
+                        campo="turma",
+                        mensagem=(
+                            f"Conflito de escopo escolar no lote: a turma '{turma_obj.nome}' "
+                            "pertence a uma escola diferente das linhas anteriores. "
+                            "Cada lote de importação deve conter turmas de uma única escola."
+                        ),
+                    )
+                )
 
         if (
             turma_obj is not None
@@ -1034,7 +1268,6 @@ def processar_e_validar_dataframe(
                         )
                     )
         elif disc_raw:
-            # Mesmo que a turma tenha falhado, valida se a disciplina existe no catálogo
             disc_temp: Optional[Disciplina] = None
             if _is_uuid(disc_raw):
                 disc_temp = mapa_disciplinas_por_id.get(uuid.UUID(disc_raw))
@@ -1208,8 +1441,6 @@ def processar_e_validar_dataframe(
             else None
         )
 
-        # Se há uma disciplina associada e o usuário informou apenas `media_geral` (sem coluna `nota`),
-        # mapeia a nota para a disciplina mantendo também o boletim consistente
         if disc_obj is not None and nota_disc is None and media_geral is not None:
             nota_disc = media_geral
 
@@ -1258,16 +1489,12 @@ def processar_e_validar_dataframe(
             and ano_letivo is not None
             and periodo_letivo is not None
         ):
-            if escola_inferida_professor is None:
-                escola_inferida_professor = turma_obj.escola_id
-
             turmas_identificadas_set.add(turma_obj.nome)
             if disc_obj is not None:
                 disciplinas_identificadas_set.add(
                     f"{disc_obj.nome} ({disc_obj.codigo})"
                 )
 
-            # Verifica se o registro corresponde a dado já existente no banco ou se é novo
             estudante_existente = EstudanteRepository.get_by_escola_e_codigo(
                 db, turma_obj.escola_id, codigo_anonimo
             )
@@ -1326,7 +1553,6 @@ def processar_e_validar_dataframe(
                 }
             )
 
-    # Consolida todas as listas de erros no relatório
     relatorio.erros = (
         list(relatorio.problemas_autorizacao)
         + list(relatorio.problemas_anonimizacao)
@@ -1338,11 +1564,23 @@ def processar_e_validar_dataframe(
     relatorio.turmas_identificadas = sorted(turmas_identificadas_set)
     relatorio.disciplinas_identificadas = sorted(disciplinas_identificadas_set)
 
-    escola_final = (
-        escola_inferida_professor
-        if usuario.papel == PapelUsuario.PROFESSOR
-        and escola_inferida_professor is not None
-        else escola_id_contexto
-    )
-    return escola_final, relatorio, previa_registros
+    # Determinação inequívoca da escola do lote (nunca escolhe arbitrariamente entre múltiplas escolas)
+    if len(escolas_no_lote) == 1:
+        escola_final = next(iter(escolas_no_lote))
+    elif len(escolas_no_lote) > 1:
+        # Lote contém turmas de múltiplas escolas (já registrado em problemas_autorizacao)
+        escola_final = primeira_escola_lote  # type: ignore[assignment]
+    elif len(escolas_autorizadas) == 1:
+        escola_final = next(iter(escolas_autorizadas))
+    elif usuario.escola_id is not None and usuario.escola_id in escolas_autorizadas:
+        escola_final = usuario.escola_id
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Não foi possível determinar uma unidade escolar única e inequívoca para este lote: "
+                "o professor possui vínculos em mais de uma escola e nenhuma turma válida foi identificada no arquivo."
+            ),
+        )
 
+    return escola_final, relatorio, previa_registros

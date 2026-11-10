@@ -1,6 +1,6 @@
 """
 Serviço de consulta de Estudantes e Histórico Escolar com isolamento rigoroso de escopo.
-Não revela a existência de registros de outras escolas ou turmas sem vínculo.
+Não revela a existência de registros de outras escolas ou turmas/disciplinas sem vínculo.
 """
 
 from typing import Optional
@@ -11,10 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.atribuicoes.models import ProfessorTurma
+from app.modules.disciplinas.models import Disciplina
+from app.modules.escolas.models import Escola
 from app.modules.estudantes.models import (
     BoletimPeriodo,
     Estudante,
-    NotaDisciplina,
 )
 from app.modules.estudantes.repository import EstudanteRepository
 from app.modules.estudantes.schemas import (
@@ -22,6 +23,7 @@ from app.modules.estudantes.schemas import (
     EstudanteHistoricoDetalhadoResponse,
     NotaDisciplinaResponse,
 )
+from app.modules.turmas.models import Turma
 from app.modules.usuarios.models import PapelUsuario, Usuario
 
 
@@ -32,19 +34,42 @@ class EstudanteService:
     def _obter_mapa_vinculos_professor(
         db: Session,
         professor_id: uuid.UUID,
+        escola_id_professor: Optional[uuid.UUID] = None,
     ) -> dict[uuid.UUID, set[Optional[uuid.UUID]]]:
         """
-        Retorna um dicionário {turma_id: {disciplina_id_1, disciplina_id_2, ...}}
-        com todas as atribuições do professor. Se contiver `None`, o professor possui
-        vínculo geral na turma.
+        Retorna um dicionário `{turma_id: {disciplina_id_1, disciplina_id_2, ...}}`
+        contendo apenas vínculos em turmas ativas e escolas ativas (e disciplinas ativas,
+        quando `disciplina_id` não for `None`).
+        Se `escola_id_professor` estiver definido no perfil do professor, restringe às
+        turmas daquela escola.
+        Semântica de `None` no conjunto: representa um vínculo geral explícito
+        (`ProfessorTurma.disciplina_id IS NULL`) naquela turma.
         """
-        stmt = select(ProfessorTurma).where(
-            ProfessorTurma.professor_id == professor_id
+        stmt_discs = select(Disciplina.id).where(Disciplina.ativo.is_(True))
+        disciplinas_ativas_ids = set(db.execute(stmt_discs).scalars().all())
+
+        stmt = (
+            select(ProfessorTurma, Turma, Escola)
+            .join(Turma, ProfessorTurma.turma_id == Turma.id)
+            .join(Escola, Turma.escola_id == Escola.id)
+            .where(
+                ProfessorTurma.professor_id == professor_id,
+                Turma.ativo.is_(True),
+                Escola.ativo.is_(True),
+            )
         )
-        atribuicoes = db.execute(stmt).scalars().all()
+        if escola_id_professor is not None:
+            stmt = stmt.where(Turma.escola_id == escola_id_professor)
+
+        rows = db.execute(stmt).all()
         mapa: dict[uuid.UUID, set[Optional[uuid.UUID]]] = {}
-        for atrib in atribuicoes:
-            mapa.setdefault(atrib.turma_id, set()).add(atrib.disciplina_id)
+        for atrib, turma, _escola in rows:
+            if (
+                atrib.disciplina_id is not None
+                and atrib.disciplina_id not in disciplinas_ativas_ids
+            ):
+                continue
+            mapa.setdefault(turma.id, set()).add(atrib.disciplina_id)
         return mapa
 
     @staticmethod
@@ -61,7 +86,9 @@ class EstudanteService:
         """
         Lista estudantes respeitando estritamente o escopo do usuário autenticado:
         - Gestor: filtra exclusivamente pela escola vinculada (`usuario.escola_id`).
-        - Professor: filtra exclusivamente pelas turmas e disciplinas em que possui vínculo.
+        - Professor: filtra exclusivamente pelas turmas E disciplinas em que possui vínculo ativo.
+          A ausência do filtro `disciplina_id` na requisição NUNCA amplia o acesso para outras
+          disciplinas da mesma turma.
         """
         if usuario_solicitante.papel == PapelUsuario.GESTOR:
             if usuario_solicitante.escola_id is None:
@@ -69,10 +96,22 @@ class EstudanteService:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Acesso negado: gestor não possui escola vinculada.",
                 )
+            if turma_id is not None:
+                stmt_t = select(Turma).where(Turma.id == turma_id)
+                turma_obj = db.execute(stmt_t).scalar_one_or_none()
+                if (
+                    turma_obj is None
+                    or turma_obj.escola_id != usuario_solicitante.escola_id
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Acesso negado: turma não pertence à escola vinculada ao gestor.",
+                    )
             return EstudanteRepository.list_by_escola(
                 db=db,
                 escola_id=usuario_solicitante.escola_id,
                 turma_id=turma_id,
+                disciplina_id=disciplina_id,
                 ano_letivo=ano_letivo,
                 periodo_letivo=periodo_letivo,
                 skip=skip,
@@ -81,7 +120,9 @@ class EstudanteService:
 
         if usuario_solicitante.papel == PapelUsuario.PROFESSOR:
             mapa_vinculos = EstudanteService._obter_mapa_vinculos_professor(
-                db, usuario_solicitante.id
+                db,
+                usuario_solicitante.id,
+                escola_id_professor=usuario_solicitante.escola_id,
             )
             if not mapa_vinculos:
                 return []
@@ -92,23 +133,84 @@ class EstudanteService:
                     detail="Acesso negado: você não possui vínculo autorizado para consultar esta turma.",
                 )
 
-            if disciplina_id is not None and turma_id is not None:
-                discs_turma = mapa_vinculos.get(turma_id, set())
-                if None not in discs_turma and disciplina_id not in discs_turma:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Acesso negado: você não possui vínculo autorizado para esta disciplina na turma.",
+            if disciplina_id is not None:
+                if turma_id is not None:
+                    discs_turma = mapa_vinculos.get(turma_id, set())
+                    if None not in discs_turma and disciplina_id not in discs_turma:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Acesso negado: você não possui vínculo autorizado para esta disciplina na turma.",
+                        )
+                else:
+                    # Verifica se o professor possui vínculo com essa disciplina (ou vínculo geral) em alguma turma
+                    autorizado_em_alguma = any(
+                        (None in discs) or (disciplina_id in discs)
+                        for discs in mapa_vinculos.values()
                     )
+                    if not autorizado_em_alguma:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Acesso negado: você não possui vínculo autorizado para consultar esta disciplina.",
+                        )
 
             return EstudanteRepository.list_by_professor(
                 db=db,
                 professor_id=usuario_solicitante.id,
+                escola_id_professor=usuario_solicitante.escola_id,
                 turma_id=turma_id,
                 disciplina_id=disciplina_id,
                 ano_letivo=ano_letivo,
                 periodo_letivo=periodo_letivo,
                 skip=skip,
                 limit=limit,
+            )
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado para este perfil.",
+        )
+
+    @staticmethod
+    def contar_estudantes(
+        db: Session,
+        usuario_solicitante: Usuario,
+        turma_id: Optional[uuid.UUID] = None,
+        disciplina_id: Optional[uuid.UUID] = None,
+        ano_letivo: Optional[int] = None,
+        periodo_letivo: Optional[str] = None,
+    ) -> int:
+        """Retorna a contagem total de estudantes distintos dentro do escopo autorizado."""
+        if usuario_solicitante.papel == PapelUsuario.GESTOR:
+            if usuario_solicitante.escola_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: gestor não possui escola vinculada.",
+                )
+            return EstudanteRepository.count_by_escola(
+                db=db,
+                escola_id=usuario_solicitante.escola_id,
+                turma_id=turma_id,
+                disciplina_id=disciplina_id,
+                ano_letivo=ano_letivo,
+                periodo_letivo=periodo_letivo,
+            )
+
+        if usuario_solicitante.papel == PapelUsuario.PROFESSOR:
+            mapa_vinculos = EstudanteService._obter_mapa_vinculos_professor(
+                db,
+                usuario_solicitante.id,
+                escola_id_professor=usuario_solicitante.escola_id,
+            )
+            if not mapa_vinculos:
+                return 0
+            return EstudanteRepository.count_by_professor(
+                db=db,
+                professor_id=usuario_solicitante.id,
+                escola_id_professor=usuario_solicitante.escola_id,
+                turma_id=turma_id,
+                disciplina_id=disciplina_id,
+                ano_letivo=ano_letivo,
+                periodo_letivo=periodo_letivo,
             )
 
         raise HTTPException(
@@ -124,9 +226,13 @@ class EstudanteService:
     ) -> EstudanteHistoricoDetalhadoResponse:
         """
         Retorna os dados anônimos e o histórico de boletins de um estudante,
-        filtrando tanto os boletins quanto as notas por disciplina pelo escopo do solicitante.
-        Retorna 404 caso o estudante não exista ou esteja fora do escopo autorizado,
-        evitando revelar a existência de registros de outras escolas ou turmas.
+        filtrando tanto os boletins quanto as notas por disciplina pelo escopo do solicitante:
+        - Se o professor possui vínculo específico por disciplina (`disciplina_id IS NOT NULL`),
+          só autoriza boletins que possuam nota naquela disciplina específica (não vaza boletins
+          vazios nem boletins com notas apenas de outras disciplinas).
+        - Se o professor possui vínculo geral na turma (`disciplina_id IS NULL`), autoriza os
+          boletins daquela turma ativa.
+        Retorna 404 caso o estudante não exista ou esteja fora do escopo autorizado.
         """
         estudante = EstudanteRepository.get_by_id(db, estudante_id)
         if estudante is None:
@@ -144,9 +250,15 @@ class EstudanteService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Estudante não encontrado.",
                 )
+            boletins_ativos = [
+                b
+                for b in estudante.boletins
+                if b.escola_id == usuario_solicitante.escola_id
+                and (b.turma is None or b.turma.ativo)
+            ]
             boletins_filtrados = EstudanteService._serializar_boletins(
                 estudante,
-                estudante.boletins,
+                boletins_ativos,
                 filtro_disciplinas_por_turma=None,
             )
             return EstudanteHistoricoDetalhadoResponse(
@@ -161,24 +273,39 @@ class EstudanteService:
             )
 
         if usuario_solicitante.papel == PapelUsuario.PROFESSOR:
+            if (
+                usuario_solicitante.escola_id is not None
+                and estudante.escola_id != usuario_solicitante.escola_id
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Estudante não encontrado.",
+                )
+
             mapa_vinculos = EstudanteService._obter_mapa_vinculos_professor(
-                db, usuario_solicitante.id
+                db,
+                usuario_solicitante.id,
+                escola_id_professor=usuario_solicitante.escola_id,
             )
             boletins_autorizados: list[BoletimPeriodo] = []
             for bol in estudante.boletins:
                 if bol.turma_id not in mapa_vinculos:
                     continue
+                if bol.turma is not None and not bol.turma.ativo:
+                    continue
                 discs_autorizadas = mapa_vinculos[bol.turma_id]
                 if None in discs_autorizadas:
+                    # Vínculo geral explícito na turma (disciplina_id IS NULL)
                     boletins_autorizados.append(bol)
                 else:
-                    # Verifica se o boletim não tem notas ou se possui nota em disciplina autorizada
+                    # Vínculo específico por disciplina: exige que o boletim possua ao menos
+                    # um registro de NotaDisciplina em disciplina autorizada para este professor
                     notas_autorizadas = [
                         n
                         for n in bol.notas_disciplina
                         if n.disciplina_id in discs_autorizadas
                     ]
-                    if notas_autorizadas or not bol.notas_disciplina:
+                    if notas_autorizadas:
                         boletins_autorizados.append(bol)
 
             if not boletins_autorizados:
@@ -277,4 +404,3 @@ class EstudanteService:
                 )
             )
         return resultado
-

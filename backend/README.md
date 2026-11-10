@@ -253,12 +253,31 @@ A entrada de dados de estudantes e históricos escolares ocorre por meio de impo
    - Grava `Estudante`, `BoletimPeriodo` e `NotaDisciplina` em uma **transação atômica única** (`commit` integral ou `rollback` completo em caso de falha).
    - Preserva o histórico longitudinal: períodos anteriores nunca são sobrescritos por novos períodos, importações repetidas atualizam registros de forma idempotente sem duplicar e uma `situacao_final` consolidada (`Aprovado`, `Reprovado`, `Evadido`) nunca é substituída por `NULL`.
 
-### 2. Regras de Privacidade e Anonimização (LGPD / RN01)
+### 2. Regras de Privacidade e Anonimização (LGPD / RN01) e Suas Limitações
 
 - O Vértice trabalha **exclusivamente com estudantes anonimizados** (`codigo_anonimo`, ex: `EST-2026-001`).
-- Colunas pessoais proibidas no cabeçalho (`nome`, `nome_aluno`, `nome_estudante`, `cpf`, `rg`, `endereco`, `telefone`, `email_pessoal`, `data_nascimento`, etc.) ou valores com padrão de CPF, e-mail ou nome pessoal completo em `codigo_anonimo` são detectados e bloqueiam a importação sem expor os dados sensíveis nos logs ou relatórios.
+- **Inspeção de Cabeçalhos:** O validador bloqueia colunas pessoais proibidas tanto por correspondência exata normalizada quanto por inspeção de tokens compostos (independentemente de acentuação, caixa alta/baixa ou separadores `_`, `-` e espaços), incluindo variações como `nome`, `nome_aluno`, `nome_estudante`, `nome_completo`, `aluno_nome`, `estudante_nome`, `cpf_do_aluno`, `rg`, `endereco`, `telefone_responsavel`, `email_estudante`, `data_nascimento`, `filiacao`, entre outras.
+- **Inspeção de Valores por Linha:** Todas as células da planilha são inspecionadas contra padrões explícitos de CPF (formatado `000.000.000-00` ou sequência de 11 dígitos), endereços de e-mail e números de telefone. Adicionalmente, a coluna `codigo_anonimo` exige um identificador alfanumérico estruturado (contendo ao menos um dígito ou separador técnico) e rejeita cadeias puramente alfabéticas (como nomes ou prenomes isolados) ou nomes compostos.
+- **Não Exposição de Dados Sensíveis:** Quando um padrão de dado pessoal é detectado, o relatório aponta a linha e a coluna afetadas sem jamais reproduzir ou registrar em log o conteúdo sensível rejeitado.
+- **Limitações Conhecidas da Detecção Heurística:** As verificações baseadas em expressões regulares e heurísticas léxicas bloqueiam os padrões estruturados mais comuns de identificação civil e contato, mas não substituem a governança na origem dos dados — textos livres não estruturados ou códigos maliciosamente codificados fora dos padrões conhecidos ainda dependem da preparação prévia de planilhas anonimizadas pela unidade escolar.
 
-### 3. Formato Esperado do CSV / XLSX
+### 3. Escopo de Autorização do Professor, Multi-Escola, `disciplina_id = NULL` e Revalidação na Confirmação
+
+1. **Escopo de Autorização do Professor (`ProfessorTurma`):**
+   - A identidade e o perfil do usuário são extraídos exclusivamente do token JWT autenticado (colunas de autoria no CSV são proibidas).
+   - O professor somente pode importar dados e consultar estudantes/boletins de turmas ativas (`Turma.ativo = True`), pertencentes a escolas ativas (`Escola.ativo = True`), nas quais possua vínculo registrado em `professor_turmas`.
+   - Caso o cadastro do professor possua `usuario.escola_id` preenchido, seu escopo é adicionalmente restrito às turmas daquela escola específica.
+2. **Tratamento de Professores com Vínculos em Múltiplas Escolas:**
+   - Quando um professor possui `usuario.escola_id = NULL` e leciona em turmas vinculadas a mais de uma escola ativa, o sistema **não** escolhe arbitrariamente a primeira escola.
+   - A escola do lote (`LoteImportacao.escola_id`) é determinada de forma unívoca a partir das turmas autorizadas referenciadas no arquivo CSV/XLSX.
+   - Cada lote de importação deve corresponder a **uma única escola**: caso um mesmo arquivo misture turmas de escolas diferentes, o validador registra erro de `autorizacao` (*conflito de escopo escolar no lote*) e bloqueia a confirmação (`pode_confirmar = false`). Caso nenhuma turma válida permita identificar a escola do lote, a requisição é rejeitada com `HTTP 400`.
+3. **Semântica de `ProfessorTurma.disciplina_id = NULL` vs. Disciplina Específica:**
+   - **`disciplina_id = UUID` (vínculo por disciplina):** Representa a atribuição padrão do professor a uma disciplina específica naquela turma (ex: Matemática na Turma 1A). Tanto na importação quanto nas consultas (`GET /api/v1/estudantes` e `GET /api/v1/estudantes/{id}`), mesmo quando o parâmetro `disciplina_id` não é enviado na URL, o professor visualiza **exclusivamente** os estudantes e boletins que possuem registro em `notas_disciplinas` para as disciplinas ativas às quais está vinculado, com paginação (`skip`/`limit`) e contagem (`X-Total-Count`) calculadas estritamente sobre esse conjunto filtrado.
+   - **`disciplina_id = NULL` (vínculo geral na turma):** Representa uma atribuição pedagógica geral à turma (ex: professor regente/conselheiro de turma). Autoriza a importação de boletins gerais da turma (sem exigir coluna de disciplina) e a visualização de todos os estudantes e boletins ativos daquela turma.
+4. **Revalidação Integral na Confirmação (`POST /api/v1/importacoes/{lote_id}/confirmar`):**
+   - Antes de abrir a transação de escrita da Etapa 2, o serviço `_revalidar_autorizacao_na_confirmacao` verifica novamente no banco de dados se: (a) o usuário segue ativo e com papel autorizado; (b) a escola do lote (`lote.escola_id`) segue existente e ativa; (c) cada turma referenciada no lote segue existente, ativa (`Turma.ativo = True`) e vinculada à mesma `lote.escola_id` (e `usuario.escola_id`, se aplicável); (d) para professores, o vínculo `ProfessorTurma` exato para `(turma_id, disciplina_id)` continua existindo; e (e) cada disciplina referenciada segue existente e ativa (`Disciplina.ativo = True`). Qualquer revogação ou desativação ocorrida entre a prévia e a confirmação aborta a operação com `HTTP 403` sem gravar nenhum registro.
+
+### 4. Formato Esperado do CSV / XLSX
 
 #### Colunas Obrigatórias
 - `codigo_anonimo` (aliases aceitos: `id_estudante`, `identificador`, `identificador_anonimo`): código alfanumérico anônimo do estudante (2 a 50 caracteres, ex: `EST-001`).
@@ -287,7 +306,7 @@ EST-2026-002,Turma 1A,MAT,2026,1º Bimestre,78.5,8,5.5,5.0,6.0,1,Sim,
 EST-2026-003,Turma 2A,MAT,2026,1º Bimestre,92.0,3,9.0,9.5,8.5,0,Nao,Aprovado
 ```
 
-### 4. Endpoints de Importação e Estudantes
+### 5. Endpoints de Importação e Estudantes
 
 | Método | Rota | Descrição | Perfis Autorizados |
 | :--- | :--- | :--- | :--- |
@@ -296,7 +315,7 @@ EST-2026-003,Turma 2A,MAT,2026,1º Bimestre,92.0,3,9.0,9.5,8.5,0,Nao,Aprovado
 | `GET` | `/api/v1/importacoes/{lote_id}/previa` | Retorna o relatório completo de validação e a prévia dos registros | `gestor`, `professor` (escopo próprio) |
 | `POST` | `/api/v1/importacoes/{lote_id}/confirmar` | Revalida vínculos e confirma a persistência em transação atômica | `gestor`, `professor` (autor/escopo) |
 | `POST` | `/api/v1/importacoes/{lote_id}/descartar` | Descarta um lote ainda não confirmado | `gestor`, `professor` (autor/escopo) |
-| `GET` | `/api/v1/estudantes` | Lista estudantes anonimizados filtrados pelo escopo do usuário | `gestor`, `professor` |
+| `GET` | `/api/v1/estudantes` | Lista estudantes anonimizados filtrados pelo escopo do usuário (retorna total filtrado no header `X-Total-Count`) | `gestor`, `professor` |
 | `GET` | `/api/v1/estudantes/{estudante_id}` | Retorna estudante e seu histórico longitudinal de boletins e disciplinas | `gestor`, `professor` |
 
 #### Exemplo de Resposta de Validação (`POST /api/v1/importacoes/validar` — `201 Created`)
