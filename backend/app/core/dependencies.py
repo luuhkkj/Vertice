@@ -106,14 +106,69 @@ require_qualquer_papel = require_roles(
     PapelUsuario.PROFESSOR,
 )
 
-# Política explícita para futura importação de datasets escolares (Fase 3):
-# Por segurança, não assume equivalência entre 'gestor' e 'coordenador'.
-# Permanece restrita ao papel explicitamente autorizado na política até definição
-# formal do responsável pelo projeto sobre o papel de coordenação/importação.
+# Política explícita para importação de datasets escolares (Fase 3):
+# O perfil 'gestor' representa a coordenação escolar e os professores importam
+# dados exclusivamente de suas turmas e disciplinas vinculadas.
+# Administradores NÃO recebem permissão automática de importação.
 PAPEIS_AUTORIZADOS_IMPORTACAO: tuple[PapelUsuario, ...] = (
-    PapelUsuario.ADMINISTRADOR,
+    PapelUsuario.GESTOR,
+    PapelUsuario.PROFESSOR,
 )
 require_importacao_datasets = require_roles(*PAPEIS_AUTORIZADOS_IMPORTACAO)
+
+
+def garantir_escopo_importacao_usuario(usuario: Usuario) -> None:
+    """
+    Valida pré-requisitos de escopo para operações de importação:
+    - Apenas GESTOR e PROFESSOR são autorizados (ADMINISTRADOR é bloqueado).
+    - Se o usuário for GESTOR, exige que possua uma escola válida vinculada (`escola_id`).
+    """
+    if usuario.papel not in PAPEIS_AUTORIZADOS_IMPORTACAO:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado: seu perfil não possui autorização para importar datasets escolares.",
+        )
+
+    if usuario.papel == PapelUsuario.GESTOR and usuario.escola_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado: gestor não possui uma unidade escolar vinculada.",
+        )
+
+
+def verificar_vinculo_professor_turma_disciplina(
+    db: Session,
+    professor_id: uuid.UUID,
+    turma_id: uuid.UUID,
+    disciplina_id: Optional[uuid.UUID] = None,
+) -> bool:
+    """
+    Verifica no banco de dados se o professor possui vínculo autorizado com a combinação
+    de turma e disciplina em `professor_turmas`.
+    - Se `disciplina_id` for informada, exige vínculo explícito com `(professor_id, turma_id, disciplina_id)`.
+    - Se `disciplina_id` for `None`, verifica se há vínculo geral na turma (`disciplina_id IS NULL`).
+    """
+    if disciplina_id is not None:
+        stmt = (
+            select(ProfessorTurma.id)
+            .where(
+                ProfessorTurma.professor_id == professor_id,
+                ProfessorTurma.turma_id == turma_id,
+                ProfessorTurma.disciplina_id == disciplina_id,
+            )
+            .limit(1)
+        )
+    else:
+        stmt = (
+            select(ProfessorTurma.id)
+            .where(
+                ProfessorTurma.professor_id == professor_id,
+                ProfessorTurma.turma_id == turma_id,
+                ProfessorTurma.disciplina_id.is_(None),
+            )
+            .limit(1)
+        )
+    return db.execute(stmt).scalar_one_or_none() is not None
 
 
 def garantir_acesso_escola(

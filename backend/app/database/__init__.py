@@ -14,6 +14,17 @@ from app.database.connection import (
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.disciplinas.models import Disciplina
 from app.modules.escolas.models import Escola
+from app.modules.estudantes.models import (
+    BoletimPeriodo,
+    Estudante,
+    NotaDisciplina,
+    SituacaoFinalPeriodo,
+)
+from app.modules.importacao.models import (
+    LoteImportacao,
+    StatusLoteImportacao,
+    TipoImportacao,
+)
 from app.modules.turmas.models import Turma
 from app.modules.usuarios.models import PapelUsuario, Usuario
 
@@ -29,4 +40,11 @@ __all__ = [
     "Turma",
     "Disciplina",
     "ProfessorTurma",
+    "Estudante",
+    "BoletimPeriodo",
+    "NotaDisciplina",
+    "SituacaoFinalPeriodo",
+    "LoteImportacao",
+    "StatusLoteImportacao",
+    "TipoImportacao",
 ]

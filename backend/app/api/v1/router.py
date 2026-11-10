@@ -13,6 +13,8 @@ from app.modules.atribuicoes.router import router as atribuicoes_router
 from app.modules.auth.router import router as auth_router
 from app.modules.disciplinas.router import router as disciplinas_router
 from app.modules.escolas.router import router as escolas_router
+from app.modules.estudantes.router import router as estudantes_router
+from app.modules.importacao.router import router as importacao_router
 from app.modules.turmas.router import router as turmas_router
 from app.modules.usuarios.router import router as usuarios_router
 
@@ -39,7 +41,7 @@ def api_v1_health(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 # ==============================================================================
-# Inclusão dos roteadores dos módulos de negócio (Fase 2)
+# Inclusão dos roteadores dos módulos de negócio (Fases 2 e 3)
 # ==============================================================================
 api_router.include_router(auth_router, prefix="/auth", tags=["Autenticação"])
 api_router.include_router(usuarios_router, prefix="/usuarios", tags=["Usuários"])
@@ -50,4 +52,10 @@ api_router.include_router(
 )
 api_router.include_router(
     atribuicoes_router, prefix="/atribuicoes", tags=["Atribuições"]
+)
+api_router.include_router(
+    estudantes_router, prefix="/estudantes", tags=["Estudantes"]
+)
+api_router.include_router(
+    importacao_router, prefix="/importacoes", tags=["Importações"]
 )

@@ -48,8 +48,8 @@ backend/
 │   │   ├── turmas/                 # Modelo Turma e filtragem por escopo do professor
 │   │   ├── disciplinas/            # Modelo Disciplina e catálogo curricular
 │   │   ├── atribuicoes/            # Modelo ProfessorTurma e vínculo professor-turma-disciplina
-│   │   ├── estudantes/             # Reservado para próximas fases
-│   │   ├── importacao/             # Reservado para próximas fases
+│   │   ├── estudantes/             # Modelos Estudante, BoletimPeriodo, NotaDisciplina e consultas isoladas
+│   │   ├── importacao/             # Motor de validação CSV/XLSX, prévia, auditoria LoteImportacao e confirmação
 │   │   ├── avaliacoes/             # Reservado para próximas fases
 │   │   ├── participacao/           # Reservado para próximas fases
 │   │   ├── indicadores/            # Reservado para próximas fases
@@ -62,7 +62,8 @@ backend/
 │   ├── __init__.py
 │   ├── conftest.py                 # Fixtures pytest com banco isolado em memória
 │   ├── test_health.py              # Testes de inicialização, health check e utilitários de segurança
-│   └── test_auth_and_models.py     # Testes de persistência, autenticação, RBAC e vínculos
+│   ├── test_auth_and_models.py     # Testes de persistência, autenticação, RBAC e vínculos
+│   └── test_fase3_estudantes_e_importacao.py # Testes de importação em 2 etapas, autorização, LGPD e histórico
 ├── alembic/
 │   ├── versions/                   # Migrações versionadas do banco de dados
 │   ├── env.py                      # Script de execução do Alembic conectado ao Base.metadata
@@ -231,11 +232,126 @@ A validação de permissões ocorre integralmente no backend através das depend
 
 | Papel | Permissões no Sistema |
 | :--- | :--- |
-| **`administrador`** | Acesso administrativo total: cria e atualiza usuários (`POST /api/v1/usuarios`, `PATCH /api/v1/usuarios/{id}`), gerencia escolas, turmas, disciplinas e atribuições, e está autorizado por padrão para futuras importações de datasets escolares (`PAPEIS_AUTORIZADOS_IMPORTACAO`). |
-| **`gestor`** | Acesso de gestão pedagógica: consulta usuários, cadastra e atualiza escolas, turmas, disciplinas e atribuições de professores. Se o gestor possuir `escola_id` vinculado no seu cadastro, seu acesso de leitura e escrita fica restrito exclusivamente àquela unidade escolar (`garantir_acesso_escola`). |
-| **`professor`** | Acesso restrito ao seu escopo pedagógico: visualiza apenas as turmas e atribuições às quais está vinculado na tabela `professor_turmas`. Tentativas de acessar turmas sem vínculo retornam `HTTP 403 Forbidden`. |
+| **`administrador`** | Acesso administrativo de infraestrutura: cria e atualiza usuários (`POST /api/v1/usuarios`, `PATCH /api/v1/usuarios/{id}`) e gerencia cadastros estruturais (escolas, turmas, disciplinas e atribuições). **Não** possui permissão automática para importar datasets escolares. |
+| **`gestor`** | Representa a coordenação escolar: consulta usuários, gerencia turmas/atribuições de sua escola e realiza importação e consulta de datasets escolares exclusivamente para as turmas pertencentes à escola à qual está vinculado (`usuario.escola_id`). Gestores sem escola vinculada têm a importação bloqueada (`HTTP 403`). |
+| **`professor`** | Acesso restrito ao seu escopo pedagógico: importa datasets e consulta estudantes/históricos **exclusivamente** para as combinações de turma e disciplina às quais está vinculado em `professor_turmas`. Tentativas de importar ou acessar turmas/disciplinas sem vínculo retornam erro de autorização. |
 
-> **Nota Arquitetural sobre `gestor` vs `coordenador`:** A documentação inicial do projeto cita o perfil `COORDENADOR` (responsável pela importação de datasets em CSV/XLSX), enquanto a especificação da Fase 2 definiu os papéis `administrador`, `gestor` e `professor`. Não foi assumida equivalência implícita entre `gestor` e `coordenador`. A dependência `require_importacao_datasets` (`PAPEIS_AUTORIZADOS_IMPORTACAO`) encontra-se isolada em `app/core/dependencies.py`, aguardando decisão formal do responsável pelo projeto antes da Fase 3.
+---
+
+## 📥 Módulo de Estudantes e Importação Automatizada de Datasets (Fase 3)
+
+### 1. Objetivo e Fluxo em Duas Etapas
+
+A entrada de dados de estudantes e históricos escolares ocorre por meio de importação automatizada em **duas etapas** (`CSV` ou `XLSX`, até **10 MB**):
+
+1. **Etapa 1 — Upload, Validação e Prévia (`POST /api/v1/importacoes/validar`)**:
+   - Identifica automaticamente o usuário responsável a partir do token JWT da sessão autenticada (nunca confia em colunas `professor_id` ou `escola_id` do CSV).
+   - Verifica extensão (`.csv` ou `.xlsx`), tamanho máximo (`10 MB`), colunas obrigatórias, regras de anonimização (LGPD/RN01), tipos de dados, duplicidades e autorização por linha contra `ProfessorTurma` (para professores) ou `usuario.escola_id` (para gestores).
+   - Registra o lote na tabela `lotes_importacao` (`status="validado"` ou `status="com_erros"`) e retorna o relatório detalhado e a prévia dos registros. **Nenhum dado acadêmico definitivo é persistido nesta etapa.**
+2. **Etapa 2 — Confirmação e Persistência Atômica (`POST /api/v1/importacoes/{lote_id}/confirmar`)**:
+   - Revalida a identidade, as permissões e os vínculos ativos (`ProfessorTurma` / escola do gestor) no momento exato da confirmação.
+   - Grava `Estudante`, `BoletimPeriodo` e `NotaDisciplina` em uma **transação atômica única** (`commit` integral ou `rollback` completo em caso de falha).
+   - Preserva o histórico longitudinal: períodos anteriores nunca são sobrescritos por novos períodos, importações repetidas atualizam registros de forma idempotente sem duplicar e uma `situacao_final` consolidada (`Aprovado`, `Reprovado`, `Evadido`) nunca é substituída por `NULL`.
+
+### 2. Regras de Privacidade e Anonimização (LGPD / RN01)
+
+- O Vértice trabalha **exclusivamente com estudantes anonimizados** (`codigo_anonimo`, ex: `EST-2026-001`).
+- Colunas pessoais proibidas no cabeçalho (`nome`, `nome_aluno`, `nome_estudante`, `cpf`, `rg`, `endereco`, `telefone`, `email_pessoal`, `data_nascimento`, etc.) ou valores com padrão de CPF, e-mail ou nome pessoal completo em `codigo_anonimo` são detectados e bloqueiam a importação sem expor os dados sensíveis nos logs ou relatórios.
+
+### 3. Formato Esperado do CSV / XLSX
+
+#### Colunas Obrigatórias
+- `codigo_anonimo` (aliases aceitos: `id_estudante`, `identificador`, `identificador_anonimo`): código alfanumérico anônimo do estudante (2 a 50 caracteres, ex: `EST-001`).
+- `turma` (aliases: `nome_turma`, `codigo_turma`, `id_turma`): nome ou UUID da turma cadastrada.
+- `ano_letivo` (alias: `ano`): ano letivo inteiro (deve coincidir com o `ano_letivo` da turma).
+- `periodo_letivo` (aliases: `periodo`, `bimestre`, `etapa`): identificação do período (ex: `1º Bimestre`, `2º Bimestre`, `Anual`).
+
+#### Colunas Opcionais
+- `disciplina` (aliases: `codigo_disciplina`, `nome_disciplina`): código ou nome da disciplina (ex: `MAT` ou `Matemática`). Se omitida por um professor que leciona apenas uma disciplina naquela turma, o sistema infere a disciplina automaticamente de forma segura; se o professor lecionar múltiplas disciplinas na turma, o sistema exige a coluna explícita.
+- `frequencia_percentual` (aliases: `frequencia`, `presenca`): número de `0` a `100` (aceita ponto ou vírgula). Ausência permanece `NULL` (não é convertida em zero).
+- `faltas` (alias: `quantidade_faltas`): inteiro `>= 0`.
+- `nota` (alias: `nota_disciplina`): nota na disciplina de `0` a `10`.
+- `nota_prova` (alias: `prova`): nota de avaliação/prova de `0` a `10`.
+- `nota_trabalho` (alias: `trabalho`): nota de trabalho/atividade de `0` a `10`.
+- `media_geral` (alias: `media`): média consolidada no período de `0` a `10`.
+- `historico_reprovacoes` (alias: `historico_reprovacao`): inteiro `>= 0` (acumulado de reprovações anteriores).
+- `participacao_recuperacao` (aliases: `recuperacao`, `em_recuperacao`): booleano (`Sim`/`Não`, `True`/`False`, `1`/`0`).
+- `situacao_final` (alias: `situacao`): `Aprovado`, `Reprovado`, `Evadido` ou vazio (`NULL` quando o período ainda está em andamento).
+
+#### Exemplo de CSV Fictício Anonimizado
+
+```csv
+codigo_anonimo,turma,disciplina,ano_letivo,periodo_letivo,frequencia_percentual,faltas,nota,nota_prova,nota_trabalho,historico_reprovacoes,participacao_recuperacao,situacao_final
+EST-2026-001,Turma 1A,MAT,2026,1º Bimestre,95.0,2,8.5,8.0,9.0,0,Nao,
+EST-2026-002,Turma 1A,MAT,2026,1º Bimestre,78.5,8,5.5,5.0,6.0,1,Sim,
+EST-2026-003,Turma 2A,MAT,2026,1º Bimestre,92.0,3,9.0,9.5,8.5,0,Nao,Aprovado
+```
+
+### 4. Endpoints de Importação e Estudantes
+
+| Método | Rota | Descrição | Perfis Autorizados |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/importacoes/validar` | Upload (`multipart/form-data`, campo `arquivo`), validação de escopo/LGPD e geração de prévia | `gestor`, `professor` |
+| `GET` | `/api/v1/importacoes/{lote_id}` | Consulta o status e resumo de auditoria do lote | `gestor`, `professor` (escopo próprio) |
+| `GET` | `/api/v1/importacoes/{lote_id}/previa` | Retorna o relatório completo de validação e a prévia dos registros | `gestor`, `professor` (escopo próprio) |
+| `POST` | `/api/v1/importacoes/{lote_id}/confirmar` | Revalida vínculos e confirma a persistência em transação atômica | `gestor`, `professor` (autor/escopo) |
+| `POST` | `/api/v1/importacoes/{lote_id}/descartar` | Descarta um lote ainda não confirmado | `gestor`, `professor` (autor/escopo) |
+| `GET` | `/api/v1/estudantes` | Lista estudantes anonimizados filtrados pelo escopo do usuário | `gestor`, `professor` |
+| `GET` | `/api/v1/estudantes/{estudante_id}` | Retorna estudante e seu histórico longitudinal de boletins e disciplinas | `gestor`, `professor` |
+
+#### Exemplo de Resposta de Validação (`POST /api/v1/importacoes/validar` — `201 Created`)
+
+```json
+{
+  "id": "e4d909c2-90d0-4fb1-9ef6-3f1d8c22a1b3",
+  "usuario_id": "a12b34c5-d6e7-4f89-8012-3456789abcde",
+  "escola_id": "f98e76d5-c4b3-4a21-9087-654321fedcba",
+  "nome_arquivo": "notas_1bim_mat.csv",
+  "tipo_importacao": "DADOS_ESCOLARES",
+  "hash_arquivo": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "status": "validado",
+  "total_linhas": 2,
+  "registros_validos": 2,
+  "quantidade_erros": 0,
+  "quantidade_avisos": 0,
+  "registros_novos": 2,
+  "registros_existentes": 0,
+  "registros_inseridos": 0,
+  "registros_atualizados": 0,
+  "pode_confirmar": true,
+  "relatorio_validacao": {
+    "total_linhas": 2,
+    "registros_validos": 2,
+    "quantidade_erros": 0,
+    "quantidade_avisos": 0,
+    "registros_novos": 2,
+    "registros_existentes": 0,
+    "turmas_identificadas": ["Turma 1A"],
+    "disciplinas_identificadas": ["Matemática (MAT)"],
+    "colunas_ausentes": [],
+    "colunas_proibidas_pii": [],
+    "problemas_autorizacao": [],
+    "valores_invalidos": [],
+    "duplicidades": [],
+    "problemas_anonimizacao": [],
+    "erros": [],
+    "avisos": []
+  },
+  "previa_registros": [
+    {
+      "linha": 2,
+      "codigo_anonimo": "EST-2026-001",
+      "turma_nome": "Turma 1A",
+      "disciplina_codigo": "MAT",
+      "ano_letivo": 2026,
+      "periodo_letivo": "1º Bimestre",
+      "frequencia_percentual": 95.0,
+      "nota_disciplina": 8.5,
+      "operacao_prevista": "insercao"
+    }
+  ]
+}
+```
 
 ---
 
