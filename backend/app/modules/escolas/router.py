@@ -68,14 +68,15 @@ def obter_escola(
 @router.patch(
     "/{escola_id}",
     response_model=EscolaResponse,
-    summary="Atualizar escola (Administrador ou Gestor)",
+    summary="Atualizar escola (Administrador ou Gestor da unidade)",
 )
 def atualizar_escola(
     escola_id: uuid.UUID,
     dados: EscolaUpdate,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_gestor_ou_admin),
+    current_user: Usuario = Depends(require_gestor_ou_admin),
 ) -> Escola:
-    """Atualiza dados cadastrais ou status de uma escola."""
-    return EscolaService.atualizar_escola(db, escola_id, dados)
-
+    """Atualiza dados cadastrais ou status de uma escola respeitando escopo do gestor."""
+    return EscolaService.atualizar_escola(
+        db, escola_id, dados, usuario=current_user
+    )

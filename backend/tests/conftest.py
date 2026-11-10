@@ -18,6 +18,13 @@ backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
+# Configura variáveis de ambiente próprias e seguras para a suíte de testes
+# antes de importar app.core.config, não dependendo de arquivo .env local
+os.environ["ENVIRONMENT"] = "test"
+os.environ["DEBUG"] = "True"
+os.environ["SECRET_KEY"] = "chave-secreta-isolada-para-suite-de-testes-automatizados-vertice-2026"
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+
 import app.database  # noqa: F401 - garante carregamento de todos os modelos ORM
 from app.database.base import Base
 from app.database.connection import get_db

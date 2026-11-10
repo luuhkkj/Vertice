@@ -5,6 +5,7 @@ Camada de serviço para regras de negócio de Disciplinas.
 import uuid
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.disciplinas.models import Disciplina
@@ -13,7 +14,7 @@ from app.modules.disciplinas.schemas import DisciplinaCreate, DisciplinaUpdate
 
 
 class DisciplinaService:
-    """Regras de negócio para cadastro e consulta de disciplinas."""
+    """Regras de negócio para cadastro, atualização e consulta de disciplinas."""
 
     @staticmethod
     def criar_disciplina(db: Session, dados: DisciplinaCreate) -> Disciplina:
@@ -30,7 +31,14 @@ class DisciplinaService:
             codigo=codigo_normalizado,
             ativo=dados.ativo,
         )
-        return DisciplinaRepository.create(db, nova_disciplina)
+        try:
+            return DisciplinaRepository.create(db, nova_disciplina)
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Conflito de integridade: código de disciplina já cadastrado.",
+            ) from exc
 
     @staticmethod
     def obter_por_id(db: Session, disciplina_id: uuid.UUID) -> Disciplina:
@@ -53,8 +61,9 @@ class DisciplinaService:
         db: Session, disciplina_id: uuid.UUID, dados: DisciplinaUpdate
     ) -> Disciplina:
         disciplina = DisciplinaService.obter_por_id(db, disciplina_id)
+        campos = dados.model_fields_set
 
-        if dados.codigo is not None and dados.codigo != disciplina.codigo:
+        if "codigo" in campos and dados.codigo is not None and dados.codigo != disciplina.codigo:
             outro = DisciplinaRepository.get_by_codigo(db, dados.codigo)
             if outro is not None and outro.id != disciplina.id:
                 raise HTTPException(
@@ -63,11 +72,17 @@ class DisciplinaService:
                 )
             disciplina.codigo = dados.codigo
 
-        if dados.nome is not None:
+        if "nome" in campos and dados.nome is not None:
             disciplina.nome = dados.nome.strip()
 
-        if dados.ativo is not None:
+        if "ativo" in campos and dados.ativo is not None:
             disciplina.ativo = dados.ativo
 
-        return DisciplinaRepository.update(db, disciplina)
-
+        try:
+            return DisciplinaRepository.update(db, disciplina)
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Conflito de integridade ao atualizar disciplina.",
+            ) from exc

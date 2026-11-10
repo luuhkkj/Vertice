@@ -438,3 +438,319 @@ def test_fluxo_completo_escola_turma_disciplina_atribuicao_e_vinculo_professor(
     assert resp_acesso_b.status_code == 403
     assert "vínculo" in resp_acesso_b.json()["detail"].lower()
 
+
+def test_impedir_duplicidade_atribuicao_sem_disciplina(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    Valida que ProfessorTurma impede associações duplicadas mesmo quando
+    disciplina_id é NULL (tanto via validação do serviço quanto pelo índice único parcial).
+    """
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+    from app.modules.atribuicoes.models import ProfessorTurma
+
+    criar_administrador_inicial(
+        db_session, "Admin", "admin@vertice.edu.br", "AdminSenha123"
+    )
+    prof = UsuarioService.criar_usuario(
+        db_session,
+        UsuarioCreate(
+            nome="Prof Geral",
+            email="prof.geral@vertice.edu.br",
+            senha="ProfSenha123",
+            papel=PapelUsuario.PROFESSOR,
+        ),
+    )
+    headers_admin = _obter_headers_auth(
+        client, "admin@vertice.edu.br", "AdminSenha123"
+    )
+
+    resp_escola = client.post(
+        "/api/v1/escolas",
+        json={"nome": "Escola Municipal", "codigo": "EM-01"},
+        headers=headers_admin,
+    )
+    escola_id = resp_escola.json()["id"]
+
+    resp_turma = client.post(
+        "/api/v1/turmas",
+        json={
+            "nome": "Turma Única",
+            "serie": "1º Ano",
+            "turno": "Matutino",
+            "ano_letivo": 2026,
+            "escola_id": escola_id,
+        },
+        headers=headers_admin,
+    )
+    turma_id = resp_turma.json()["id"]
+
+    # 1ª atribuição com disciplina_id = None -> 201 Created
+    resp_1 = client.post(
+        "/api/v1/atribuicoes",
+        json={
+            "professor_id": str(prof.id),
+            "turma_id": turma_id,
+            "disciplina_id": None,
+        },
+        headers=headers_admin,
+    )
+    assert resp_1.status_code == 201
+    assert resp_1.json()["disciplina_id"] is None
+
+    # 2ª atribuição idêntica via API com disciplina_id = None -> 409 Conflict
+    resp_2 = client.post(
+        "/api/v1/atribuicoes",
+        json={
+            "professor_id": str(prof.id),
+            "turma_id": turma_id,
+            "disciplina_id": None,
+        },
+        headers=headers_admin,
+    )
+    assert resp_2.status_code == 409
+
+    # 3ª verificação: inserção direta no banco com disciplina_id = None deve acionar
+    # o índice único parcial ix_uq_professor_turma_sem_disciplina (IntegrityError)
+    import uuid
+    duplicata_direta = ProfessorTurma(
+        professor_id=prof.id,
+        turma_id=uuid.UUID(turma_id),
+        disciplina_id=None,
+    )
+    db_session.add(duplicata_direta)
+    with pytest.raises(IntegrityError):
+        db_session.commit()
+    db_session.rollback()
+
+
+def test_impedir_colisao_unicidade_composta_ao_atualizar_turma(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    Valida que atualizar uma turma para coincidir com (escola_id, nome, serie, turno, ano_letivo)
+    de outra turma existente retorna HTTP 409 Conflict.
+    """
+    criar_administrador_inicial(
+        db_session, "Admin", "admin@vertice.edu.br", "AdminSenha123"
+    )
+    headers_admin = _obter_headers_auth(
+        client, "admin@vertice.edu.br", "AdminSenha123"
+    )
+
+    escola_id = client.post(
+        "/api/v1/escolas",
+        json={"nome": "Escola Teste", "codigo": "ET-2026"},
+        headers=headers_admin,
+    ).json()["id"]
+
+    client.post(
+        "/api/v1/turmas",
+        json={
+            "nome": "1º Ano A",
+            "serie": "1ª Série",
+            "turno": "Matutino",
+            "ano_letivo": 2026,
+            "escola_id": escola_id,
+        },
+        headers=headers_admin,
+    )
+    turma_b = client.post(
+        "/api/v1/turmas",
+        json={
+            "nome": "1º Ano B",
+            "serie": "1ª Série",
+            "turno": "Matutino",
+            "ano_letivo": 2026,
+            "escola_id": escola_id,
+        },
+        headers=headers_admin,
+    ).json()
+
+    # Tentar renomear '1º Ano B' para '1º Ano A' na mesma escola/série/turno/ano -> 409
+    resp_patch = client.patch(
+        f"/api/v1/turmas/{turma_b['id']}",
+        json={"nome": "1º Ano A"},
+        headers=headers_admin,
+    )
+    assert resp_patch.status_code == 409
+
+
+def test_escopo_gestor_vinculado_a_escola_especifica(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    Valida que um gestor vinculado a uma escola específica (escola_id preenchido)
+    só pode gerenciar e visualizar turmas e atribuições de sua própria escola.
+    """
+    import uuid
+
+    criar_administrador_inicial(
+        db_session, "Admin", "admin@vertice.edu.br", "AdminSenha123"
+    )
+    headers_admin = _obter_headers_auth(
+        client, "admin@vertice.edu.br", "AdminSenha123"
+    )
+
+    escola_1_id = client.post(
+        "/api/v1/escolas",
+        json={"nome": "Escola Norte", "codigo": "ESC-NORTE"},
+        headers=headers_admin,
+    ).json()["id"]
+
+    escola_2_id = client.post(
+        "/api/v1/escolas",
+        json={"nome": "Escola Sul", "codigo": "ESC-SUL"},
+        headers=headers_admin,
+    ).json()["id"]
+
+    # Criar gestor vinculado exclusivamente à Escola Norte
+    UsuarioService.criar_usuario(
+        db_session,
+        UsuarioCreate(
+            nome="Gestor Norte",
+            email="gestor.norte@vertice.edu.br",
+            senha="GestorSenha123",
+            papel=PapelUsuario.GESTOR,
+            escola_id=uuid.UUID(escola_1_id),
+        ),
+    )
+    headers_gestor_norte = _obter_headers_auth(
+        client, "gestor.norte@vertice.edu.br", "GestorSenha123"
+    )
+
+    # Gestor Norte cria turma na Escola Norte -> 201
+    resp_t1 = client.post(
+        "/api/v1/turmas",
+        json={
+            "nome": "Turma Norte 1",
+            "serie": "1ª Série",
+            "turno": "Matutino",
+            "ano_letivo": 2026,
+            "escola_id": escola_1_id,
+        },
+        headers=headers_gestor_norte,
+    )
+    assert resp_t1.status_code == 201
+
+    # Gestor Norte tenta criar turma na Escola Sul -> 403 Forbidden
+    resp_t2_forbidden = client.post(
+        "/api/v1/turmas",
+        json={
+            "nome": "Turma Sul 1",
+            "serie": "1ª Série",
+            "turno": "Matutino",
+            "ano_letivo": 2026,
+            "escola_id": escola_2_id,
+        },
+        headers=headers_gestor_norte,
+    )
+    assert resp_t2_forbidden.status_code == 403
+
+    # Admin cria turma na Escola Sul
+    turma_sul_id = client.post(
+        "/api/v1/turmas",
+        json={
+            "nome": "Turma Sul 1",
+            "serie": "1ª Série",
+            "turno": "Matutino",
+            "ano_letivo": 2026,
+            "escola_id": escola_2_id,
+        },
+        headers=headers_admin,
+    ).json()["id"]
+
+    # Gestor Norte tenta acessar turma da Escola Sul -> 403 Forbidden
+    assert (
+        client.get(
+            f"/api/v1/turmas/{turma_sul_id}", headers=headers_gestor_norte
+        ).status_code
+        == 403
+    )
+
+    # Gestor Norte lista turmas -> só vê a turma da Escola Norte
+    turmas_norte = client.get(
+        "/api/v1/turmas", headers=headers_gestor_norte
+    ).json()
+    assert len(turmas_norte) == 1
+    assert turmas_norte[0]["escola_id"] == escola_1_id
+
+
+def test_integracao_postgres_indice_parcial_professor_turma() -> None:
+    """
+    Teste de integração direto na instância PostgreSQL local (localhost:5432),
+    validando que o índice único parcial ix_uq_professor_turma_sem_disciplina
+    impede duplicatas com disciplina_id IS NULL em nível de banco PostgreSQL.
+    """
+    from pathlib import Path
+    import pytest
+    from sqlalchemy import create_engine
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.orm import sessionmaker
+
+    from app.core.config import ENV_FILE_PATH, Settings
+    from app.modules.atribuicoes.models import ProfessorTurma
+    from app.modules.escolas.models import Escola
+    from app.modules.turmas.models import Turma
+    from app.modules.usuarios.models import PapelUsuario, Usuario
+
+    if not Path(ENV_FILE_PATH).exists():
+        pytest.skip("Arquivo .env não encontrado para teste de integração PostgreSQL.")
+
+    pg_settings = Settings(_env_file=str(ENV_FILE_PATH), DATABASE_URL=None)  # type: ignore[call-arg]
+    pg_engine = create_engine(pg_settings.SQLALCHEMY_DATABASE_URI, pool_pre_ping=True)
+    PgSession = sessionmaker(bind=pg_engine, autocommit=False, autoflush=False)
+
+    with pg_engine.connect() as conn:
+        trans = conn.begin()
+        session = PgSession(bind=conn)
+        try:
+            escola = Escola(nome="Escola PG Teste", codigo="PG-TEST-999", ativo=True)
+            prof = Usuario(
+                nome="Prof PG",
+                email="prof.pg.test.999@vertice.edu.br",
+                senha_hash="hash_teste",
+                papel=PapelUsuario.PROFESSOR,
+                ativo=True,
+            )
+            session.add_all([escola, prof])
+            session.flush()
+
+            turma = Turma(
+                nome="Turma PG",
+                serie="1º Ano",
+                turno="Matutino",
+                ano_letivo=2026,
+                escola_id=escola.id,
+                ativo=True,
+            )
+            session.add(turma)
+            session.flush()
+
+            atrib1 = ProfessorTurma(
+                professor_id=prof.id,
+                turma_id=turma.id,
+                disciplina_id=None,
+            )
+            session.add(atrib1)
+            session.flush()
+
+            # Inserir segunda atribuição com disciplina_id=None na mesma transação
+            # deve disparar IntegrityError no PostgreSQL via ix_uq_professor_turma_sem_disciplina
+            atrib2 = ProfessorTurma(
+                professor_id=prof.id,
+                turma_id=turma.id,
+                disciplina_id=None,
+            )
+            session.add(atrib2)
+            with pytest.raises(IntegrityError):
+                session.flush()
+        finally:
+            session.close()
+            if trans.is_active:
+                trans.rollback()
+            pg_engine.dispose()
+
+
+

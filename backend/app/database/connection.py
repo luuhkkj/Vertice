@@ -44,14 +44,18 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-def check_database_connection() -> bool:
+def check_database_connection(db: Session | None = None) -> bool:
     """
-    Testa se a conexão com o banco de dados configurado está ativa.
+    Testa se a conexão com o banco de dados está ativa.
+    Se uma sessão `db` for fornecida, executa a verificação nela; caso contrário, usa o `engine`.
     Retorna True se operacional ou False em caso de falha de conexão.
     """
     try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
+        if db is not None:
+            db.execute(text("SELECT 1"))
+        else:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
         return True
     except Exception as exc:
         logger.warning("Falha ao verificar conexão com o banco de dados: %s", exc)

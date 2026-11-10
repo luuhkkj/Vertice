@@ -6,7 +6,14 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 import uuid
 
-from sqlalchemy import DateTime, ForeignKey, UniqueConstraint, Uuid, func
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    Uuid,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -21,15 +28,30 @@ class ProfessorTurma(Base):
     """
     Entidade de associação entre professores, turmas e disciplinas.
     Define o escopo de acesso de cada professor às turmas correspondentes.
+
+    Utiliza índices únicos parciais para garantir integridade no PostgreSQL e SQLite
+    tanto quando `disciplina_id` é informado (`IS NOT NULL`) quanto quando é nulo (`IS NULL`),
+    prevenindo duplicatas mesmo em transações concorrentes.
     """
 
     __tablename__ = "professor_turmas"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "ix_uq_professor_turma_com_disciplina",
             "professor_id",
             "turma_id",
             "disciplina_id",
-            name="uq_professor_turma_disciplina",
+            unique=True,
+            postgresql_where=text("disciplina_id IS NOT NULL"),
+            sqlite_where=text("disciplina_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_uq_professor_turma_sem_disciplina",
+            "professor_id",
+            "turma_id",
+            unique=True,
+            postgresql_where=text("disciplina_id IS NULL"),
+            sqlite_where=text("disciplina_id IS NULL"),
         ),
     )
 
@@ -76,4 +98,3 @@ class ProfessorTurma(Base):
         "Disciplina",
         back_populates="atribuicoes",
     )
-

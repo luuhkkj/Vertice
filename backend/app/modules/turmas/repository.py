@@ -49,6 +49,20 @@ class TurmaRepository:
         return list(db.execute(stmt).scalars().all())
 
     @staticmethod
+    def list_by_escola(
+        db: Session, escola_id: uuid.UUID, skip: int = 0, limit: int = 100
+    ) -> list[Turma]:
+        """Lista exclusivamente as turmas pertencentes a uma escola específica."""
+        stmt = (
+            select(Turma)
+            .where(Turma.escola_id == escola_id)
+            .order_by(Turma.ano_letivo.desc(), Turma.serie, Turma.nome)
+            .offset(skip)
+            .limit(limit)
+        )
+        return list(db.execute(stmt).scalars().all())
+
+    @staticmethod
     def list_by_professor(
         db: Session, professor_id: uuid.UUID, skip: int = 0, limit: int = 100
     ) -> list[Turma]:
@@ -77,4 +91,3 @@ class TurmaRepository:
         db.commit()
         db.refresh(turma)
         return turma
-

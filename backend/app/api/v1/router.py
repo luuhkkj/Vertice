@@ -3,9 +3,12 @@ Roteador central da API v1.
 Concentra e organiza os endpoints da versão 1 da aplicação Vértice.
 """
 
-from fastapi import APIRouter
+from typing import Any
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.database.connection import check_database_connection, get_db
 from app.modules.atribuicoes.router import router as atribuicoes_router
 from app.modules.auth.router import router as auth_router
 from app.modules.disciplinas.router import router as disciplinas_router
@@ -17,15 +20,21 @@ api_router = APIRouter()
 
 
 @api_router.get("/health", tags=["Health"])
-def api_v1_health() -> dict[str, str]:
+def api_v1_health(db: Session = Depends(get_db)) -> dict[str, Any]:
     """
-    Verificação de funcionamento e integridade específica da versão 1 da API.
+    Verificação de funcionamento e integridade da versão 1 da API,
+    distinguindo claramente a disponibilidade da API e do banco de dados.
     """
+    db_up = check_database_connection(db)
     return {
-        "status": "healthy",
+        "status": "healthy" if db_up else "degraded",
         "api_version": "v1",
         "project": settings.PROJECT_NAME,
         "release": settings.VERSION,
+        "components": {
+            "api": "up",
+            "database": "up" if db_up else "down",
+        },
     }
 
 

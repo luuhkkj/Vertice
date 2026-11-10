@@ -4,20 +4,35 @@ Modelos ORM para o módulo de Usuários.
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 import uuid
 
-from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, String, Uuid, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum as SQLEnum,
+    ForeignKey,
+    String,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
 
 if TYPE_CHECKING:
     from app.modules.atribuicoes.models import ProfessorTurma
+    from app.modules.escolas.models import Escola
 
 
 class PapelUsuario(str, Enum):
-    """Papéis de acesso permitidos no sistema Vértice."""
+    """
+    Papéis de acesso definidos na especificação da Fase 2.
+    Nota Arquitetural: A documentação inicial cita 'COORDENADOR' no dicionário de dados,
+    enquanto a especificação da Fase 2 define 'administrador', 'gestor' e 'professor'.
+    Não é assumida equivalência implícita entre 'gestor' e 'coordenador'; qualquer inclusão
+    do papel 'coordenador' depende de decisão formal do responsável pelo projeto.
+    """
 
     ADMINISTRADOR = "administrador"
     GESTOR = "gestor"
@@ -52,6 +67,12 @@ class Usuario(Base):
         nullable=False,
         default=PapelUsuario.PROFESSOR,
     )
+    escola_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("escolas.id", name="fk_usuarios_escola_id_escolas", ondelete="RESTRICT"),
+        index=True,
+        nullable=True,
+    )
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -68,8 +89,8 @@ class Usuario(Base):
     )
 
     # Relacionamentos
+    escola: Mapped[Optional["Escola"]] = relationship("Escola")
     atribuicoes: Mapped[list["ProfessorTurma"]] = relationship(
         "ProfessorTurma",
         back_populates="professor",
     )
-

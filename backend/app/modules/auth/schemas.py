@@ -2,6 +2,7 @@
 Schemas Pydantic para o módulo de Autenticação (Auth).
 """
 
+from typing import Optional
 import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -30,6 +31,7 @@ class UsuarioAutenticadoResponse(BaseModel):
     nome: str
     email: str
     papel: PapelUsuario
+    escola_id: Optional[uuid.UUID] = None
     ativo: bool
 
 
@@ -37,7 +39,9 @@ class TokenResponse(BaseModel):
     """Resposta do endpoint de login contendo o token JWT e dados básicos do usuário."""
 
     access_token: str = Field(..., description="Token JWT assinado")
-    token_type: str = Field(default="bearer", description="Tipo do token de autorização")
+    token_type: str = Field(
+        default="bearer", description="Tipo do token de autorização"
+    )
     expires_in: int = Field(
         ..., description="Tempo de expiração do token em segundos"
     )
@@ -51,4 +55,3 @@ class LogoutResponse(BaseModel):
 
     message: str
     detail: str
-

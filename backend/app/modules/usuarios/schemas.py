@@ -41,11 +41,18 @@ class UsuarioCreate(UsuarioBase):
     """Dados de entrada para criação de um usuário."""
 
     senha: str = Field(
-        ..., min_length=6, max_length=128, description="Senha em texto plano (será armazenada como hash)"
+        ...,
+        min_length=6,
+        max_length=128,
+        description="Senha em texto plano (será armazenada como hash)",
     )
     papel: PapelUsuario = Field(
         default=PapelUsuario.PROFESSOR,
         description="Papel do usuário no sistema (administrador, gestor ou professor)",
+    )
+    escola_id: Optional[uuid.UUID] = Field(
+        default=None,
+        description="ID da escola à qual o usuário (ex: gestor) está vinculado",
     )
     ativo: bool = Field(default=True, description="Define se o usuário está ativo")
 
@@ -57,7 +64,18 @@ class UsuarioUpdate(BaseModel):
     email: Optional[str] = Field(None, max_length=120)
     senha: Optional[str] = Field(None, min_length=6, max_length=128)
     papel: Optional[PapelUsuario] = None
+    escola_id: Optional[uuid.UUID] = None
     ativo: Optional[bool] = None
+
+    @field_validator("nome")
+    @classmethod
+    def validar_nome(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        nome_limpo = v.strip()
+        if len(nome_limpo) < 2:
+            raise ValueError("O nome deve ter pelo menos 2 caracteres.")
+        return nome_limpo
 
     @field_validator("email")
     @classmethod
@@ -79,7 +97,7 @@ class UsuarioResponse(BaseModel):
     nome: str
     email: str
     papel: PapelUsuario
+    escola_id: Optional[uuid.UUID] = None
     ativo: bool
     criado_em: datetime
     atualizado_em: datetime
-

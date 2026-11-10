@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.atribuicoes.models import ProfessorTurma
+from app.modules.turmas.models import Turma
 
 
 class AtribuicaoRepository:
@@ -53,6 +54,20 @@ class AtribuicaoRepository:
         return list(db.execute(stmt).scalars().all())
 
     @staticmethod
+    def list_by_escola(
+        db: Session, escola_id: uuid.UUID, skip: int = 0, limit: int = 100
+    ) -> list[ProfessorTurma]:
+        stmt = (
+            select(ProfessorTurma)
+            .join(Turma, ProfessorTurma.turma_id == Turma.id)
+            .where(Turma.escola_id == escola_id)
+            .order_by(ProfessorTurma.criado_em.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        return list(db.execute(stmt).scalars().all())
+
+    @staticmethod
     def list_by_professor(
         db: Session, professor_id: uuid.UUID, skip: int = 0, limit: int = 100
     ) -> list[ProfessorTurma]:
@@ -76,4 +91,3 @@ class AtribuicaoRepository:
     def delete(db: Session, atribuicao: ProfessorTurma) -> None:
         db.delete(atribuicao)
         db.commit()
-

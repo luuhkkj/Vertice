@@ -26,10 +26,10 @@ router = APIRouter()
 def criar_turma(
     dados: TurmaCreate,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_gestor_ou_admin),
+    current_user: Usuario = Depends(require_gestor_ou_admin),
 ) -> Turma:
-    """Cadastra uma nova turma vinculada a uma escola existente."""
-    return TurmaService.criar_turma(db, dados)
+    """Cadastra uma nova turma vinculada a uma escola existente, respeitando o escopo do gestor."""
+    return TurmaService.criar_turma(db, dados, usuario=current_user)
 
 
 @router.get(
@@ -45,7 +45,8 @@ def listar_turmas(
 ) -> list[Turma]:
     """
     Lista turmas:
-    - Administradores e Gestores visualizam todas as turmas.
+    - Administradores visualizam todas as turmas.
+    - Gestores com escola vinculada visualizam as turmas da sua escola.
     - Professores visualizam exclusivamente as turmas às quais estão associados.
     """
     return TurmaService.listar_turmas_por_escopo(
@@ -56,7 +57,7 @@ def listar_turmas(
 @router.get(
     "/{turma_id}",
     response_model=TurmaResponse,
-    summary="Obter detalhes de uma turma (valida vínculo para professores)",
+    summary="Obter detalhes de uma turma (valida vínculo para professores e escopo para gestores)",
 )
 def obter_turma(
     turma_id: uuid.UUID,
@@ -65,7 +66,7 @@ def obter_turma(
 ) -> Turma:
     """
     Retorna os detalhes de uma turma.
-    Se o usuário for um professor sem vínculo com a turma solicitada, retorna HTTP 403.
+    Se o usuário for um professor sem vínculo ou gestor de outra escola, retorna HTTP 403.
     """
     return TurmaService.obter_turma_autorizada(
         db, turma_id=turma_id, usuario=current_user
@@ -81,8 +82,9 @@ def atualizar_turma(
     turma_id: uuid.UUID,
     dados: TurmaUpdate,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_gestor_ou_admin),
+    current_user: Usuario = Depends(require_gestor_ou_admin),
 ) -> Turma:
-    """Atualiza dados de uma turma."""
-    return TurmaService.atualizar_turma(db, turma_id, dados)
-
+    """Atualiza dados de uma turma validando unicidade composta e escopo."""
+    return TurmaService.atualizar_turma(
+        db, turma_id, dados, usuario=current_user
+    )

@@ -6,15 +6,17 @@ from datetime import datetime, timezone
 import logging
 from typing import Any
 
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy.exc import InterfaceError, OperationalError, SQLAlchemyError
+from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.database.connection import check_database_connection, get_db
 
 logger = logging.getLogger("vertice.api")
 
@@ -68,10 +70,11 @@ async def validation_exception_handler(
 
 
 @app.exception_handler(OperationalError)
+@app.exception_handler(InterfaceError)
 async def database_operational_error_handler(
-    request: Request, exc: OperationalError
+    request: Request, exc: SQLAlchemyError
 ) -> JSONResponse:
-    """Tratamento específico para falhas de conexão com o banco de dados PostgreSQL."""
+    """Tratamento específico para falhas de conectividade com o banco de dados PostgreSQL."""
     logger.error("Erro operacional de conexão com o banco de dados: %s", exc)
     return JSONResponse(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -125,12 +128,20 @@ def read_root() -> dict[str, Any]:
 
 
 @app.get("/health", tags=["Health"])
-def health_check() -> dict[str, Any]:
-    """Verificação básica de integridade e prontidão do serviço."""
+def health_check(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """
+    Verificação operacional do serviço que distingue explicitamente
+    a disponibilidade da API e a disponibilidade do banco de dados.
+    """
+    db_up = check_database_connection(db)
     return {
-        "status": "healthy",
+        "status": "healthy" if db_up else "degraded",
         "environment": settings.ENVIRONMENT,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "components": {
+            "api": "up",
+            "database": "up" if db_up else "down",
+        },
     }
 
 

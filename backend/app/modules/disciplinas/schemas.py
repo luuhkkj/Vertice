@@ -12,18 +12,34 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class DisciplinaBase(BaseModel):
     """Atributos comuns de uma disciplina."""
 
-    nome: str = Field(..., min_length=2, max_length=100, description="Nome da disciplina (ex: Matemática)")
-    codigo: str = Field(..., min_length=2, max_length=50, description="Código único da disciplina (ex: MAT)")
+    nome: str = Field(
+        ...,
+        min_length=2,
+        max_length=100,
+        description="Nome da disciplina (ex: Matemática)",
+    )
+    codigo: str = Field(
+        ...,
+        min_length=2,
+        max_length=50,
+        description="Código único da disciplina (ex: MAT)",
+    )
 
     @field_validator("nome")
     @classmethod
     def limpar_nome(cls, v: str) -> str:
-        return v.strip()
+        limpo = v.strip()
+        if len(limpo) < 2:
+            raise ValueError("O nome da disciplina deve possuir no mínimo 2 caracteres.")
+        return limpo
 
     @field_validator("codigo")
     @classmethod
     def limpar_codigo(cls, v: str) -> str:
-        return v.strip().upper()
+        limpo = v.strip().upper()
+        if len(limpo) < 2:
+            raise ValueError("O código da disciplina deve possuir no mínimo 2 caracteres.")
+        return limpo
 
 
 class DisciplinaCreate(DisciplinaBase):
@@ -39,10 +55,25 @@ class DisciplinaUpdate(BaseModel):
     codigo: Optional[str] = Field(None, min_length=2, max_length=50)
     ativo: Optional[bool] = None
 
+    @field_validator("nome")
+    @classmethod
+    def limpar_nome(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        limpo = v.strip()
+        if len(limpo) < 2:
+            raise ValueError("O nome da disciplina deve possuir no mínimo 2 caracteres.")
+        return limpo
+
     @field_validator("codigo")
     @classmethod
     def limpar_codigo(cls, v: Optional[str]) -> Optional[str]:
-        return v.strip().upper() if v is not None else None
+        if v is None:
+            return None
+        limpo = v.strip().upper()
+        if len(limpo) < 2:
+            raise ValueError("O código da disciplina deve possuir no mínimo 2 caracteres.")
+        return limpo
 
 
 class DisciplinaResponse(BaseModel):
@@ -56,4 +87,3 @@ class DisciplinaResponse(BaseModel):
     ativo: bool
     criado_em: datetime
     atualizado_em: datetime
-

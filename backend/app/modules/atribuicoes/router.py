@@ -26,13 +26,14 @@ router = APIRouter()
 def criar_atribuicao(
     dados: AtribuicaoCreate,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_gestor_ou_admin),
+    current_user: Usuario = Depends(require_gestor_ou_admin),
 ) -> ProfessorTurma:
     """
     Cria um vínculo entre um professor, uma turma e uma disciplina.
-    Impede duplicidades e valida se o usuário informado possui o papel `professor`.
+    Impede duplicidades (inclusive quando `disciplina_id` é nulo) e valida se o usuário
+    informado possui o papel `professor` e se a turma pertence ao escopo do gestor.
     """
-    return AtribuicaoService.criar_atribuicao(db, dados)
+    return AtribuicaoService.criar_atribuicao(db, dados, usuario=current_user)
 
 
 @router.get(
@@ -48,7 +49,8 @@ def listar_atribuicoes(
 ) -> list[ProfessorTurma]:
     """
     Lista atribuições:
-    - Administradores e Gestores visualizam todas as atribuições.
+    - Administradores visualizam todas as atribuições.
+    - Gestores com escola vinculada visualizam as atribuições da sua escola.
     - Professores visualizam exclusivamente suas próprias atribuições.
     """
     return AtribuicaoService.listar_atribuicoes(
@@ -64,9 +66,10 @@ def listar_atribuicoes(
 def remover_atribuicao(
     atribuicao_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_gestor_ou_admin),
+    current_user: Usuario = Depends(require_gestor_ou_admin),
 ) -> Response:
     """Remove o vínculo entre professor, turma e disciplina."""
-    AtribuicaoService.remover_atribuicao(db, atribuicao_id)
+    AtribuicaoService.remover_atribuicao(
+        db, atribuicao_id, usuario=current_user
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-

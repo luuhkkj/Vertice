@@ -1,5 +1,6 @@
 """
-Dependências de autenticação, autorização baseada em papéis (RBAC) e escopo de turmas.
+Dependências de autenticação, autorização baseada em papéis (RBAC),
+escopo de escola para gestores e vínculo de turmas para professores.
 """
 
 from typing import Callable, Optional
@@ -14,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.security import decode_token
 from app.database.connection import get_db
 from app.modules.atribuicoes.models import ProfessorTurma
+from app.modules.turmas.models import Turma
 from app.modules.usuarios.models import PapelUsuario, Usuario
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -93,7 +95,7 @@ def require_roles(*allowed_roles: PapelUsuario) -> Callable[[Usuario], Usuario]:
     return role_checker
 
 
-# Dependências prontas para uso nas rotas
+# Dependências reutilizáveis por papel
 require_admin = require_roles(PapelUsuario.ADMINISTRADOR)
 require_gestor_ou_admin = require_roles(
     PapelUsuario.ADMINISTRADOR, PapelUsuario.GESTOR
@@ -103,6 +105,37 @@ require_qualquer_papel = require_roles(
     PapelUsuario.GESTOR,
     PapelUsuario.PROFESSOR,
 )
+
+# Política explícita para futura importação de datasets escolares (Fase 3):
+# Por segurança, não assume equivalência entre 'gestor' e 'coordenador'.
+# Permanece restrita ao papel explicitamente autorizado na política até definição
+# formal do responsável pelo projeto sobre o papel de coordenação/importação.
+PAPEIS_AUTORIZADOS_IMPORTACAO: tuple[PapelUsuario, ...] = (
+    PapelUsuario.ADMINISTRADOR,
+)
+require_importacao_datasets = require_roles(*PAPEIS_AUTORIZADOS_IMPORTACAO)
+
+
+def garantir_acesso_escola(
+    usuario: Usuario,
+    escola_id: uuid.UUID,
+) -> None:
+    """
+    Verifica se o usuário possui escopo autorizado sobre a escola informada.
+    - Administrador: acesso irrestrito a qualquer escola.
+    - Gestor vinculado a uma escola (`usuario.escola_id is not None`):
+      restrito exclusivamente à sua própria escola.
+    """
+    if usuario.papel == PapelUsuario.ADMINISTRADOR:
+        return
+
+    if usuario.papel == PapelUsuario.GESTOR:
+        if usuario.escola_id is not None and usuario.escola_id != escola_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: gestor vinculado a outra unidade escolar.",
+            )
+        return
 
 
 def verificar_vinculo_professor_turma(
@@ -128,14 +161,29 @@ def garantir_acesso_turma(
     db: Session,
     usuario: Usuario,
     turma_id: uuid.UUID,
+    escola_id: Optional[uuid.UUID] = None,
 ) -> None:
     """
     Valida se o usuário tem autorização para acessar uma turma específica.
-    - Administradores e Gestores possuem acesso irrestrito.
-    - Professores só podem acessar turmas às quais estão vinculados.
-    Lança HTTPException 403 caso o professor não tenha vínculo.
+    - Administradores possuem acesso irrestrito.
+    - Gestores com `escola_id` vinculado só podem acessar turmas de sua própria escola.
+    - Professores só podem acessar turmas às quais estão vinculados em `professor_turmas`.
+    Lança HTTPException 403 em caso de violação de escopo.
     """
-    if usuario.papel in (PapelUsuario.ADMINISTRADOR, PapelUsuario.GESTOR):
+    if usuario.papel == PapelUsuario.ADMINISTRADOR:
+        return
+
+    if usuario.papel == PapelUsuario.GESTOR:
+        if usuario.escola_id is not None:
+            target_escola_id = escola_id
+            if target_escola_id is None:
+                stmt = select(Turma.escola_id).where(Turma.id == turma_id)
+                target_escola_id = db.execute(stmt).scalar_one_or_none()
+            if target_escola_id is not None and target_escola_id != usuario.escola_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: gestor não possui permissão para turmas de outra escola.",
+                )
         return
 
     if not verificar_vinculo_professor_turma(db, usuario.id, turma_id):
@@ -143,4 +191,3 @@ def garantir_acesso_turma(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acesso negado: professor não possui vínculo com esta turma.",
         )
-

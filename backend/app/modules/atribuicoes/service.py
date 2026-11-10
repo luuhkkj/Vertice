@@ -2,11 +2,14 @@
 Camada de serviço para regras de negócio de Atribuições (ProfessorTurma).
 """
 
+from typing import Optional
 import uuid
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import garantir_acesso_escola
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.atribuicoes.repository import AtribuicaoRepository
 from app.modules.atribuicoes.schemas import AtribuicaoCreate
@@ -20,13 +23,18 @@ class AtribuicaoService:
     """Regras de negócio para vínculo entre professores, turmas e disciplinas."""
 
     @staticmethod
-    def criar_atribuicao(db: Session, dados: AtribuicaoCreate) -> ProfessorTurma:
+    def criar_atribuicao(
+        db: Session,
+        dados: AtribuicaoCreate,
+        usuario: Optional[Usuario] = None,
+    ) -> ProfessorTurma:
         """
         Cria um vínculo entre professor, turma e disciplina após validar:
         1. O usuário existe, está ativo e possui o papel `professor`.
-        2. A turma existe e está ativa.
+        2. A turma existe, está ativa e pertence ao escopo do gestor (se aplicável).
         3. A disciplina (quando informada) existe e está ativa.
-        4. Não existe vínculo duplicado para a mesma combinação.
+        4. Não existe vínculo duplicado para a mesma combinação (inclusive quando disciplina_id é NULL),
+           protegendo contra concorrência com tratamento de IntegrityError.
         """
         professor = UsuarioRepository.get_by_id(db, dados.professor_id)
         if professor is None:
@@ -56,6 +64,9 @@ class AtribuicaoService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Não é possível associar professor a uma turma inativa.",
             )
+
+        if usuario is not None:
+            garantir_acesso_escola(usuario, turma.escola_id)
 
         if dados.disciplina_id is not None:
             disciplina = DisciplinaRepository.get_by_id(db, dados.disciplina_id)
@@ -87,25 +98,46 @@ class AtribuicaoService:
             turma_id=dados.turma_id,
             disciplina_id=dados.disciplina_id,
         )
-        return AtribuicaoRepository.create(db, nova_atribuicao)
+        try:
+            return AtribuicaoRepository.create(db, nova_atribuicao)
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Conflito de integridade: esta associação entre professor, turma e disciplina já existe.",
+            ) from exc
 
     @staticmethod
     def listar_atribuicoes(
         db: Session, usuario: Usuario, skip: int = 0, limit: int = 100
     ) -> list[ProfessorTurma]:
-        if usuario.papel in (PapelUsuario.ADMINISTRADOR, PapelUsuario.GESTOR):
+        if usuario.papel == PapelUsuario.ADMINISTRADOR:
+            return AtribuicaoRepository.list_all(db, skip=skip, limit=limit)
+        if usuario.papel == PapelUsuario.GESTOR:
+            if usuario.escola_id is not None:
+                return AtribuicaoRepository.list_by_escola(
+                    db, escola_id=usuario.escola_id, skip=skip, limit=limit
+                )
             return AtribuicaoRepository.list_all(db, skip=skip, limit=limit)
         return AtribuicaoRepository.list_by_professor(
             db, professor_id=usuario.id, skip=skip, limit=limit
         )
 
     @staticmethod
-    def remover_atribuicao(db: Session, atribuicao_id: uuid.UUID) -> None:
+    def remover_atribuicao(
+        db: Session,
+        atribuicao_id: uuid.UUID,
+        usuario: Optional[Usuario] = None,
+    ) -> None:
         atribuicao = AtribuicaoRepository.get_by_id(db, atribuicao_id)
         if atribuicao is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Atribuição não encontrada.",
             )
-        AtribuicaoRepository.delete(db, atribuicao)
+        if usuario is not None and usuario.papel == PapelUsuario.GESTOR and usuario.escola_id is not None:
+            turma = TurmaRepository.get_by_id(db, atribuicao.turma_id)
+            if turma is not None:
+                garantir_acesso_escola(usuario, turma.escola_id)
 
+        AtribuicaoRepository.delete(db, atribuicao)

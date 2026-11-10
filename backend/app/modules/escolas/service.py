@@ -2,18 +2,22 @@
 Camada de serviço para regras de negócio de Escolas.
 """
 
+from typing import Optional
 import uuid
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import garantir_acesso_escola
 from app.modules.escolas.models import Escola
 from app.modules.escolas.repository import EscolaRepository
 from app.modules.escolas.schemas import EscolaCreate, EscolaUpdate
+from app.modules.usuarios.models import Usuario
 
 
 class EscolaService:
-    """Regras de negócio para cadastro e consulta de escolas."""
+    """Regras de negócio para cadastro, atualização e consulta de escolas."""
 
     @staticmethod
     def criar_escola(db: Session, dados: EscolaCreate) -> Escola:
@@ -30,7 +34,14 @@ class EscolaService:
             codigo=codigo_normalizado,
             ativo=dados.ativo,
         )
-        return EscolaRepository.create(db, nova_escola)
+        try:
+            return EscolaRepository.create(db, nova_escola)
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Conflito de integridade: já existe uma escola com este código.",
+            ) from exc
 
     @staticmethod
     def obter_por_id(db: Session, escola_id: uuid.UUID) -> Escola:
@@ -48,11 +59,18 @@ class EscolaService:
 
     @staticmethod
     def atualizar_escola(
-        db: Session, escola_id: uuid.UUID, dados: EscolaUpdate
+        db: Session,
+        escola_id: uuid.UUID,
+        dados: EscolaUpdate,
+        usuario: Optional[Usuario] = None,
     ) -> Escola:
         escola = EscolaService.obter_por_id(db, escola_id)
+        if usuario is not None:
+            garantir_acesso_escola(usuario, escola.id)
 
-        if dados.codigo is not None and dados.codigo != escola.codigo:
+        campos = dados.model_fields_set
+
+        if "codigo" in campos and dados.codigo is not None and dados.codigo != escola.codigo:
             outro = EscolaRepository.get_by_codigo(db, dados.codigo)
             if outro is not None and outro.id != escola.id:
                 raise HTTPException(
@@ -61,11 +79,17 @@ class EscolaService:
                 )
             escola.codigo = dados.codigo
 
-        if dados.nome is not None:
+        if "nome" in campos and dados.nome is not None:
             escola.nome = dados.nome.strip()
 
-        if dados.ativo is not None:
+        if "ativo" in campos and dados.ativo is not None:
             escola.ativo = dados.ativo
 
-        return EscolaRepository.update(db, escola)
-
+        try:
+            return EscolaRepository.update(db, escola)
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Conflito de integridade ao atualizar escola.",
+            ) from exc

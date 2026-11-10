@@ -96,7 +96,14 @@ Copie o arquivo `.env.example` para `.env`:
 Copy-Item .env.example .env
 ```
 
-Edite o arquivo `backend/.env` com as credenciais do seu servidor PostgreSQL local (`localhost:5432`):
+Edite o arquivo `backend/.env` com as credenciais do seu servidor PostgreSQL local (`localhost:5432`) e gere um segredo criptográfico exclusivo:
+
+```powershell
+# Gerar uma chave secreta aleatória criptograficamente segura (64+ caracteres)
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Exemplo de `backend/.env`:
 
 ```env
 PROJECT_NAME="Vértice Backend API"
@@ -113,10 +120,15 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=SUA_SENHA_DO_POSTGRES
 POSTGRES_DB=postgres
 
-SECRET_KEY=gere-uma-chave-secreta-aleatoria-com-pelo-menos-32-caracteres
+SECRET_KEY=cole-aqui-a-chave-gerada-pelo-comando-secrets-token-urlsafe
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 ```
+
+> **Regras de Segurança de Inicialização (`app/core/config.py`):**
+> - Não existem chaves `SECRET_KEY` ou senhas de banco padrão fixas no código.
+> - `SECRET_KEY` deve possuir no mínimo **32 caracteres** e não pode usar valores de exemplo.
+> - Em ambiente de produção (`ENVIRONMENT=production`), a aplicação recusa a inicialização caso `DEBUG=True`, caso `BACKEND_CORS_ORIGINS` contenha `"*"`, caso utilize banco em memória/SQLite ou caso a senha do PostgreSQL seja fraca/padrão.
 
 ---
 
@@ -219,9 +231,11 @@ A validação de permissões ocorre integralmente no backend através das depend
 
 | Papel | Permissões no Sistema |
 | :--- | :--- |
-| **`administrador`** | Acesso administrativo total: cria e atualiza usuários (`POST /api/v1/usuarios`, `PATCH /api/v1/usuarios/{id}`), além de gerenciar escolas, turmas, disciplinas e atribuições. |
-| **`gestor`** | Acesso de gestão pedagógica: consulta usuários, cadastra e atualiza escolas, turmas, disciplinas e atribuições de professores, e visualiza todas as turmas. |
+| **`administrador`** | Acesso administrativo total: cria e atualiza usuários (`POST /api/v1/usuarios`, `PATCH /api/v1/usuarios/{id}`), gerencia escolas, turmas, disciplinas e atribuições, e está autorizado por padrão para futuras importações de datasets escolares (`PAPEIS_AUTORIZADOS_IMPORTACAO`). |
+| **`gestor`** | Acesso de gestão pedagógica: consulta usuários, cadastra e atualiza escolas, turmas, disciplinas e atribuições de professores. Se o gestor possuir `escola_id` vinculado no seu cadastro, seu acesso de leitura e escrita fica restrito exclusivamente àquela unidade escolar (`garantir_acesso_escola`). |
 | **`professor`** | Acesso restrito ao seu escopo pedagógico: visualiza apenas as turmas e atribuições às quais está vinculado na tabela `professor_turmas`. Tentativas de acessar turmas sem vínculo retornam `HTTP 403 Forbidden`. |
+
+> **Nota Arquitetural sobre `gestor` vs `coordenador`:** A documentação inicial do projeto cita o perfil `COORDENADOR` (responsável pela importação de datasets em CSV/XLSX), enquanto a especificação da Fase 2 definiu os papéis `administrador`, `gestor` e `professor`. Não foi assumida equivalência implícita entre `gestor` e `coordenador`. A dependência `require_importacao_datasets` (`PAPEIS_AUTORIZADOS_IMPORTACAO`) encontra-se isolada em `app/core/dependencies.py`, aguardando decisão formal do responsável pelo projeto antes da Fase 3.
 
 ---
 

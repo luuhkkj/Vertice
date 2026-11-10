@@ -14,18 +14,27 @@ class EscolaBase(BaseModel):
 
     nome: str = Field(..., min_length=2, max_length=150, description="Nome da escola")
     codigo: str = Field(
-        ..., min_length=2, max_length=50, description="Código identificador único da escola"
+        ...,
+        min_length=2,
+        max_length=50,
+        description="Código identificador único da escola",
     )
 
     @field_validator("nome")
     @classmethod
     def limpar_nome(cls, v: str) -> str:
-        return v.strip()
+        limpo = v.strip()
+        if len(limpo) < 2:
+            raise ValueError("O nome da escola deve possuir no mínimo 2 caracteres.")
+        return limpo
 
     @field_validator("codigo")
     @classmethod
     def limpar_codigo(cls, v: str) -> str:
-        return v.strip().upper()
+        limpo = v.strip().upper()
+        if len(limpo) < 2:
+            raise ValueError("O código da escola deve possuir no mínimo 2 caracteres.")
+        return limpo
 
 
 class EscolaCreate(EscolaBase):
@@ -41,10 +50,25 @@ class EscolaUpdate(BaseModel):
     codigo: Optional[str] = Field(None, min_length=2, max_length=50)
     ativo: Optional[bool] = None
 
+    @field_validator("nome")
+    @classmethod
+    def limpar_nome(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        limpo = v.strip()
+        if len(limpo) < 2:
+            raise ValueError("O nome da escola deve possuir no mínimo 2 caracteres.")
+        return limpo
+
     @field_validator("codigo")
     @classmethod
     def limpar_codigo(cls, v: Optional[str]) -> Optional[str]:
-        return v.strip().upper() if v is not None else None
+        if v is None:
+            return None
+        limpo = v.strip().upper()
+        if len(limpo) < 2:
+            raise ValueError("O código da escola deve possuir no mínimo 2 caracteres.")
+        return limpo
 
 
 class EscolaResponse(BaseModel):
@@ -58,4 +82,3 @@ class EscolaResponse(BaseModel):
     ativo: bool
     criado_em: datetime
     atualizado_em: datetime
-
