@@ -11,7 +11,19 @@ from app.database.connection import (
 )
 
 # Importa todos os modelos ORM para registro nos metadados do SQLAlchemy / Alembic
+from app.modules.acompanhamento.models import (
+    AcompanhamentoPedagogico,
+    OrigemAcompanhamento,
+)
 from app.modules.atribuicoes.models import ProfessorTurma
+from app.modules.avaliacoes.models import (
+    Avaliacao,
+    FaixaDificuldadeQuestao,
+    QuestaoAvaliacao,
+    RespostaAvaliacao,
+    StatusAvaliacao,
+    TipoQuestao,
+)
 from app.modules.disciplinas.models import Disciplina
 from app.modules.escolas.models import Escola
 from app.modules.estudantes.models import (
@@ -24,6 +36,12 @@ from app.modules.importacao.models import (
     LoteImportacao,
     StatusLoteImportacao,
     TipoImportacao,
+)
+from app.modules.participacao.models import (
+    Atividade,
+    EntregaAtividade,
+    StatusAtividade,
+    StatusEntregaAtividade,
 )
 from app.modules.turmas.models import Turma
 from app.modules.usuarios.models import PapelUsuario, Usuario
@@ -47,4 +65,16 @@ __all__ = [
     "LoteImportacao",
     "StatusLoteImportacao",
     "TipoImportacao",
+    "Avaliacao",
+    "QuestaoAvaliacao",
+    "RespostaAvaliacao",
+    "StatusAvaliacao",
+    "TipoQuestao",
+    "FaixaDificuldadeQuestao",
+    "Atividade",
+    "EntregaAtividade",
+    "StatusAtividade",
+    "StatusEntregaAtividade",
+    "AcompanhamentoPedagogico",
+    "OrigemAcompanhamento",
 ]

@@ -3,13 +3,15 @@ Roteador de endpoints para o módulo de Importação de Datasets Escolares (Fase
 Utiliza autenticação JWT e a dependência `require_importacao_datasets` (gestor e professor).
 """
 
+from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import require_importacao_datasets
 from app.database.connection import get_db
+from app.modules.importacao.models import TipoImportacao
 from app.modules.importacao.schemas import (
     ConfirmacaoImportacaoResponse,
     LoteImportacaoPreviaResponse,
@@ -27,15 +29,20 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     summary="Etapa 1 — Upload, validação e geração de prévia",
     description=(
-        "Recebe um arquivo CSV ou XLSX, identifica automaticamente o usuário autenticado, "
-        "valida o escopo autorizado (escola do gestor ou vínculo turma+disciplina do professor), "
-        "verifica regras de anonimização e retorna o lote e o relatório de validação sem persistir dados acadêmicos."
+        "Recebe um arquivo CSV ou XLSX, identifica automaticamente o usuário autenticado e o tipo de dataset "
+        "(`dados_escolares`, `avaliacoes` ou `atividades`), valida o escopo autorizado "
+        "(escola do gestor ou vínculo turma+disciplina do professor), verifica regras de anonimização e "
+        "retorna o lote e o relatório de validação sem persistir dados acadêmicos."
     ),
 )
 async def validar_arquivo_importacao(
     arquivo: UploadFile = File(
         ...,
-        description="Arquivo CSV ou XLSX com dados escolares anonimizados (máximo 10 MB).",
+        description="Arquivo CSV ou XLSX com dados escolares, avaliações ou atividades anonimizados (máximo 10 MB).",
+    ),
+    tipo_importacao: Optional[TipoImportacao] = Query(
+        default=None,
+        description="Tipo do dataset (opcional; detectado automaticamente pelas colunas quando omitido).",
     ),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_importacao_datasets),
@@ -46,6 +53,7 @@ async def validar_arquivo_importacao(
         nome_arquivo=arquivo.filename,
         conteudo_bytes=conteudo_bytes,
         usuario_autenticado=current_user,
+        tipo_importacao=tipo_importacao,
     )
 
 

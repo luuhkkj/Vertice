@@ -49,11 +49,11 @@ backend/
 │   │   ├── disciplinas/            # Modelo Disciplina e catálogo curricular
 │   │   ├── atribuicoes/            # Modelo ProfessorTurma e vínculo professor-turma-disciplina
 │   │   ├── estudantes/             # Modelos Estudante, BoletimPeriodo, NotaDisciplina e consultas isoladas
-│   │   ├── importacao/             # Motor de validação CSV/XLSX, prévia, auditoria LoteImportacao e confirmação
-│   │   ├── avaliacoes/             # Reservado para próximas fases
-│   │   ├── participacao/           # Reservado para próximas fases
-│   │   ├── indicadores/            # Reservado para próximas fases
-│   │   └── acompanhamento/         # Reservado para próximas fases
+│   │   ├── importacao/             # Motor de validação CSV/XLSX (dados escolares, avaliações, atividades) e lotes
+│   │   ├── avaliacoes/             # Bloco B: Avaliacao, QuestaoAvaliacao, RespostaAvaliacao e Mapa de Acertos
+│   │   ├── participacao/           # Bloco C: Atividade, EntregaAtividade e geração de entregas esperadas
+│   │   ├── indicadores/            # Serviços de Indicadores Gerais, Avaliações e Participação
+│   │   └── acompanhamento/         # AcompanhamentoPedagogico individual/coletivo com trilha de auditoria
 │   └── integrations/               # Serviços externos e inteligência
 │       ├── __init__.py
 │       ├── prediction/             # Modelos de Machine Learning preditivos
@@ -63,7 +63,8 @@ backend/
 │   ├── conftest.py                 # Fixtures pytest com banco isolado em memória
 │   ├── test_health.py              # Testes de inicialização, health check e utilitários de segurança
 │   ├── test_auth_and_models.py     # Testes de persistência, autenticação, RBAC e vínculos
-│   └── test_fase3_estudantes_e_importacao.py # Testes de importação em 2 etapas, autorização, LGPD e histórico
+│   ├── test_fase3_estudantes_e_importacao.py # Testes de importação em 2 etapas, autorização, LGPD e histórico
+│   └── test_fase4_modulos_pedagogicos.py     # Testes de avaliações, participação, acompanhamento e indicadores
 ├── alembic/
 │   ├── versions/                   # Migrações versionadas do banco de dados
 │   ├── env.py                      # Script de execução do Alembic conectado ao Base.metadata
@@ -371,6 +372,47 @@ EST-2026-003,Turma 2A,MAT,2026,1º Bimestre,92.0,3,9.0,9.5,8.5,0,Nao,Aprovado
   ]
 }
 ```
+
+---
+
+## 📊 Módulos Pedagógicos e Analíticos da Fase 4
+
+### 1. Avaliações, Questões e Mapa de Acertos (Bloco B)
+- **Modelos (`app/modules/avaliacoes/models.py`):** `Avaliacao`, `QuestaoAvaliacao` (`FECHADA`, `ABERTA`; `FaixaDificuldadeQuestao`: `Fácil`, `Adequada`, `Atenção`, `Difícil`) e `RespostaAvaliacao`.
+- **Regras de Negócio:**
+  - Questões `FECHADAS` exigem gabarito (`A`, `B`, `C`, `D` ou `E`); questões `ABERTAS` não possuem gabarito de alternativa e são corrigidas por nota atribuída (`0 <= nota_obtida <= valor_questao`, com acerto quando `nota_obtida >= 60%` do valor da questão).
+  - Respostas deixadas em branco são representadas explicitamente (`em_branco=True` e `alternativa_marcada="BRANCO"` em questões fechadas), permitindo distinguir omissões de erros no Mapa de Acertos.
+  - Unicidade garantida em banco por `(questao_id, estudante_id)`. Estudantes nunca são criados via avaliações.
+- **Endpoints:**
+  - `POST /api/v1/avaliacoes`, `GET /api/v1/avaliacoes`, `GET /api/v1/avaliacoes/{avaliacao_id}`, `PATCH /api/v1/avaliacoes/{avaliacao_id}`
+  - `POST /api/v1/avaliacoes/{avaliacao_id}/questoes`, `GET /api/v1/avaliacoes/{avaliacao_id}/questoes`, `PATCH /api/v1/questoes/{questao_id}`
+  - `GET /api/v1/avaliacoes/{avaliacao_id}/respostas`, `POST /api/v1/questoes/{questao_id}/respostas`
+
+### 2. Participação, Atividades e Entregas Esperadas (Bloco C)
+- **Modelos (`app/modules/participacao/models.py`):** `Atividade` e `EntregaAtividade` (`StatusEntregaAtividade`: `ENTREGUE`, `ATRASADO`, `PENDENTE`, `NAO_ENTREGUE`).
+- **Geração Idempotente de Entregas Esperadas (`POST /api/v1/atividades/{atividade_id}/gerar-entregas-esperadas`):**
+  - Identifica todos os estudantes ativos já vinculados à turma da atividade nos dados escolares (`BoletimPeriodo`) e cria os registros de entrega esperados sem duplicar entregas existentes e sem jamais criar estudantes novos.
+  - Notas ausentes permanecem `None` (`NULL`), nunca sendo convertidas em `0`.
+  - Calcula/valida automaticamente o status: `ENTREGUE` (`data_entrega <= data_limite`), `ATRASADO` (`data_entrega > data_limite`), `PENDENTE` (sem entrega antes do prazo) e `NAO_ENTREGUE` (sem entrega após o vencimento do prazo).
+- **Endpoints:**
+  - `POST /api/v1/atividades`, `GET /api/v1/atividades`, `GET /api/v1/atividades/{atividade_id}`, `PATCH /api/v1/atividades/{atividade_id}`
+  - `POST /api/v1/atividades/{atividade_id}/gerar-entregas-esperadas`
+  - `GET /api/v1/atividades/{atividade_id}/entregas`, `POST /api/v1/atividades/{atividade_id}/entregas`, `PATCH /api/v1/entregas/{entrega_id}`
+
+### 3. Acompanhamento Pedagógico (`app/modules/acompanhamento/`)
+- **Modelo (`AcompanhamentoPedagogico`):** suporta ações pedagógicas individuais (`estudante_id`) ou coletivas (`turma_id`), exigindo ao menos um deles (`ck_acompanhamento_estudante_ou_turma_obrigatorio`), com origem classificada em `ESTUDANTES`, `MAPA_ACERTOS` ou `PARTICIPACAO`.
+- **Autoria e Trilha de Auditoria:** o autor (`usuario_id`) é extraído exclusivamente da sessão JWT autenticada. Atualizações via `PATCH /api/v1/acompanhamentos/{acompanhamento_id}` preservam o snapshot completo anterior em `historico_alteracoes` sem apagar descrições ou ações passadas.
+- **Endpoints:** `POST /api/v1/acompanhamentos`, `GET /api/v1/acompanhamentos`, `GET /api/v1/acompanhamentos/{acompanhamento_id}`, `PATCH /api/v1/acompanhamentos/{acompanhamento_id}`.
+
+### 4. Indicadores Educacionais (`app/modules/indicadores/`)
+- **Serviços Especializados:**
+  - `GET /api/v1/indicadores/gerais` (`IndicadoresGeraisService`): total de estudantes distintos (sem duplicar estudantes com múltiplos períodos/disciplinas), frequência média, média geral, distribuições por série/turma/turno e evolução longitudinal com comparação contra o período anterior.
+  - `GET /api/v1/indicadores/avaliacoes` (`IndicadoresAvaliacoesService`): Mapa de Acertos completo por questão e tópico, taxa de acerto, distribuição de alternativas (`A`-`E` e `BRANCO`), classificação da faixa de desempenho observada da turma (`Fácil >= 75%`, `Adequada 50%-74.99%`, `Atenção 30%-49.99%`, `Difícil < 30%`) e média ponderada na escala 0-10.
+  - `GET /api/v1/indicadores/participacao` (`IndicadoresParticipacaoService`): entregas esperadas, realizadas, no prazo, atrasadas, não entregues após o prazo, pendentes antes do prazo, taxas por atividade/turma, percentual individual por estudante e evolução temporal.
+
+### 5. Extensão da Importação em Duas Etapas (`AVALIACOES` e `ATIVIDADES`)
+- O endpoint `POST /api/v1/importacoes/validar` suporta e detecta automaticamente três tipos de lote (`TipoImportacao`): `DADOS_ESCOLARES`, `AVALIACOES` e `ATIVIDADES` (também selecionável via query param `tipo_importacao`).
+- Nas importações de `AVALIACOES` e `ATIVIDADES`, estudantes inexistentes ou fora da turma são rejeitados na validação — nunca são criados estudantes novos fora da importação de `DADOS_ESCOLARES`.
 
 ---
 

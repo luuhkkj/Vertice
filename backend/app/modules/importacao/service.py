@@ -4,7 +4,7 @@ Etapa 1: Upload, validação completa, verificação de escopo e geração de pr
 Etapa 2: Revalidação de identidade/escopo e confirmação em transação atômica com rollback integral em falhas.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from hashlib import sha256
 from typing import Any, Optional
 import uuid
@@ -16,6 +16,16 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import garantir_escopo_importacao_usuario
 from app.modules.atribuicoes.models import ProfessorTurma
+from app.modules.avaliacoes.models import (
+    Avaliacao,
+    FaixaDificuldadeQuestao,
+    QuestaoAvaliacao,
+    RespostaAvaliacao,
+    StatusAvaliacao,
+    TipoQuestao,
+)
+from app.modules.avaliacoes.repository import AvaliacaoRepository
+from app.modules.avaliacoes.service import AvaliacaoService
 from app.modules.disciplinas.models import Disciplina
 from app.modules.escolas.models import Escola
 from app.modules.estudantes.models import (
@@ -38,10 +48,21 @@ from app.modules.importacao.schemas import (
     RelatorioValidacaoSchema,
 )
 from app.modules.importacao.validator import (
+    identificar_tipo_importacao,
     ler_dataframe_bruto,
     processar_e_validar_dataframe,
+    processar_e_validar_dataframe_atividades,
+    processar_e_validar_dataframe_avaliacoes,
     validar_arquivo_upload,
 )
+from app.modules.participacao.models import (
+    Atividade,
+    EntregaAtividade,
+    StatusAtividade,
+    StatusEntregaAtividade,
+)
+from app.modules.participacao.repository import ParticipacaoRepository
+from app.modules.participacao.service import ParticipacaoService
 from app.modules.turmas.models import Turma
 from app.modules.usuarios.models import PapelUsuario, Usuario
 
@@ -88,11 +109,13 @@ class ImportacaoService:
         nome_arquivo: Optional[str],
         conteudo_bytes: bytes,
         usuario_autenticado: Usuario,
+        tipo_importacao: Optional[TipoImportacao] = None,
     ) -> LoteImportacaoPreviaResponse:
         """
         Etapa 1: Valida extensão, tamanho, colunas, anonimização e vínculos do usuário autenticado.
+        Suporta `DADOS_ESCOLARES` (Fase 3), `AVALIACOES` (Bloco B) e `ATIVIDADES` (Bloco C).
         Registra o lote de auditoria (`validado` ou `com_erros`), mas NÃO persiste nenhum
-        dado de estudante, boletim ou nota no banco de dados.
+        dado acadêmico, de avaliação ou de atividade no banco de dados.
         """
         garantir_escopo_importacao_usuario(usuario_autenticado)
 
@@ -100,12 +123,33 @@ class ImportacaoService:
         hash_sha256 = sha256(conteudo_bytes).hexdigest()
         df = ler_dataframe_bruto(conteudo_bytes, extensao)
 
+        tipo_resolvido = identificar_tipo_importacao(df, tipo_importacao)
+
         agora = datetime.now(timezone.utc)
-        escola_id, relatorio, previa_registros = processar_e_validar_dataframe(
-            db=db,
-            df=df,
-            usuario=usuario_autenticado,
-        )
+        if tipo_resolvido == TipoImportacao.AVALIACOES:
+            escola_id, relatorio, previa_registros = (
+                processar_e_validar_dataframe_avaliacoes(
+                    db=db,
+                    df=df,
+                    usuario=usuario_autenticado,
+                )
+            )
+        elif tipo_resolvido == TipoImportacao.ATIVIDADES:
+            escola_id, relatorio, previa_registros = (
+                processar_e_validar_dataframe_atividades(
+                    db=db,
+                    df=df,
+                    usuario=usuario_autenticado,
+                )
+            )
+        else:
+            escola_id, relatorio, previa_registros = (
+                processar_e_validar_dataframe(
+                    db=db,
+                    df=df,
+                    usuario=usuario_autenticado,
+                )
+            )
 
         status_lote = (
             StatusLoteImportacao.VALIDADO
@@ -117,7 +161,7 @@ class ImportacaoService:
             usuario_id=usuario_autenticado.id,
             escola_id=escola_id,
             nome_arquivo=(nome_arquivo or "dataset.csv").strip()[:255],
-            tipo_importacao=TipoImportacao.DADOS_ESCOLARES,
+            tipo_importacao=tipo_resolvido,
             hash_arquivo=hash_sha256,
             status=status_lote,
             total_linhas=relatorio.total_linhas,
@@ -419,186 +463,31 @@ class ImportacaoService:
         atualizados = 0
 
         try:
-            for reg in registros_previa:
-                escola_id = uuid.UUID(str(reg["escola_id"]))
-                turma_id = uuid.UUID(str(reg["turma_id"]))
-                disc_id_raw = reg.get("disciplina_id")
-                disc_id = uuid.UUID(str(disc_id_raw)) if disc_id_raw else None
-                codigo_anonimo = str(reg["codigo_anonimo"]).strip()
-                ano_letivo = int(reg["ano_letivo"])
-                periodo_letivo = str(reg["periodo_letivo"]).strip()
-
-                # 1. Busca ou cria o Estudante anônimo na escola
-                estudante = EstudanteRepository.get_by_escola_e_codigo(
-                    db, escola_id, codigo_anonimo
-                )
-                hist_reprov = reg.get("historico_reprovacoes")
-                if estudante is None:
-                    estudante = Estudante(
-                        codigo_anonimo=codigo_anonimo,
-                        escola_id=escola_id,
-                        historico_reprovacoes=(
-                            int(hist_reprov) if hist_reprov is not None else 0
-                        ),
-                        ativo=True,
+            if lote.tipo_importacao == TipoImportacao.AVALIACOES:
+                inseridos, atualizados = (
+                    ImportacaoService._persistir_confirmacao_avaliacoes(
+                        db=db,
+                        lote=lote,
+                        usuario=usuario_autenticado,
+                        registros_previa=registros_previa,
                     )
-                    db.add(estudante)
-                    db.flush()
-                else:
-                    if (
-                        hist_reprov is not None
-                        and int(hist_reprov) > estudante.historico_reprovacoes
-                    ):
-                        estudante.historico_reprovacoes = int(hist_reprov)
-                        db.flush()
-
-                # 2. Busca ou cria o BoletimPeriodo para (estudante, escola, turma, ano_letivo, periodo_letivo)
-                boletim = EstudanteRepository.get_boletim_by_chave(
-                    db=db,
-                    estudante_id=estudante.id,
-                    escola_id=escola_id,
-                    turma_id=turma_id,
-                    ano_letivo=ano_letivo,
-                    periodo_letivo=periodo_letivo,
                 )
-
-                situacao_str = reg.get("situacao_final")
-                situacao_enum = (
-                    SituacaoFinalPeriodo(situacao_str)
-                    if situacao_str
-                    else None
+            elif lote.tipo_importacao == TipoImportacao.ATIVIDADES:
+                inseridos, atualizados = (
+                    ImportacaoService._persistir_confirmacao_atividades(
+                        db=db,
+                        lote=lote,
+                        usuario=usuario_autenticado,
+                        registros_previa=registros_previa,
+                    )
                 )
-
-                boletim_era_novo = False
-                if boletim is None:
-                    boletim_era_novo = True
-                    boletim = BoletimPeriodo(
-                        estudante_id=estudante.id,
-                        escola_id=escola_id,
-                        turma_id=turma_id,
-                        ano_letivo=ano_letivo,
-                        periodo_letivo=periodo_letivo,
-                        idade=reg.get("idade"),
-                        frequencia_percentual=reg.get("frequencia_percentual"),
-                        faltas=reg.get("faltas"),
-                        media_geral=reg.get("media_geral"),
-                        notas_baixas=reg.get("notas_baixas"),
-                        historico_reprovacoes=(
-                            int(hist_reprov)
-                            if hist_reprov is not None
-                            else estudante.historico_reprovacoes
-                        ),
-                        participacao_recuperacao=reg.get(
-                            "participacao_recuperacao"
-                        ),
-                        atrasos=reg.get("atrasos"),
-                        situacao_final=situacao_enum,
+            else:
+                inseridos, atualizados = (
+                    ImportacaoService._persistir_confirmacao_dados_escolares(
+                        db=db,
+                        registros_previa=registros_previa,
                     )
-                    db.add(boletim)
-                    db.flush()
-                else:
-                    # Atualiza campos informados sem sobrescrever valores existentes por NULL indevidamente
-                    if reg.get("idade") is not None:
-                        boletim.idade = int(reg["idade"])
-                    if (
-                        reg.get("frequencia_percentual") is not None
-                        and disc_id is None
-                    ):
-                        boletim.frequencia_percentual = float(
-                            reg["frequencia_percentual"]
-                        )
-                    elif (
-                        reg.get("frequencia_percentual") is not None
-                        and boletim.frequencia_percentual is None
-                    ):
-                        boletim.frequencia_percentual = float(
-                            reg["frequencia_percentual"]
-                        )
-                    if reg.get("faltas") is not None and disc_id is None:
-                        boletim.faltas = int(reg["faltas"])
-                    elif reg.get("faltas") is not None and boletim.faltas is None:
-                        boletim.faltas = int(reg["faltas"])
-                    if reg.get("media_geral") is not None:
-                        boletim.media_geral = float(reg["media_geral"])
-                    if reg.get("notas_baixas") is not None:
-                        boletim.notas_baixas = int(reg["notas_baixas"])
-                    if hist_reprov is not None:
-                        boletim.historico_reprovacoes = int(hist_reprov)
-                    if reg.get("participacao_recuperacao") is not None:
-                        boletim.participacao_recuperacao = bool(
-                            reg["participacao_recuperacao"]
-                        )
-                    if reg.get("atrasos") is not None:
-                        boletim.atrasos = int(reg["atrasos"])
-                    # Regra crítica: uma situação final válida NÃO deve ser substituída por NULL
-                    if situacao_enum is not None:
-                        boletim.situacao_final = situacao_enum
-                    db.flush()
-
-                # 3. Se houver disciplina associada, insere ou atualiza NotaDisciplina
-                if disc_id is not None:
-                    nota_disc_obj = EstudanteRepository.get_nota_disciplina(
-                        db, boletim.id, disc_id
-                    )
-                    if nota_disc_obj is None:
-                        nota_disc_obj = NotaDisciplina(
-                            boletim_id=boletim.id,
-                            disciplina_id=disc_id,
-                            nota=reg.get("nota_disciplina"),
-                            nota_prova=reg.get("nota_prova"),
-                            nota_trabalho=reg.get("nota_trabalho"),
-                            frequencia_percentual=reg.get(
-                                "frequencia_percentual"
-                            ),
-                            faltas=reg.get("faltas"),
-                            em_recuperacao=reg.get("participacao_recuperacao"),
-                        )
-                        db.add(nota_disc_obj)
-                        db.flush()
-                        inseridos += 1
-                    else:
-                        if reg.get("nota_disciplina") is not None:
-                            nota_disc_obj.nota = float(reg["nota_disciplina"])
-                        if reg.get("nota_prova") is not None:
-                            nota_disc_obj.nota_prova = float(reg["nota_prova"])
-                        if reg.get("nota_trabalho") is not None:
-                            nota_disc_obj.nota_trabalho = float(
-                                reg["nota_trabalho"]
-                            )
-                        if reg.get("frequencia_percentual") is not None:
-                            nota_disc_obj.frequencia_percentual = float(
-                                reg["frequencia_percentual"]
-                            )
-                        if reg.get("faltas") is not None:
-                            nota_disc_obj.faltas = int(reg["faltas"])
-                        if reg.get("participacao_recuperacao") is not None:
-                            nota_disc_obj.em_recuperacao = bool(
-                                reg["participacao_recuperacao"]
-                            )
-                        db.flush()
-                        atualizados += 1
-
-                    # Recalcula media_geral do boletim quando não informada explicitamente
-                    if boletim.media_geral is None:
-                        stmt_notas = select(NotaDisciplina.nota).where(
-                            NotaDisciplina.boletim_id == boletim.id,
-                            NotaDisciplina.nota.is_not(None),
-                        )
-                        valores_notas = [
-                            float(n)
-                            for n in db.execute(stmt_notas).scalars().all()
-                            if n is not None
-                        ]
-                        if valores_notas:
-                            boletim.media_geral = round(
-                                sum(valores_notas) / len(valores_notas), 2
-                            )
-                            db.flush()
-                else:
-                    if boletim_era_novo:
-                        inseridos += 1
-                    else:
-                        atualizados += 1
+                )
 
             agora_conf = datetime.now(timezone.utc)
             lote.status = StatusLoteImportacao.CONFIRMADO
@@ -638,6 +527,459 @@ class ImportacaoService:
                 f"e {lote.registros_atualizados} registro(s) atualizado(s)."
             ),
         )
+
+    @staticmethod
+    def _persistir_confirmacao_dados_escolares(
+        db: Session,
+        registros_previa: list[dict[str, Any]],
+    ) -> tuple[int, int]:
+        inseridos = 0
+        atualizados = 0
+        for reg in registros_previa:
+            escola_id = uuid.UUID(str(reg["escola_id"]))
+            turma_id = uuid.UUID(str(reg["turma_id"]))
+            disc_id_raw = reg.get("disciplina_id")
+            disc_id = uuid.UUID(str(disc_id_raw)) if disc_id_raw else None
+            codigo_anonimo = str(reg["codigo_anonimo"]).strip()
+            ano_letivo = int(reg["ano_letivo"])
+            periodo_letivo = str(reg["periodo_letivo"]).strip()
+
+            # 1. Busca ou cria o Estudante anônimo na escola
+            estudante = EstudanteRepository.get_by_escola_e_codigo(
+                db, escola_id, codigo_anonimo
+            )
+            hist_reprov = reg.get("historico_reprovacoes")
+            if estudante is None:
+                estudante = Estudante(
+                    codigo_anonimo=codigo_anonimo,
+                    escola_id=escola_id,
+                    historico_reprovacoes=(
+                        int(hist_reprov) if hist_reprov is not None else 0
+                    ),
+                    ativo=True,
+                )
+                db.add(estudante)
+                db.flush()
+            else:
+                if (
+                    hist_reprov is not None
+                    and int(hist_reprov) > estudante.historico_reprovacoes
+                ):
+                    estudante.historico_reprovacoes = int(hist_reprov)
+                    db.flush()
+
+            # 2. Busca ou cria o BoletimPeriodo para (estudante, escola, turma, ano_letivo, periodo_letivo)
+            boletim = EstudanteRepository.get_boletim_by_chave(
+                db=db,
+                estudante_id=estudante.id,
+                escola_id=escola_id,
+                turma_id=turma_id,
+                ano_letivo=ano_letivo,
+                periodo_letivo=periodo_letivo,
+            )
+
+            situacao_str = reg.get("situacao_final")
+            situacao_enum = (
+                SituacaoFinalPeriodo(situacao_str)
+                if situacao_str
+                else None
+            )
+
+            boletim_era_novo = False
+            if boletim is None:
+                boletim_era_novo = True
+                boletim = BoletimPeriodo(
+                    estudante_id=estudante.id,
+                    escola_id=escola_id,
+                    turma_id=turma_id,
+                    ano_letivo=ano_letivo,
+                    periodo_letivo=periodo_letivo,
+                    idade=reg.get("idade"),
+                    frequencia_percentual=reg.get("frequencia_percentual"),
+                    faltas=reg.get("faltas"),
+                    media_geral=reg.get("media_geral"),
+                    notas_baixas=reg.get("notas_baixas"),
+                    historico_reprovacoes=(
+                        int(hist_reprov)
+                        if hist_reprov is not None
+                        else estudante.historico_reprovacoes
+                    ),
+                    participacao_recuperacao=reg.get(
+                        "participacao_recuperacao"
+                    ),
+                    atrasos=reg.get("atrasos"),
+                    situacao_final=situacao_enum,
+                )
+                db.add(boletim)
+                db.flush()
+            else:
+                # Atualiza campos informados sem sobrescrever valores existentes por NULL indevidamente
+                if reg.get("idade") is not None:
+                    boletim.idade = int(reg["idade"])
+                if (
+                    reg.get("frequencia_percentual") is not None
+                    and disc_id is None
+                ):
+                    boletim.frequencia_percentual = float(
+                        reg["frequencia_percentual"]
+                    )
+                elif (
+                    reg.get("frequencia_percentual") is not None
+                    and boletim.frequencia_percentual is None
+                ):
+                    boletim.frequencia_percentual = float(
+                        reg["frequencia_percentual"]
+                    )
+                if reg.get("faltas") is not None and disc_id is None:
+                    boletim.faltas = int(reg["faltas"])
+                elif reg.get("faltas") is not None and boletim.faltas is None:
+                    boletim.faltas = int(reg["faltas"])
+                if reg.get("media_geral") is not None:
+                    boletim.media_geral = float(reg["media_geral"])
+                if reg.get("notas_baixas") is not None:
+                    boletim.notas_baixas = int(reg["notas_baixas"])
+                if hist_reprov is not None:
+                    boletim.historico_reprovacoes = int(hist_reprov)
+                if reg.get("participacao_recuperacao") is not None:
+                    boletim.participacao_recuperacao = bool(
+                        reg["participacao_recuperacao"]
+                    )
+                if reg.get("atrasos") is not None:
+                    boletim.atrasos = int(reg["atrasos"])
+                # Regra crítica: uma situação final válida NÃO deve ser substituída por NULL
+                if situacao_enum is not None:
+                    boletim.situacao_final = situacao_enum
+                db.flush()
+
+            # 3. Se houver disciplina associada, insere ou atualiza NotaDisciplina
+            if disc_id is not None:
+                nota_disc_obj = EstudanteRepository.get_nota_disciplina(
+                    db, boletim.id, disc_id
+                )
+                if nota_disc_obj is None:
+                    nota_disc_obj = NotaDisciplina(
+                        boletim_id=boletim.id,
+                        disciplina_id=disc_id,
+                        nota=reg.get("nota_disciplina"),
+                        nota_prova=reg.get("nota_prova"),
+                        nota_trabalho=reg.get("nota_trabalho"),
+                        frequencia_percentual=reg.get(
+                            "frequencia_percentual"
+                        ),
+                        faltas=reg.get("faltas"),
+                        em_recuperacao=reg.get("participacao_recuperacao"),
+                    )
+                    db.add(nota_disc_obj)
+                    db.flush()
+                    inseridos += 1
+                else:
+                    if reg.get("nota_disciplina") is not None:
+                        nota_disc_obj.nota = float(reg["nota_disciplina"])
+                    if reg.get("nota_prova") is not None:
+                        nota_disc_obj.nota_prova = float(reg["nota_prova"])
+                    if reg.get("nota_trabalho") is not None:
+                        nota_disc_obj.nota_trabalho = float(
+                            reg["nota_trabalho"]
+                        )
+                    if reg.get("frequencia_percentual") is not None:
+                        nota_disc_obj.frequencia_percentual = float(
+                            reg["frequencia_percentual"]
+                        )
+                    if reg.get("faltas") is not None:
+                        nota_disc_obj.faltas = int(reg["faltas"])
+                    if reg.get("participacao_recuperacao") is not None:
+                        nota_disc_obj.em_recuperacao = bool(
+                            reg["participacao_recuperacao"]
+                        )
+                    db.flush()
+                    atualizados += 1
+
+                # Recalcula media_geral do boletim quando não informada explicitamente
+                if boletim.media_geral is None:
+                    stmt_notas = select(NotaDisciplina.nota).where(
+                        NotaDisciplina.boletim_id == boletim.id,
+                        NotaDisciplina.nota.is_not(None),
+                    )
+                    valores_notas = [
+                        float(n)
+                        for n in db.execute(stmt_notas).scalars().all()
+                        if n is not None
+                    ]
+                    if valores_notas:
+                        boletim.media_geral = round(
+                            sum(valores_notas) / len(valores_notas), 2
+                        )
+                        db.flush()
+            else:
+                if boletim_era_novo:
+                    inseridos += 1
+                else:
+                    atualizados += 1
+
+        return inseridos, atualizados
+
+    @staticmethod
+    def _persistir_confirmacao_avaliacoes(
+        db: Session,
+        lote: LoteImportacao,
+        usuario: Usuario,
+        registros_previa: list[dict[str, Any]],
+    ) -> tuple[int, int]:
+        """
+        Persiste respostas de avaliações (Bloco B) de forma atômica e idempotente.
+        NUNCA cria estudantes: revalida que cada estudante permanece ativo e vinculado à turma.
+        """
+        inseridos = 0
+        atualizados = 0
+
+        for reg in registros_previa:
+            escola_id = uuid.UUID(str(reg["escola_id"]))
+            turma_id = uuid.UUID(str(reg["turma_id"]))
+            disc_id = uuid.UUID(str(reg["disciplina_id"]))
+            codigo_avaliacao = str(reg["codigo_avaliacao"]).strip()
+            titulo_avaliacao = str(reg["titulo_avaliacao"]).strip()
+            periodo_letivo = str(reg["periodo_letivo"]).strip()
+            data_avaliacao = date.fromisoformat(str(reg["data_avaliacao"]))
+            codigo_questao = str(reg["codigo_questao"]).strip().upper()
+            tipo_questao = TipoQuestao(str(reg["tipo_questao"]))
+            valor_questao = round(float(reg["valor_questao"]), 2)
+            alt_correta = reg.get("alternativa_correta")
+            faixa_str = reg.get("faixa_dificuldade")
+            faixa_enum = (
+                FaixaDificuldadeQuestao(faixa_str) if faixa_str else None
+            )
+            topico = reg.get("topico")
+            estudante_id = uuid.UUID(str(reg["estudante_id"]))
+            codigo_anonimo = str(reg["codigo_anonimo"]).strip()
+
+            # Revalida existência do estudante e vínculo na turma (nunca cria estudante)
+            estudante = AvaliacaoService._resolver_estudante_na_turma(
+                db=db,
+                escola_id=escola_id,
+                turma_id=turma_id,
+                estudante_id=estudante_id,
+                codigo_anonimo=codigo_anonimo,
+            )
+
+            # 1. Busca ou cria Avaliação
+            avaliacao = AvaliacaoRepository.get_by_chave(
+                db=db,
+                escola_id=escola_id,
+                turma_id=turma_id,
+                disciplina_id=disc_id,
+                codigo=codigo_avaliacao,
+            )
+            if avaliacao is None:
+                avaliacao = Avaliacao(
+                    codigo=codigo_avaliacao,
+                    titulo=titulo_avaliacao,
+                    escola_id=escola_id,
+                    turma_id=turma_id,
+                    disciplina_id=disc_id,
+                    usuario_id=usuario.id,
+                    periodo_letivo=periodo_letivo,
+                    data_avaliacao=data_avaliacao,
+                    status=StatusAvaliacao.PUBLICADA,
+                    ativo=True,
+                )
+                db.add(avaliacao)
+                db.flush()
+
+            # 2. Busca ou cria Questão na avaliação
+            questao = AvaliacaoRepository.get_questao_by_codigo(
+                db, avaliacao.id, codigo_questao
+            )
+            if questao is None:
+                questao = QuestaoAvaliacao(
+                    avaliacao_id=avaliacao.id,
+                    codigo_questao=codigo_questao,
+                    tipo_questao=tipo_questao,
+                    alternativa_correta=alt_correta,
+                    valor_questao=valor_questao,
+                    faixa_dificuldade=faixa_enum,
+                    topico=topico,
+                )
+                db.add(questao)
+                db.flush()
+            else:
+                if faixa_enum is not None and questao.faixa_dificuldade is None:
+                    questao.faixa_dificuldade = faixa_enum
+                if topico and not questao.topico:
+                    questao.topico = topico
+                db.flush()
+
+            # 3. Insere ou atualiza Resposta do estudante de forma idempotente
+            alt_final, em_branco, nota_final, acertou_final = (
+                AvaliacaoService.calcular_resultado_resposta(
+                    questao=questao,
+                    alternativa_marcada=reg.get("alternativa_marcada"),
+                    em_branco_explicito=reg.get("em_branco"),
+                    nota_obtida_informada=reg.get("nota_obtida"),
+                    acertou_informado=reg.get("acertou"),
+                )
+            )
+
+            resp = AvaliacaoRepository.get_resposta_by_questao_e_estudante(
+                db, questao.id, estudante.id
+            )
+            if resp is None:
+                resp = RespostaAvaliacao(
+                    questao_id=questao.id,
+                    estudante_id=estudante.id,
+                    alternativa_marcada=alt_final,
+                    em_branco=em_branco,
+                    nota_obtida=nota_final,
+                    acertou=acertou_final,
+                )
+                db.add(resp)
+                db.flush()
+                inseridos += 1
+            else:
+                resp.alternativa_marcada = alt_final
+                resp.em_branco = em_branco
+                resp.nota_obtida = nota_final
+                resp.acertou = acertou_final
+                db.add(resp)
+                db.flush()
+                atualizados += 1
+
+        return inseridos, atualizados
+
+    @staticmethod
+    def _persistir_confirmacao_atividades(
+        db: Session,
+        lote: LoteImportacao,
+        usuario: Usuario,
+        registros_previa: list[dict[str, Any]],
+    ) -> tuple[int, int]:
+        """
+        Persiste atividades e entregas (Bloco C) de forma atômica e idempotente.
+        Gera entregas esperadas para todos os estudantes elegíveis da turma de cada atividade
+        e aplica as entregas informadas no lote, nunca criando estudantes e preservando
+        notas ausentes como `None`.
+        """
+        inseridos = 0
+        atualizados = 0
+        atividades_com_esperadas_geradas: set[uuid.UUID] = set()
+
+        for reg in registros_previa:
+            escola_id = uuid.UUID(str(reg["escola_id"]))
+            turma_id = uuid.UUID(str(reg["turma_id"]))
+            disc_id = uuid.UUID(str(reg["disciplina_id"]))
+            codigo_atividade = str(reg["codigo_atividade"]).strip()
+            titulo_atividade = str(reg["titulo_atividade"]).strip()
+            periodo_letivo = str(reg["periodo_letivo"]).strip()
+            data_limite = date.fromisoformat(str(reg["data_limite"]))
+            nota_maxima = (
+                round(float(reg["nota_maxima"]), 2)
+                if reg.get("nota_maxima") is not None
+                else 10.0
+            )
+            estudante_id = uuid.UUID(str(reg["estudante_id"]))
+            codigo_anonimo = str(reg["codigo_anonimo"]).strip()
+            data_entrega_str = reg.get("data_entrega")
+            data_entrega = (
+                date.fromisoformat(str(data_entrega_str))
+                if data_entrega_str
+                else None
+            )
+            nota_val = (
+                round(float(reg["nota"]), 2)
+                if reg.get("nota") is not None
+                else None
+            )
+            status_entrega = StatusEntregaAtividade(str(reg["status_entrega"]))
+            era_insercao_prevista = reg.get("operacao_prevista") == "insercao"
+
+            # Revalida existência do estudante e vínculo na turma (nunca cria estudante)
+            estudante = EstudanteRepository.get_by_id(db, estudante_id)
+            if (
+                estudante is None
+                or not estudante.ativo
+                or estudante.escola_id != escola_id
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=(
+                        f"Estudante '{codigo_anonimo}' não encontrado ou inativo na escola no momento da confirmação."
+                    ),
+                )
+
+            elegiveis_ids = {
+                e.id
+                for e in ParticipacaoRepository.list_estudantes_elegiveis_turma(
+                    db, escola_id, turma_id
+                )
+            }
+            if estudante.id not in elegiveis_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"O estudante '{codigo_anonimo}' não pertence à turma informada no momento da confirmação."
+                    ),
+                )
+
+            # 1. Busca ou cria Atividade
+            atividade = ParticipacaoRepository.get_atividade_by_chave(
+                db=db,
+                escola_id=escola_id,
+                turma_id=turma_id,
+                disciplina_id=disc_id,
+                codigo=codigo_atividade,
+            )
+            if atividade is None:
+                atividade = Atividade(
+                    codigo=codigo_atividade,
+                    titulo=titulo_atividade,
+                    escola_id=escola_id,
+                    turma_id=turma_id,
+                    disciplina_id=disc_id,
+                    usuario_id=usuario.id,
+                    periodo_letivo=periodo_letivo,
+                    data_limite=data_limite,
+                    nota_maxima=nota_maxima,
+                    status=StatusAtividade.ABERTA,
+                    ativo=True,
+                )
+                db.add(atividade)
+                db.flush()
+
+            # 2. Estabelece entregas esperadas da turma (idempotente)
+            if atividade.id not in atividades_com_esperadas_geradas:
+                ParticipacaoService._executar_geracao_entregas_esperadas(
+                    db=db,
+                    atividade=atividade,
+                )
+                atividades_com_esperadas_geradas.add(atividade.id)
+
+            # 3. Atualiza/insere a entrega do estudante mantendo nota=None quando ausente
+            entrega = ParticipacaoRepository.get_entrega_by_atividade_e_estudante(
+                db, atividade.id, estudante.id
+            )
+            if entrega is None:
+                entrega = EntregaAtividade(
+                    atividade_id=atividade.id,
+                    estudante_id=estudante.id,
+                    data_entrega=data_entrega,
+                    nota=nota_val,
+                    status_entrega=status_entrega,
+                )
+                db.add(entrega)
+                db.flush()
+                inseridos += 1
+            else:
+                entrega.data_entrega = data_entrega
+                if nota_val is not None:
+                    entrega.nota = nota_val
+                entrega.status_entrega = status_entrega
+                db.add(entrega)
+                db.flush()
+                if era_insercao_prevista:
+                    inseridos += 1
+                else:
+                    atualizados += 1
+
+        return inseridos, atualizados
 
     @staticmethod
     def _construir_resposta_previa(

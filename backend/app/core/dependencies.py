@@ -106,27 +106,32 @@ require_qualquer_papel = require_roles(
     PapelUsuario.PROFESSOR,
 )
 
-# Política explícita para importação de datasets escolares (Fase 3):
-# O perfil 'gestor' representa a coordenação escolar e os professores importam
+# Política explícita para importação de datasets escolares (Fase 3) e acesso pedagógico (Fase 4):
+# O perfil 'gestor' representa a coordenação escolar e os professores importam e gerenciam
 # dados exclusivamente de suas turmas e disciplinas vinculadas.
-# Administradores NÃO recebem permissão automática de importação.
+# Administradores NÃO recebem permissão pedagógica ou de importação automaticamente.
 PAPEIS_AUTORIZADOS_IMPORTACAO: tuple[PapelUsuario, ...] = (
     PapelUsuario.GESTOR,
     PapelUsuario.PROFESSOR,
 )
+PAPEIS_AUTORIZADOS_PEDAGOGICO: tuple[PapelUsuario, ...] = (
+    PapelUsuario.GESTOR,
+    PapelUsuario.PROFESSOR,
+)
 require_importacao_datasets = require_roles(*PAPEIS_AUTORIZADOS_IMPORTACAO)
+require_acesso_pedagogico = require_roles(*PAPEIS_AUTORIZADOS_PEDAGOGICO)
 
 
 def garantir_escopo_importacao_usuario(usuario: Usuario) -> None:
     """
-    Valida pré-requisitos de escopo para operações de importação:
+    Valida pré-requisitos de escopo para operações de importação e módulos pedagógicos:
     - Apenas GESTOR e PROFESSOR são autorizados (ADMINISTRADOR é bloqueado).
     - Se o usuário for GESTOR, exige que possua uma escola válida vinculada (`escola_id`).
     """
     if usuario.papel not in PAPEIS_AUTORIZADOS_IMPORTACAO:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acesso negado: seu perfil não possui autorização para importar datasets escolares.",
+            detail="Acesso negado: seu perfil não possui autorização pedagógica ou de importação.",
         )
 
     if usuario.papel == PapelUsuario.GESTOR and usuario.escola_id is None:
@@ -134,6 +139,104 @@ def garantir_escopo_importacao_usuario(usuario: Usuario) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acesso negado: gestor não possui uma unidade escolar vinculada.",
         )
+
+
+def garantir_escopo_pedagogico_turma_disciplina(
+    db: Session,
+    usuario: Usuario,
+    turma_id: uuid.UUID,
+    disciplina_id: Optional[uuid.UUID] = None,
+) -> tuple[Turma, Optional[uuid.UUID]]:
+    """
+    Valida rigorosamente o escopo pedagógico (Fase 4) sobre uma turma e disciplina:
+    - Bloqueia ADMINISTRADOR.
+    - Exige que a Turma e sua Escola existam e estejam ativas (`ativo=True`).
+    - Se `disciplina_id` for informada, exige que a Disciplina exista e esteja ativa.
+    - Para GESTOR: exige que `turma.escola_id == usuario.escola_id`.
+    - Para PROFESSOR:
+      * Se `usuario.escola_id` estiver definido, exige `turma.escola_id == usuario.escola_id`.
+      * Exige vínculo em `ProfessorTurma` para a turma:
+        - Se `disciplina_id` for informada, exige vínculo explícito com `disciplina_id`
+          ou vínculo geral na turma (`ProfessorTurma.disciplina_id IS NULL`).
+        - Se `disciplina_id` for `None`, exige ao menos um vínculo ativo na turma.
+    Retorna `(turma, disciplina_id)`.
+    """
+    from app.modules.disciplinas.models import Disciplina
+    from app.modules.escolas.models import Escola
+
+    garantir_escopo_importacao_usuario(usuario)
+
+    stmt_turma = (
+        select(Turma, Escola)
+        .join(Escola, Turma.escola_id == Escola.id)
+        .where(Turma.id == turma_id)
+    )
+    row = db.execute(stmt_turma).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Turma não encontrada.",
+        )
+    turma, escola = row
+    if not turma.ativo or not escola.ativo:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A turma ou unidade escolar informada está inativa.",
+        )
+
+    if disciplina_id is not None:
+        stmt_disc = select(Disciplina).where(Disciplina.id == disciplina_id)
+        disc = db.execute(stmt_disc).scalar_one_or_none()
+        if disc is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Disciplina não encontrada.",
+            )
+        if not disc.ativo:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A disciplina informada está inativa.",
+            )
+
+    if usuario.papel == PapelUsuario.GESTOR:
+        if usuario.escola_id != turma.escola_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: esta turma pertence a outra unidade escolar.",
+            )
+        return turma, disciplina_id
+
+    if usuario.papel == PapelUsuario.PROFESSOR:
+        if usuario.escola_id is not None and usuario.escola_id != turma.escola_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: esta turma pertence a uma escola fora do escopo do professor.",
+            )
+
+        stmt_atrib = select(ProfessorTurma).where(
+            ProfessorTurma.professor_id == usuario.id,
+            ProfessorTurma.turma_id == turma.id,
+        )
+        atribuicoes = list(db.execute(stmt_atrib).scalars().all())
+        if not atribuicoes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: professor não possui vínculo autorizado com esta turma.",
+            )
+
+        if disciplina_id is not None:
+            discs_vinculadas = {a.disciplina_id for a in atribuicoes}
+            if None not in discs_vinculadas and disciplina_id not in discs_vinculadas:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: professor não possui vínculo autorizado com esta disciplina na turma.",
+                )
+        return turma, disciplina_id
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Acesso negado.",
+    )
 
 
 def verificar_vinculo_professor_turma_disciplina(

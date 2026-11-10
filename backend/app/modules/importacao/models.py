@@ -41,9 +41,11 @@ class StatusLoteImportacao(str, Enum):
 
 
 class TipoImportacao(str, Enum):
-    """Tipos de datasets suportados para importação."""
+    """Tipos de datasets suportados para importação (Fases 3 e 4)."""
 
     DADOS_ESCOLARES = "DADOS_ESCOLARES"
+    AVALIACOES = "AVALIACOES"
+    ATIVIDADES = "ATIVIDADES"
 
 
 class LoteImportacao(Base):
