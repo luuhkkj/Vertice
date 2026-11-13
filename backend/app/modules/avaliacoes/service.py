@@ -370,8 +370,31 @@ class AvaliacaoService:
         novo_valor = (
             round(float(dados.valor_questao), 2)
             if dados.valor_questao is not None
-            else questao.valor_questao
+            else round(float(questao.valor_questao), 2)
         )
+
+        # Proteção de integridade histórica (Fase 5 — Item 6.3):
+        # Se a questão já possui respostas registradas, alterações retroativas em
+        # `tipo_questao`, `alternativa_correta` ou `valor_questao` corromperiam o histórico
+        # de `acertou` e `nota_obtida` já persistidos.
+        possui_respostas = bool(questao.respostas)
+        if possui_respostas:
+            alt_atual = (questao.alternativa_correta or "").strip().upper() or None
+            alt_nova_norm = (nova_alt or "").strip().upper() or None
+            valor_atual = round(float(questao.valor_questao), 2)
+            if (
+                novo_tipo != questao.tipo_questao
+                or alt_nova_norm != alt_atual
+                or abs(novo_valor - valor_atual) > 1e-6
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Não é permitido alterar 'tipo_questao', 'alternativa_correta' ou "
+                        f"'valor_questao' da questão '{questao.codigo_questao}' porque ela "
+                        "já possui respostas individuais registradas."
+                    ),
+                )
 
         if novo_tipo == TipoQuestao.FECHADA and not nova_alt:
             raise HTTPException(

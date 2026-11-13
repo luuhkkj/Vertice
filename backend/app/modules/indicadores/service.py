@@ -26,6 +26,7 @@ from app.modules.indicadores.repository import IndicadoresRepository
 from app.modules.indicadores.schemas import (
     ComparacaoPeriodoAnteriorSchema,
     DesempenhoTurmaDisciplinaAvaliacaoSchema,
+    DistribuicaoAcertosAvaliacaoSchema,
     DistribuicaoItemSchema,
     EvolucaoParticipacaoItemSchema,
     EvolucaoPeriodoGeralSchema,
@@ -454,6 +455,15 @@ class IndicadoresAvaliacoesService:
         soma_pesos_global = 0.0
         medias_avaliacoes_escala_10: list[float] = []
         pontos_medios_avaliacoes: list[float] = []
+        total_esperadas_global = 0
+        total_registradas_global = 0
+        total_ausentes_global = 0
+        total_acertos_global = 0
+        total_erros_global = 0
+        total_em_branco_global = 0
+        distribuicao_acertos_estudantes: list[
+            DistribuicaoAcertosAvaliacaoSchema
+        ] = []
 
         for av in avaliacoes:
             # Estudantes elegíveis na turma da avaliação (respostas esperadas):
@@ -472,13 +482,16 @@ class IndicadoresAvaliacoesService:
             peso_total_av = sum(float(q.valor_questao) for q in questoes_av)
             soma_pesos_global += peso_total_av
 
-            # Acumula pontuação por estudante que possui resposta na avaliação
+            # Acumula pontuação e acertos por estudante que possui resposta na avaliação
             pontos_por_estudante: dict[uuid.UUID, float] = defaultdict(float)
+            acertos_por_estudante: dict[uuid.UUID, int] = defaultdict(int)
+            respondentes_avaliacao: set[uuid.UUID] = set()
             taxas_questoes_av: list[float] = []
 
             for q in questoes_av:
                 respostas_q = list(q.respostas or [])
                 ids_respondentes = {r.estudante_id for r in respostas_q}
+                respondentes_avaliacao.update(ids_respondentes)
                 conjunto_esperado = ids_esperados_turma | ids_respondentes
                 # Denominador: total de respostas esperadas e válidas para a questão.
                 # Se a turma possui estudantes vinculados, utiliza max(len(conjunto_esperado), len(respostas_q)).
@@ -520,8 +533,17 @@ class IndicadoresAvaliacoesService:
                             dist_alt[alt_m] = dist_alt.get(alt_m, 0) + 1
                         if r.acertou is True:
                             acertos += 1
+                            acertos_por_estudante[r.estudante_id] += 1
                         else:
                             erros += 1
+
+                ausentes_q = max(0, denom_esperado - len(respostas_q))
+                total_esperadas_global += denom_esperado
+                total_registradas_global += len(respostas_q)
+                total_ausentes_global += ausentes_q
+                total_acertos_global += acertos
+                total_erros_global += erros
+                total_em_branco_global += em_branco
 
                 taxa_q = (
                     round((acertos / denom_esperado) * 100.0, 2)
@@ -535,6 +557,17 @@ class IndicadoresAvaliacoesService:
                     questao_id=q.id,
                     avaliacao_id=av.id,
                     avaliacao_codigo=av.codigo,
+                    avaliacao_titulo=av.titulo,
+                    periodo_letivo=av.periodo_letivo,
+                    turma_id=av.turma_id,
+                    turma_nome=av.turma.nome if av.turma else None,
+                    disciplina_id=av.disciplina_id,
+                    disciplina_codigo=(
+                        av.disciplina.codigo if av.disciplina else None
+                    ),
+                    disciplina_nome=(
+                        av.disciplina.nome if av.disciplina else None
+                    ),
                     codigo_questao=q.codigo_questao,
                     tipo_questao=q.tipo_questao.value,
                     alternativa_correta=q.alternativa_correta,
@@ -546,6 +579,7 @@ class IndicadoresAvaliacoesService:
                     ),
                     total_respostas_esperadas=denom_esperado,
                     total_respostas_registradas=len(respostas_q),
+                    quantidade_respostas_ausentes=ausentes_q,
                     quantidade_acertos=acertos,
                     quantidade_erros=erros,
                     quantidade_em_branco=em_branco,
@@ -563,6 +597,35 @@ class IndicadoresAvaliacoesService:
                 agrup_topicos[nome_topico]["questoes"] += 1
                 agrup_topicos[nome_topico]["esperadas"] += denom_esperado
                 agrup_topicos[nome_topico]["acertos"] += acertos
+
+            # Distribuição geral de acertos por estudante na avaliação (Gráfico 5):
+            # Calculada para os estudantes que possuem respostas registradas na avaliação.
+            if len(avaliacoes) == 1 and questoes_av and respondentes_avaliacao:
+                total_q_av = len(questoes_av)
+                contagem_por_acertos: dict[int, int] = {
+                    k: 0 for k in range(total_q_av + 1)
+                }
+                for est_id in respondentes_avaliacao:
+                    qtd_ac_est = acertos_por_estudante.get(est_id, 0)
+                    contagem_por_acertos[qtd_ac_est] = (
+                        contagem_por_acertos.get(qtd_ac_est, 0) + 1
+                    )
+                total_resp_av = len(respondentes_avaliacao)
+                for k_ac in range(total_q_av + 1):
+                    qtd_est = contagem_por_acertos.get(k_ac, 0)
+                    distribuicao_acertos_estudantes.append(
+                        DistribuicaoAcertosAvaliacaoSchema(
+                            quantidade_acertos=k_ac,
+                            total_questoes_avaliacao=total_q_av,
+                            percentual_acerto_estudante=round(
+                                (k_ac / total_q_av) * 100.0, 2
+                            ),
+                            quantidade_estudantes=qtd_est,
+                            percentual_estudantes=round(
+                                (qtd_est / total_resp_av) * 100.0, 2
+                            ),
+                        )
+                    )
 
             # Média ponderada da avaliação considerando os pesos das questões:
             # Pontuação média dos participantes avaliados normalizada para escala 0..10 (e bruta).
@@ -651,9 +714,22 @@ class IndicadoresAvaliacoesService:
                 )
             )
 
+        taxa_acerto_geral = (
+            round((total_acertos_global / total_esperadas_global) * 100.0, 2)
+            if total_esperadas_global > 0
+            else None
+        )
+
         return IndicadoresAvaliacoesResponse(
             total_avaliacoes=len(avaliacoes),
             total_questoes=len(questoes_schema),
+            total_respostas_esperadas=total_esperadas_global,
+            total_respostas_registradas=total_registradas_global,
+            total_respostas_ausentes=total_ausentes_global,
+            total_acertos=total_acertos_global,
+            total_erros=total_erros_global,
+            total_em_branco=total_em_branco_global,
+            taxa_acerto_geral_percentual=taxa_acerto_geral,
             media_avaliacao_ponderada=_media_arredondada(
                 medias_avaliacoes_escala_10
             ),
@@ -664,6 +740,7 @@ class IndicadoresAvaliacoesService:
             questao_maior_taxa_acerto=maior_q,
             questao_menor_taxa_acerto=menor_q,
             questoes=questoes_schema,
+            distribuicao_acertos_estudantes=distribuicao_acertos_estudantes,
             distribuicao_por_topico=dist_topicos,
             desempenho_por_turma_disciplina=desempenho_td,
         )

@@ -802,12 +802,10 @@ export default function(component) {
 
         erro.textContent = "";
 
-        // A senha será validada pelo backend.
-        // Não enviamos a senha ao estado do Streamlit
-        // enquanto a autenticação for demonstrativa.
         setTriggerValue("submit", {
             tipo: "login",
             email: email,
+            senha: senha,
             perfil: perfil
         });
     };
@@ -883,17 +881,42 @@ def render():
         return
 
     if acao.get("tipo") == "login":
+        from data.api_client import autenticar_usuario_api
+
         perfil = acao.get("perfil", "administrador")
         email = acao.get("email", "").strip().lower()
+        senha = acao.get("senha", "")
 
         if perfil not in ("administrador", "professor"):
             st.error("Tipo de acesso inválido.")
             return
 
-        # Sem backend, não há associação confiável entre email e professor.
-        # O perfil selecionado serve apenas para visualizar a interface.
-        professor = None
+        if email and senha:
+            resp = autenticar_usuario_api(email, senha)
+            if resp.ok and isinstance(resp.dados, dict):
+                usuario = resp.dados.get("usuario") or {}
+                papel_api = str(usuario.get("papel", perfil)).lower()
+                st.session_state["perfil"] = (
+                    "administrador"
+                    if papel_api in ("administrador", "gestor")
+                    else "professor"
+                )
+                st.session_state["papel_api"] = papel_api
+                st.session_state["professor_atual"] = (
+                    usuario.get("nome_completo")
+                    if papel_api == "professor"
+                    else None
+                )
+                st.session_state["email_atual"] = usuario.get("email", email)
+                st.session_state["logado"] = True
+                st.rerun()
+                return
+            if not resp.indisponivel:
+                st.error(resp.erro or "E-mail ou senha inválidos.")
+                return
 
+        # Modo de navegação local apenas quando o backend não estiver em execução:
+        professor = None
         st.session_state["perfil"] = perfil
         st.session_state["professor_atual"] = professor
         st.session_state["email_atual"] = email

@@ -515,26 +515,57 @@ def _validar(dados, tipo):
                 })
 
             alt_correta = (
-                str(linha["alternativa_correta"] or "")
-                .strip()
-                .upper()
+                ""
+                if pd.isna(linha["alternativa_correta"])
+                else str(linha["alternativa_correta"]).strip().upper()
             )
+            if alt_correta in ("NULL", "NONE", "NAN", "-"):
+                alt_correta = ""
+
             alt_marcada = (
-                str(linha["alternativa_marcada"] or "")
-                .strip()
-                .upper()
+                ""
+                if pd.isna(linha["alternativa_marcada"])
+                else str(linha["alternativa_marcada"]).strip().upper()
             )
+            if alt_marcada in ("NULL", "NONE", "NAN", "-"):
+                alt_marcada = ""
+
             em_branco_txt = (
-                str(linha["em_branco"] or "")
-                .strip()
-                .lower()
+                ""
+                if pd.isna(linha["em_branco"])
+                else str(linha["em_branco"]).strip().lower()
             )
-            eh_branco = em_branco_txt in (
+            if em_branco_txt in ("", "null", "none", "nan", "-"):
+                em_branco_bool = None
+            elif em_branco_txt in (
                 "true",
                 "1",
                 "sim",
                 "s",
-            ) or alt_marcada == "BRANCO"
+                "yes",
+                "y",
+                "verdadeiro",
+            ):
+                em_branco_bool = True
+            elif em_branco_txt in (
+                "false",
+                "0",
+                "nao",
+                "não",
+                "n",
+                "no",
+                "falso",
+            ):
+                em_branco_bool = False
+            else:
+                em_branco_bool = None
+                problemas.append({
+                    "Linha": num_linha,
+                    "Problema": (
+                        "Valor booleano inválido em 'em_branco'. "
+                        "Use Sim/Não, True/False ou 1/0"
+                    ),
+                })
 
             nota_series = _numero(
                 pd.Series([linha["nota_obtida"]])
@@ -550,7 +581,8 @@ def _validar(dados, tipo):
                             "entre A, B, C, D ou E"
                         ),
                     })
-                if not eh_branco and alt_marcada not in (
+
+                if em_branco_bool is True and alt_marcada in (
                     "A",
                     "B",
                     "C",
@@ -560,10 +592,62 @@ def _validar(dados, tipo):
                     problemas.append({
                         "Linha": num_linha,
                         "Problema": (
+                            "Inconsistência na questão fechada: 'em_branco' foi "
+                            "marcado como verdadeiro, mas 'alternativa_marcada' "
+                            f"foi preenchida com '{alt_marcada}'"
+                        ),
+                    })
+                elif em_branco_bool is False and (
+                    not alt_marcada or alt_marcada == "BRANCO"
+                ):
+                    problemas.append({
+                        "Linha": num_linha,
+                        "Problema": (
+                            "Inconsistência na questão fechada: 'em_branco' foi "
+                            "indicado como falso, mas nenhuma alternativa válida (A-E) "
+                            "foi informada em 'alternativa_marcada'"
+                        ),
+                    })
+                elif em_branco_bool is True or alt_marcada == "BRANCO":
+                    if not pd.isna(nota_val) and nota_val > 0:
+                        problemas.append({
+                            "Linha": num_linha,
+                            "Problema": (
+                                "Questão fechada deixada em branco não pode "
+                                "ter nota_obtida positiva"
+                            ),
+                        })
+                elif not alt_marcada:
+                    problemas.append({
+                        "Linha": num_linha,
+                        "Problema": (
                             "Questão FECHADA exige alternativa_marcada "
                             "(A, B, C, D, E ou BRANCO)"
                         ),
                     })
+                elif alt_marcada not in ("A", "B", "C", "D", "E"):
+                    problemas.append({
+                        "Linha": num_linha,
+                        "Problema": (
+                            f"Alternativa marcada inválida ('{alt_marcada}'). "
+                            "Use A, B, C, D, E ou BRANCO"
+                        ),
+                    })
+                else:
+                    if (
+                        alt_correta in ("A", "B", "C", "D", "E")
+                        and alt_marcada != alt_correta
+                        and not pd.isna(nota_val)
+                        and nota_val > 0
+                    ):
+                        problemas.append({
+                            "Linha": num_linha,
+                            "Problema": (
+                                f"A resposta marcada ('{alt_marcada}') diverge "
+                                f"do gabarito ('{alt_correta}') e não pode ter "
+                                "nota_obtida positiva"
+                            ),
+                        })
             elif tipo_q == "ABERTA":
                 if alt_correta:
                     problemas.append({
@@ -580,7 +664,25 @@ def _validar(dados, tipo):
                             "Questão ABERTA não aceita alternativa A-E"
                         ),
                     })
-                if not eh_branco and pd.isna(nota_val):
+                elif em_branco_bool is False and alt_marcada == "BRANCO":
+                    problemas.append({
+                        "Linha": num_linha,
+                        "Problema": (
+                            "Inconsistência na questão aberta: 'em_branco' foi "
+                            "indicado como falso, mas 'alternativa_marcada' está "
+                            "como 'BRANCO'"
+                        ),
+                    })
+                elif em_branco_bool is True or alt_marcada == "BRANCO":
+                    if not pd.isna(nota_val) and nota_val > 0:
+                        problemas.append({
+                            "Linha": num_linha,
+                            "Problema": (
+                                "Questão aberta deixada em branco não pode "
+                                "ter nota_obtida positiva"
+                            ),
+                        })
+                elif pd.isna(nota_val):
                     problemas.append({
                         "Linha": num_linha,
                         "Problema": (
@@ -732,18 +834,20 @@ def _tela_resultado():
                 width="stretch",
             )
 
-        st.info(
-            "Os dados foram salvos temporariamente nesta sessão. "
-            "Os estudantes importados já alimentam a Visão Geral. "
-            "A persistência definitiva dependerá do backend."
-        )
-
-        if resultado["tipo"] == "Resultados de avaliações":
-            st.caption(
-                "As respostas foram validadas e armazenadas, "
-                "mas o Mapa de Acertos ainda precisa ser "
-                "conectado a elas."
+        if resultado.get("persistido_api"):
+            st.info(
+                "Os dados foram validados e persistidos no banco de dados "
+                "do Vértice com sucesso. O Mapa de Acertos e os indicadores "
+                "já estão atualizados."
             )
+        else:
+            st.info(
+                "Os dados foram validados e salvos temporariamente nesta sessão. "
+                "Os estudantes e avaliações importados já alimentam a Visão Geral "
+                "e o Mapa de Acertos."
+            )
+            if resultado.get("aviso_api"):
+                st.caption(f"Nota da sincronização com o servidor: {resultado['aviso_api']}")
 
     else:
         st.error(
@@ -1014,6 +1118,30 @@ def render():
                     "entrada_importacoes",
                     {},
                 )[tipo] = validados
+
+                from data.api_client import (
+                    possui_sessao_api_ativa,
+                    validar_e_confirmar_importacao_api,
+                )
+
+                if possui_sessao_api_ativa():
+                    tipo_api = (
+                        "avaliacoes"
+                        if tipo == "Resultados de avaliações"
+                        else "dados_escolares"
+                    )
+                    resp_imp = validar_e_confirmar_importacao_api(
+                        nome_arquivo=nome,
+                        conteudo_bytes=conteudo,
+                        tipo_importacao=tipo_api,
+                    )
+                    st.session_state["entrada_resultado"]["persistido_api"] = (
+                        resp_imp.ok
+                    )
+                    if not resp_imp.ok and resp_imp.erro:
+                        st.session_state["entrada_resultado"]["aviso_api"] = (
+                            resp_imp.erro
+                        )
 
             st.session_state["entrada_tela"] = "resultado"
             st.rerun()

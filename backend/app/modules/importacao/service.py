@@ -802,12 +802,28 @@ class ImportacaoService:
                 db.add(questao)
                 db.flush()
             else:
-                questao.tipo_questao = tipo_questao
-                questao.valor_questao = valor_questao
-                if tipo_questao == TipoQuestao.FECHADA and alt_correta:
-                    questao.alternativa_correta = alt_correta
-                elif tipo_questao == TipoQuestao.ABERTA:
-                    questao.alternativa_correta = None
+                # Proteção de integridade do gabarito e histórico (Fase 5 — Item 6.2 e 6.3):
+                # Nunca sobrescreve silenciosamente tipo, valor ou gabarito de uma questão existente.
+                alt_exist_norm = (
+                    (questao.alternativa_correta or "").strip().upper() or None
+                )
+                alt_lote_norm = (alt_correta or "").strip().upper() or None
+                if (
+                    questao.tipo_questao != tipo_questao
+                    or abs(round(float(questao.valor_questao), 2) - round(float(valor_questao), 2)) > 1e-6
+                    or (
+                        alt_exist_norm is not None
+                        and alt_lote_norm is not None
+                        and alt_exist_norm != alt_lote_norm
+                    )
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Conflito de integridade ao confirmar lote na questão '{codigo_questao}': "
+                            "tipo, valor ou gabarito divergem da questão já cadastrada no banco."
+                        ),
+                    )
                 if faixa_enum is not None:
                     questao.faixa_dificuldade = faixa_enum
                 if topico:

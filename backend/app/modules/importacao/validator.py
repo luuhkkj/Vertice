@@ -2240,7 +2240,7 @@ def processar_e_validar_dataframe_avaliacoes(
         else:
             tipo_questao_enum = TipoQuestao.FECHADA
 
-        valor_questao = (
+        valor_questao_informado = (
             _parse_float_opcional(
                 row.get(canon_para_orig["valor_questao"]),
                 "valor_questao",
@@ -2252,12 +2252,15 @@ def processar_e_validar_dataframe_avaliacoes(
             if "valor_questao" in canon_para_orig
             else None
         )
-        if valor_questao is None:
-            valor_questao = (
+        valor_questao = (
+            valor_questao_informado
+            if valor_questao_informado is not None
+            else (
                 float(questao_existente.valor_questao)
                 if questao_existente is not None
                 else 1.0
             )
+        )
 
         alt_correta_raw = (
             str(row.get(canon_para_orig["alternativa_correta"], "")).strip().upper()
@@ -2271,6 +2274,69 @@ def processar_e_validar_dataframe_avaliacoes(
             if questao_existente is not None
             else None
         )
+
+        # Consistência com questão já cadastrada no banco (Fase 5 — Item 6.2 e 6.3):
+        # Nunca sobrescrever silenciosamente `tipo_questao`, `valor_questao` ou `alternativa_correta`
+        # quando a questão já existe com outra definição no banco.
+        if questao_existente is not None:
+            if (
+                tipo_questao_enum is not None
+                and tipo_questao_enum != questao_existente.tipo_questao
+            ):
+                relatorio.valores_invalidos.append(
+                    ItemProblemaValidacao(
+                        linha=linha_num,
+                        categoria="valor_invalido",
+                        campo="tipo_questao",
+                        mensagem=(
+                            f"Conflito na questão '{codigo_questao}' da avaliação '{codigo_avaliacao}': "
+                            f"a questão já está cadastrada como '{questao_existente.tipo_questao.value}', "
+                            f"mas o arquivo informou '{tipo_questao_enum.value}'."
+                        ),
+                    )
+                )
+            if (
+                valor_questao_informado is not None
+                and abs(
+                    round(float(valor_questao_informado), 2)
+                    - round(float(questao_existente.valor_questao), 2)
+                )
+                > 1e-6
+            ):
+                relatorio.valores_invalidos.append(
+                    ItemProblemaValidacao(
+                        linha=linha_num,
+                        categoria="valor_invalido",
+                        campo="valor_questao",
+                        mensagem=(
+                            f"Conflito na questão '{codigo_questao}' da avaliação '{codigo_avaliacao}': "
+                            f"a questão já está cadastrada com valor {float(questao_existente.valor_questao):.2f}, "
+                            f"mas o arquivo informou {float(valor_questao_informado):.2f}."
+                        ),
+                    )
+                )
+            alt_existente_norm = (
+                (questao_existente.alternativa_correta or "").strip().upper()
+                or None
+            )
+            if (
+                alt_correta_raw
+                and alt_existente_norm is not None
+                and alt_correta_raw != alt_existente_norm
+            ):
+                relatorio.valores_invalidos.append(
+                    ItemProblemaValidacao(
+                        linha=linha_num,
+                        categoria="valor_invalido",
+                        campo="alternativa_correta",
+                        mensagem=(
+                            f"Conflito de gabarito na questão '{codigo_questao}' da avaliação '{codigo_avaliacao}': "
+                            f"a questão já possui alternativa correta '{alt_existente_norm}' cadastrada, "
+                            f"mas o arquivo informou '{alt_correta_raw}'. O gabarito existente não pode ser "
+                            "sobrescrito silenciosamente durante a importação."
+                        ),
+                    )
+                )
 
         if tipo_questao_enum == TipoQuestao.FECHADA:
             if not alternativa_correta or alternativa_correta not in {

@@ -82,6 +82,13 @@ class IndicadorQuestaoSchema(BaseModel):
     questao_id: uuid.UUID
     avaliacao_id: uuid.UUID
     avaliacao_codigo: str
+    avaliacao_titulo: Optional[str] = None
+    periodo_letivo: Optional[str] = None
+    turma_id: Optional[uuid.UUID] = None
+    turma_nome: Optional[str] = None
+    disciplina_id: Optional[uuid.UUID] = None
+    disciplina_codigo: Optional[str] = None
+    disciplina_nome: Optional[str] = None
     codigo_questao: str
     tipo_questao: str
     alternativa_correta: Optional[str] = None
@@ -97,12 +104,23 @@ class IndicadorQuestaoSchema(BaseModel):
     )
     total_respostas_esperadas: int
     total_respostas_registradas: int
+    quantidade_respostas_ausentes: int = 0
     quantidade_acertos: int
     quantidade_erros: int
     quantidade_em_branco: int
     taxa_acerto_percentual: Optional[float] = None
     media_nota_questao: Optional[float] = None
     distribuicao_alternativas: dict[str, int] = {}
+
+
+class DistribuicaoAcertosAvaliacaoSchema(BaseModel):
+    """Distribuição geral de acertos por estudante em uma avaliação (Gráfico 5)."""
+
+    quantidade_acertos: int
+    total_questoes_avaliacao: int
+    percentual_acerto_estudante: float
+    quantidade_estudantes: int
+    percentual_estudantes: float
 
 
 class IndicadorTopicoAvaliacaoSchema(BaseModel):
@@ -133,6 +151,13 @@ class IndicadoresAvaliacoesResponse(BaseModel):
 
     total_avaliacoes: int = 0
     total_questoes: int = 0
+    total_respostas_esperadas: int = 0
+    total_respostas_registradas: int = 0
+    total_respostas_ausentes: int = 0
+    total_acertos: int = 0
+    total_erros: int = 0
+    total_em_branco: int = 0
+    taxa_acerto_geral_percentual: Optional[float] = None
     media_avaliacao_ponderada: Optional[float] = Field(
         default=None,
         description="Média da avaliação na escala 0-10 considerando os pesos (valores) das questões.",
@@ -142,6 +167,7 @@ class IndicadoresAvaliacoesResponse(BaseModel):
     questao_maior_taxa_acerto: Optional[IndicadorQuestaoSchema] = None
     questao_menor_taxa_acerto: Optional[IndicadorQuestaoSchema] = None
     questoes: list[IndicadorQuestaoSchema] = []
+    distribuicao_acertos_estudantes: list[DistribuicaoAcertosAvaliacaoSchema] = []
     distribuicao_por_topico: list[IndicadorTopicoAvaliacaoSchema] = []
     desempenho_por_turma_disciplina: list[
         DesempenhoTurmaDisciplinaAvaliacaoSchema

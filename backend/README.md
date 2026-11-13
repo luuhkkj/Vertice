@@ -419,6 +419,24 @@ EST-2026-003,Turma 2A,MAT,2026,1º Bimestre,92.0,3,9.0,9.5,8.5,0,Nao,Aprovado
   - Para questões `FECHADA`, exige-se `alternativa_correta` (`A`-`E`) e `alternativa_marcada` explícita (`A`-`E` ou `BRANCO` / `em_branco=Sim`), calculando `acertou` e `nota_obtida` no backend a partir da comparação entre `alternativa_marcada` e `alternativa_correta`.
   - Para questões `ABERTA`, não se exige nem aceita `alternativa_correta` ou alternativas `A`-`E`, exigindo-se `nota_obtida` (`0 <= nota_obtida <= valor_questao`) quando não estiver explicitamente em branco.
 - Nas importações de `AVALIACOES` e `ATIVIDADES`, estudantes inexistentes ou fora da turma são rejeitados na validação — nunca são criados estudantes novos fora da importação de `DADOS_ESCOLARES`.
+- **Consistência de Gabarito e Proteção de Histórico (Fase 5):**
+  - Quando uma questão já está cadastrada no banco e a planilha omite `alternativa_correta`, o sistema reaproveita explicitamente o gabarito já existente.
+  - Quando a planilha informa `alternativa_correta`, `tipo_questao` ou `valor_questao` divergente da questão já cadastrada no banco, a validação rejeita o conflito e **nunca sobrescreve silenciosamente** o gabarito existente.
+  - No endpoint `PATCH /api/v1/questoes/{questao_id}`, alterações retroativas em `tipo_questao`, `alternativa_correta` ou `valor_questao` são bloqueadas com `HTTP 409 Conflict` caso a questão já possua respostas registradas.
+
+### 6. Integração do Mapa de Acertos, Gráficos e Filtros no Frontend (Fase 5)
+- **Cliente HTTP Autenticado (`Frontend vertice/data/api_client.py`):**
+  - Centraliza a comunicação com a API FastAPI (`VERTICE_API_URL`, padrão `http://127.0.0.1:8000/api/v1`), enviando o token JWT Bearer da sessão sem jamais expor tokens ou credenciais na interface, em logs ou em mensagens de erro.
+  - Trata explicitamente sessão expirada (`HTTP 401`), permissão insuficiente (`HTTP 403`) e indisponibilidade de rede, sem apresentar dados fictícios como se fossem reais.
+- **Mapa de Acertos e 6 Gráficos Analíticos (`Frontend vertice/pages/mapa_acertos.py` e `Frontend vertice/components/graficos.py`):**
+  - Integra filtros dinâmicos por **Disciplina**, **Turma**, **Período letivo**, **Avaliação** e **Questão**, consumindo `GET /api/v1/indicadores/avaliacoes`.
+  - Renderiza os 6 gráficos analíticos com dados reais:
+    1. Distribuição de alternativas por questão (`A`, `B`, `C`, `D`, `E` e `BRANCO` — exclusivamente para questões fechadas);
+    2. Acertos, erros e respostas em branco (e ausentes, sem contar branco como erro);
+    3. Percentual de acerto por questão colorido pela faixa de dificuldade;
+    4. Comparação de desempenho entre questões (taxa de acerto % vs aproveitamento médio de nota %);
+    5. Distribuição geral de acertos da avaliação (`distribuicao_acertos_estudantes`);
+    6. Desempenho por tópico ou habilidade (`distribuicao_por_topico`).
 
 ---
 

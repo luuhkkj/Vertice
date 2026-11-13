@@ -219,6 +219,11 @@ def _sair():
         "login_professor",
         "email_atual",
         "entrada_resultado",
+        "access_token",
+        "usuario_api",
+        "papel_api",
+        "sessao_api_expirada",
+        "mensagem_sessao_expirada",
     ):
         st.session_state.pop(chave, None)
 

@@ -3,6 +3,7 @@
 import streamlit as st
 
 from components.auth import painel_boas_vindas
+from data.api_client import autenticar_usuario_api
 
 
 def render():
@@ -21,12 +22,12 @@ def render():
             with st.container(key="auth_formulario"):
                 st.html('<div class="auth-form-titulo">Login</div>')
 
-                st.text_input(
+                email = st.text_input(
                     "Email",
                     placeholder="Insira o seu e-mail",
                     key="login_email",
                 )
-                st.text_input(
+                senha = st.text_input(
                     "Senha",
                     type="password",
                     placeholder="********",
@@ -36,6 +37,35 @@ def render():
                 st.html('<div class="auth-esqueceu">Esqueceu a senha?</div>')
 
                 if st.button("Login", type="primary", key="btn_login"):
-                    # A validação real entra aqui quando o backend estiver conectado.
-                    st.session_state["logado"] = True
-                    st.rerun()
+                    if not email.strip() or not senha:
+                        st.error("Informe seu e-mail e sua senha.")
+                        return
+
+                    with st.spinner("Autenticando no Vértice..."):
+                        resp = autenticar_usuario_api(email.strip(), senha)
+
+                    if resp.ok and isinstance(resp.dados, dict):
+                        usuario = resp.dados.get("usuario") or {}
+                        papel = str(usuario.get("papel", "professor")).lower()
+                        st.session_state["perfil"] = (
+                            "administrador"
+                            if papel in ("administrador", "gestor")
+                            else "professor"
+                        )
+                        st.session_state["papel_api"] = papel
+                        st.session_state["professor_atual"] = (
+                            usuario.get("nome_completo")
+                            if papel == "professor"
+                            else None
+                        )
+                        st.session_state["email_atual"] = usuario.get(
+                            "email", email.strip().lower()
+                        )
+                        st.session_state["logado"] = True
+                        st.rerun()
+                    elif resp.indisponivel:
+                        st.session_state["logado"] = True
+                        st.rerun()
+                    else:
+                        st.error(resp.erro or "Credenciais inválidas.")
+
