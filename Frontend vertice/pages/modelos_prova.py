@@ -93,45 +93,94 @@ def aplicar_estilos():
 
 @st.cache_data(show_spinner=False)
 def criar_modelo_padrao():
-    """Gera uma planilha padrão de questões e gabarito."""
+    """Gera uma planilha padrão de avaliações, questões e respostas individuais."""
 
     instrucoes = pd.DataFrame(
         [
             {
-                "Campo": "Avaliação",
-                "Orientação": "Nome da prova.",
+                "Campo": "id_avaliacao",
+                "Orientação": "Código único da avaliação (ex.: AV-MAT-2026-01).",
             },
             {
-                "Campo": "Disciplina",
-                "Orientação": "Disciplina da avaliação.",
+                "Campo": "titulo_avaliacao",
+                "Orientação": "Nome ou título da avaliação.",
             },
             {
-                "Campo": "Turma",
-                "Orientação": "Turma que fará a prova.",
+                "Campo": "disciplina",
+                "Orientação": "Código ou nome da disciplina.",
             },
             {
-                "Campo": "Questão",
-                "Orientação": "Numeração a partir de 1.",
+                "Campo": "turma",
+                "Orientação": "Turma que realizou a avaliação.",
             },
             {
-                "Campo": "Enunciado",
-                "Orientação": "Texto completo da questão.",
+                "Campo": "periodo_letivo",
+                "Orientação": "Período letivo (ex.: 1º Bimestre).",
             },
             {
-                "Campo": "Alternativas",
-                "Orientação": "Preencher as opções A até E.",
+                "Campo": "data_avaliacao",
+                "Orientação": "Data da avaliação no formato YYYY-MM-DD ou DD/MM/YYYY.",
             },
             {
-                "Campo": "Gabarito",
-                "Orientação": "Uma letra entre A e E.",
+                "Campo": "id_questao",
+                "Orientação": "Identificador da questão (ex.: Q01, Q02).",
+            },
+            {
+                "Campo": "tipo_questao",
+                "Orientação": "FECHADA ou ABERTA.",
+            },
+            {
+                "Campo": "valor_questao",
+                "Orientação": "Peso numérico da questão (maior que zero).",
+            },
+            {
+                "Campo": "alternativa_correta",
+                "Orientação": "Gabarito da questão (A, B, C, D ou E para questões FECHADAS; vazio para ABERTAS).",
+            },
+            {
+                "Campo": "codigo_anonimo",
+                "Orientação": "Identificador anônimo do estudante (ex.: EST-001).",
+            },
+            {
+                "Campo": "alternativa_marcada",
+                "Orientação": "Alternativa escolhida pelo estudante (A, B, C, D, E ou BRANCO).",
+            },
+            {
+                "Campo": "em_branco",
+                "Orientação": "Indica se a questão foi deixada em branco (Sim/Não ou True/False).",
+            },
+            {
+                "Campo": "nota_obtida",
+                "Orientação": "Nota obtida (obrigatória para questões ABERTAS não deixadas em branco).",
+            },
+            {
+                "Campo": "faixa_dificuldade",
+                "Orientação": "Classificação da questão (Fácil, Adequada, Atenção ou Difícil).",
+            },
+            {
+                "Campo": "topico",
+                "Orientação": "Assunto ou habilidade avaliada.",
             },
         ]
     )
 
     questoes = pd.DataFrame(columns=[
-        "Avaliação", "Disciplina", "Turma", "Questão",
-        "Enunciado", "Alternativa A", "Alternativa B",
-        "Alternativa C", "Alternativa D", "Alternativa E", "Gabarito",
+        "id_avaliacao",
+        "titulo_avaliacao",
+        "disciplina",
+        "turma",
+        "periodo_letivo",
+        "data_avaliacao",
+        "id_questao",
+        "tipo_questao",
+        "valor_questao",
+        "alternativa_correta",
+        "codigo_anonimo",
+        "alternativa_marcada",
+        "em_branco",
+        "nota_obtida",
+        "faixa_dificuldade",
+        "topico",
     ])
 
     saida = BytesIO()

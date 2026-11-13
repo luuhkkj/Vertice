@@ -802,9 +802,15 @@ class ImportacaoService:
                 db.add(questao)
                 db.flush()
             else:
-                if faixa_enum is not None and questao.faixa_dificuldade is None:
+                questao.tipo_questao = tipo_questao
+                questao.valor_questao = valor_questao
+                if tipo_questao == TipoQuestao.FECHADA and alt_correta:
+                    questao.alternativa_correta = alt_correta
+                elif tipo_questao == TipoQuestao.ABERTA:
+                    questao.alternativa_correta = None
+                if faixa_enum is not None:
                     questao.faixa_dificuldade = faixa_enum
-                if topico and not questao.topico:
+                if topico:
                     questao.topico = topico
                 db.flush()
 
@@ -815,7 +821,7 @@ class ImportacaoService:
                     alternativa_marcada=reg.get("alternativa_marcada"),
                     em_branco_explicito=reg.get("em_branco"),
                     nota_obtida_informada=reg.get("nota_obtida"),
-                    acertou_informado=reg.get("acertou"),
+                    acertou_informado=None,
                 )
             )
 

@@ -6,7 +6,7 @@ Utiliza autenticação JWT e a dependência `require_importacao_datasets` (gesto
 from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import require_importacao_datasets
@@ -18,9 +18,38 @@ from app.modules.importacao.schemas import (
     LoteImportacaoResumoResponse,
 )
 from app.modules.importacao.service import ImportacaoService
+from app.modules.importacao.validator import gerar_arquivo_modelo_avaliacoes
 from app.modules.usuarios.models import Usuario
 
 router = APIRouter()
+
+
+@router.get(
+    "/modelos/avaliacoes",
+    status_code=status.HTTP_200_OK,
+    summary="Baixar modelo oficial de planilha de avaliações (CSV ou XLSX)",
+    description=(
+        "Disponibiliza para download o modelo atualizado de planilha de avaliações e respostas "
+        "individuais em formato CSV ou XLSX com todas as 16 colunas padronizadas."
+    ),
+)
+def baixar_modelo_avaliacoes(
+    formato: str = Query(
+        default="csv",
+        description="Formato do arquivo de modelo: 'csv' ou 'xlsx'.",
+    ),
+    current_user: Usuario = Depends(require_importacao_datasets),
+) -> Response:
+    conteudo, media_type, nome_arquivo = gerar_arquivo_modelo_avaliacoes(
+        formato=formato
+    )
+    return Response(
+        content=conteudo,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{nome_arquivo}"'
+        },
+    )
 
 
 @router.post(

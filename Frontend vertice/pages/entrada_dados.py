@@ -32,13 +32,30 @@ COLUNAS_ESTUDANTES = [
 ]
 
 COLUNAS_AVALIACOES = [
-    "Avaliação",
-    "Disciplina",
-    "Turma",
-    "Identificador",
-    "Questão",
-    "Acertou",
+    "id_avaliacao",
+    "titulo_avaliacao",
+    "disciplina",
+    "turma",
+    "periodo_letivo",
+    "data_avaliacao",
+    "id_questao",
+    "tipo_questao",
+    "valor_questao",
+    "alternativa_correta",
+    "codigo_anonimo",
+    "alternativa_marcada",
+    "em_branco",
+    "nota_obtida",
+    "faixa_dificuldade",
+    "topico",
 ]
+
+COLUNAS_LEGADAS_AVALIACOES = {
+    "Avaliação",
+    "avaliacao",
+    "Acertou",
+    "acertou",
+}
 
 TIPOS_IMPORTACAO = {
     "Estudantes": COLUNAS_ESTUDANTES,
@@ -312,6 +329,19 @@ def _validar(dados, tipo):
     problemas = []
     esperado = TIPOS_IMPORTACAO[tipo]
 
+    if tipo == "Resultados de avaliações" and (
+        "Acertou" in dados.columns
+        or "acertou" in dados.columns
+    ) and "alternativa_marcada" not in dados.columns:
+        problemas.append({
+            "Linha": "Cabeçalho",
+            "Problema": (
+                "O formato da planilha de avaliações foi atualizado. "
+                "O campo binário 'Acertou' não é mais aceito isoladamente; "
+                "utilize o novo modelo com 'alternativa_marcada' e 'alternativa_correta'."
+            ),
+        })
+
     faltantes = [
         coluna
         for coluna in esperado
@@ -352,24 +382,24 @@ def _validar(dados, tipo):
             dados[coluna].astype("string").str.strip()
         )
 
-    for indice, linha in dados.iterrows():
-        vazias = [
-            coluna
-            for coluna in esperado
-            if pd.isna(linha[coluna])
-            or linha[coluna] == ""
-        ]
-
-        if vazias:
-            problemas.append({
-                "Linha": indice + 2,
-                "Problema": (
-                    "Campos vazios: "
-                    + ", ".join(vazias)
-                ),
-            })
-
     if tipo == "Estudantes":
+        for indice, linha in dados.iterrows():
+            vazias = [
+                coluna
+                for coluna in esperado
+                if pd.isna(linha[coluna])
+                or linha[coluna] == ""
+            ]
+
+            if vazias:
+                problemas.append({
+                    "Linha": indice + 2,
+                    "Problema": (
+                        "Campos vazios: "
+                        + ", ".join(vazias)
+                    ),
+                })
+
         regras = {
             "Série": mock_data.SERIES,
             "Turma": mock_data.TURMAS,
@@ -431,62 +461,149 @@ def _validar(dados, tipo):
             )
 
     else:
-        regras = {
-            "Disciplina": mock_data.DISCIPLINAS,
-            "Turma": mock_data.TURMAS_ATRIBUICAO,
-        }
+        obrigatorias_avaliacao = [
+            "id_avaliacao",
+            "titulo_avaliacao",
+            "disciplina",
+            "turma",
+            "periodo_letivo",
+            "data_avaliacao",
+            "id_questao",
+            "tipo_questao",
+            "valor_questao",
+            "codigo_anonimo",
+        ]
 
-        for coluna, permitidos in regras.items():
-            if not permitidos:
-                continue
-            invalidos = (
-                ~dados[coluna].isin(permitidos)
-                & dados[coluna].notna()
-            )
-
-            for indice in dados.index[invalidos]:
+        for indice, linha in dados.iterrows():
+            num_linha = indice + 2
+            vazias = [
+                coluna
+                for coluna in obrigatorias_avaliacao
+                if pd.isna(linha[coluna])
+                or linha[coluna] == ""
+            ]
+            if vazias:
                 problemas.append({
-                    "Linha": indice + 2,
+                    "Linha": num_linha,
                     "Problema": (
-                        f"{coluna} fora das opções permitidas"
+                        "Campos obrigatórios vazios: "
+                        + ", ".join(vazias)
                     ),
                 })
 
-        for coluna in ["Questão", "Acertou"]:
-            numeros = _numero(dados[coluna])
-
-            validos = (
-                numeros.notna()
-                & (numeros % 1 == 0)
+            tipo_q = (
+                str(linha["tipo_questao"] or "").strip().upper()
             )
-
-            if coluna == "Questão":
-                validos &= numeros >= 1
-
-                mensagem = (
-                    "Questão deve ser um inteiro positivo"
-                )
-            else:
-                validos &= numeros.isin([0, 1])
-
-                mensagem = (
-                    "Acertou deve ser 0 (não) ou 1 (sim)"
-                )
-
-            for indice in dados.index[~validos]:
+            if tipo_q not in ("FECHADA", "ABERTA"):
                 problemas.append({
-                    "Linha": indice + 2,
-                    "Problema": mensagem,
+                    "Linha": num_linha,
+                    "Problema": (
+                        "tipo_questao deve ser FECHADA ou ABERTA"
+                    ),
                 })
 
-            dados[coluna] = numeros
+            peso_series = _numero(
+                pd.Series([linha["valor_questao"]])
+            )
+            peso_val = peso_series.iloc[0]
+            if pd.isna(peso_val) or peso_val <= 0:
+                problemas.append({
+                    "Linha": num_linha,
+                    "Problema": (
+                        "valor_questao deve ser maior que zero"
+                    ),
+                })
+
+            alt_correta = (
+                str(linha["alternativa_correta"] or "")
+                .strip()
+                .upper()
+            )
+            alt_marcada = (
+                str(linha["alternativa_marcada"] or "")
+                .strip()
+                .upper()
+            )
+            em_branco_txt = (
+                str(linha["em_branco"] or "")
+                .strip()
+                .lower()
+            )
+            eh_branco = em_branco_txt in (
+                "true",
+                "1",
+                "sim",
+                "s",
+            ) or alt_marcada == "BRANCO"
+
+            nota_series = _numero(
+                pd.Series([linha["nota_obtida"]])
+            )
+            nota_val = nota_series.iloc[0]
+
+            if tipo_q == "FECHADA":
+                if alt_correta not in ("A", "B", "C", "D", "E"):
+                    problemas.append({
+                        "Linha": num_linha,
+                        "Problema": (
+                            "Questão FECHADA exige alternativa_correta "
+                            "entre A, B, C, D ou E"
+                        ),
+                    })
+                if not eh_branco and alt_marcada not in (
+                    "A",
+                    "B",
+                    "C",
+                    "D",
+                    "E",
+                ):
+                    problemas.append({
+                        "Linha": num_linha,
+                        "Problema": (
+                            "Questão FECHADA exige alternativa_marcada "
+                            "(A, B, C, D, E ou BRANCO)"
+                        ),
+                    })
+            elif tipo_q == "ABERTA":
+                if alt_correta:
+                    problemas.append({
+                        "Linha": num_linha,
+                        "Problema": (
+                            "Questão ABERTA não deve possuir "
+                            "alternativa_correta"
+                        ),
+                    })
+                if alt_marcada and alt_marcada != "BRANCO":
+                    problemas.append({
+                        "Linha": num_linha,
+                        "Problema": (
+                            "Questão ABERTA não aceita alternativa A-E"
+                        ),
+                    })
+                if not eh_branco and pd.isna(nota_val):
+                    problemas.append({
+                        "Linha": num_linha,
+                        "Problema": (
+                            "Questão ABERTA exige nota_obtida "
+                            "quando não estiver em branco"
+                        ),
+                    })
+
+            if not pd.isna(nota_val) and not pd.isna(peso_val):
+                if nota_val < 0 or nota_val > peso_val:
+                    problemas.append({
+                        "Linha": num_linha,
+                        "Problema": (
+                            "nota_obtida deve estar entre 0 e valor_questao"
+                        ),
+                    })
 
         chaves = [
-            "Avaliação",
-            "Disciplina",
-            "Turma",
-            "Identificador",
-            "Questão",
+            "id_avaliacao",
+            "disciplina",
+            "turma",
+            "codigo_anonimo",
+            "id_questao",
         ]
 
         duplicados = dados.duplicated(
@@ -501,11 +618,6 @@ def _validar(dados, tipo):
                     "Resposta duplicada para a mesma questão"
                 ),
             })
-
-        if not problemas:
-            dados[["Questão", "Acertou"]] = (
-                dados[["Questão", "Acertou"]].astype(int)
-            )
 
     erros = pd.DataFrame(
         problemas,

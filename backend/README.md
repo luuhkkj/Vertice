@@ -412,6 +412,12 @@ EST-2026-003,Turma 2A,MAT,2026,1º Bimestre,92.0,3,9.0,9.5,8.5,0,Nao,Aprovado
 
 ### 5. Extensão da Importação em Duas Etapas (`AVALIACOES` e `ATIVIDADES`)
 - O endpoint `POST /api/v1/importacoes/validar` suporta e detecta automaticamente três tipos de lote (`TipoImportacao`): `DADOS_ESCOLARES`, `AVALIACOES` e `ATIVIDADES` (também selecionável via query param `tipo_importacao`).
+- Download dos modelos de planilha de avaliações em CSV e XLSX disponível via `GET /api/v1/importacoes/modelos/avaliacoes?formato=csv|xlsx` (além dos downloads disponibilizados no frontend em `entrada_dados.py` e `mapa_acertos.py`), contendo as 16 colunas padronizadas: `id_avaliacao`, `titulo_avaliacao`, `disciplina`, `turma`, `periodo_letivo`, `data_avaliacao`, `id_questao`, `tipo_questao`, `valor_questao`, `alternativa_correta`, `codigo_anonimo`, `alternativa_marcada`, `em_branco`, `nota_obtida`, `faixa_dificuldade`, `topico`.
+- Nas importações de `AVALIACOES`:
+  - A coluna `alternativa_marcada` é obrigatória na estrutura do arquivo (sua ausência gera erro estrutural `coluna_ausente`).
+  - Planilhas antigas que contenham apenas o campo binário `Acertou` são rejeitadas com mensagem explicativa de atualização do formato.
+  - Para questões `FECHADA`, exige-se `alternativa_correta` (`A`-`E`) e `alternativa_marcada` explícita (`A`-`E` ou `BRANCO` / `em_branco=Sim`), calculando `acertou` e `nota_obtida` no backend a partir da comparação entre `alternativa_marcada` e `alternativa_correta`.
+  - Para questões `ABERTA`, não se exige nem aceita `alternativa_correta` ou alternativas `A`-`E`, exigindo-se `nota_obtida` (`0 <= nota_obtida <= valor_questao`) quando não estiver explicitamente em branco.
 - Nas importações de `AVALIACOES` e `ATIVIDADES`, estudantes inexistentes ou fora da turma são rejeitados na validação — nunca são criados estudantes novos fora da importação de `DADOS_ESCOLARES`.
 
 ---

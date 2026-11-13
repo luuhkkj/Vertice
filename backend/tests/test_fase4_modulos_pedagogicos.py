@@ -1158,3 +1158,618 @@ def test_integracao_postgresql_tabelas_e_constraints_fase4() -> None:
         assert "uq_entrega_atividade_estudante" in uqs_entregas
     finally:
         live_pg_engine.dispose()
+
+
+# ==============================================================================
+# 7. TESTES DE CORREÇÃO DA FASE 4 — MODELOS CSV/XLSX, VALIDAÇÃO DE RESPOSTAS,
+#    MAPA DE ACERTOS, IDEMPOTÊNCIA E ISOLAMENTO DE ESCOPO
+# ==============================================================================
+COLUNAS_ESPERADAS_MODELO_AVALIACOES = [
+    "id_avaliacao",
+    "titulo_avaliacao",
+    "disciplina",
+    "turma",
+    "periodo_letivo",
+    "data_avaliacao",
+    "id_questao",
+    "tipo_questao",
+    "valor_questao",
+    "alternativa_correta",
+    "codigo_anonimo",
+    "alternativa_marcada",
+    "em_branco",
+    "nota_obtida",
+    "faixa_dificuldade",
+    "topico",
+]
+
+
+def test_download_modelo_csv_com_novas_colunas(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """1. Download do modelo CSV com as novas colunas (via API e gerador do frontend)."""
+    from io import BytesIO
+    from pathlib import Path
+    import pandas as pd
+
+    _criar_cenario_fase4(db_session)
+    headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+
+    resp = client.get(
+        "/api/v1/importacoes/modelos/avaliacoes?formato=csv",
+        headers=headers_prof1,
+    )
+    assert resp.status_code == 200, resp.text
+    assert "text/csv" in resp.headers.get("content-type", "")
+    assert "modelo_resultados_avaliacoes.csv" in resp.headers.get(
+        "content-disposition", ""
+    )
+
+    df_api = pd.read_csv(
+        BytesIO(resp.content),
+        sep=None,
+        engine="python",
+        encoding="utf-8-sig",
+    )
+    assert list(df_api.columns) == COLUNAS_ESPERADAS_MODELO_AVALIACOES
+
+    # Verifica também que o frontend define exatamente as 16 colunas atualizadas
+    caminho_frontend = (
+        Path(__file__).resolve().parent.parent.parent
+        / "Frontend vertice"
+        / "pages"
+        / "entrada_dados.py"
+    )
+    conteudo_frontend = caminho_frontend.read_text(encoding="utf-8")
+    for col in COLUNAS_ESPERADAS_MODELO_AVALIACOES:
+        assert f'"{col}"' in conteudo_frontend
+
+
+def test_download_modelo_xlsx_com_novas_colunas(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """2. Download do modelo XLSX com as novas colunas."""
+    from io import BytesIO
+    import pandas as pd
+
+    _criar_cenario_fase4(db_session)
+    headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+
+    resp = client.get(
+        "/api/v1/importacoes/modelos/avaliacoes?formato=xlsx",
+        headers=headers_prof1,
+    )
+    assert resp.status_code == 200, resp.text
+    assert (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        in resp.headers.get("content-type", "")
+    )
+    assert "modelo_resultados_avaliacoes.xlsx" in resp.headers.get(
+        "content-disposition", ""
+    )
+
+    df_xlsx = pd.read_excel(BytesIO(resp.content), engine="openpyxl")
+    assert list(df_xlsx.columns) == COLUNAS_ESPERADAS_MODELO_AVALIACOES
+
+
+def test_importacao_resposta_marcada_corretamente_incorretamente_e_em_branco(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """
+    3. Importação de resposta marcada corretamente.
+    4. Importação de resposta marcada incorretamente.
+    5. Importação de resposta em branco.
+    11. Persistência das alternativas marcada e correta (sem confundir gabarito e resposta,
+        e calculando `acertou` exclusivamente no backend mesmo que a planilha envie `acertou` invertido).
+    """
+    cenario = _criar_cenario_fase4(db_session)
+    headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+
+    # Mesmo enviando coluna `acertou` contraditória (ex: 0 para quem acertou B e 1 para quem errou D),
+    # o backend deve calcular `acertou` comparando `alternativa_marcada` com `alternativa_correta`.
+    csv_conteudo = (
+        "id_avaliacao,titulo_avaliacao,disciplina,turma,periodo_letivo,data_avaliacao,"
+        "id_questao,tipo_questao,valor_questao,alternativa_correta,codigo_anonimo,"
+        "alternativa_marcada,em_branco,nota_obtida,faixa_dificuldade,topico,acertou\n"
+        "AV-CORR-01,Avaliação Diagnóstica,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q01,FECHADA,2.5,B,EST-001,B,Não,,Adequada,Equações,0\n"
+        "AV-CORR-01,Avaliação Diagnóstica,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q01,FECHADA,2.5,B,EST-002,D,Não,,Adequada,Equações,1\n"
+        "AV-CORR-01,Avaliação Diagnóstica,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q01,FECHADA,2.5,B,EST-003,BRANCO,Sim,,Adequada,Equações,1\n"
+    ).encode("utf-8")
+
+    resp_val = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_prof1,
+        files={"arquivo": ("avaliacao_respostas.csv", csv_conteudo, "text/csv")},
+    )
+    assert resp_val.status_code == 201, resp_val.text
+    lote = resp_val.json()
+    assert lote["status"] == "validado"
+    assert lote["pode_confirmar"] is True
+    assert len(lote["previa_registros"]) == 3
+
+    # Verifica que a prévia apresenta alternativa_correta e alternativa_marcada e acertou calculado
+    mapa_previa = {r["codigo_anonimo"]: r for r in lote["previa_registros"]}
+    assert mapa_previa["EST-001"]["alternativa_correta"] == "B"
+    assert mapa_previa["EST-001"]["alternativa_marcada"] == "B"
+    assert mapa_previa["EST-001"]["acertou"] is True
+    assert mapa_previa["EST-001"]["em_branco"] is False
+    assert mapa_previa["EST-001"]["nota_obtida"] == 2.5
+
+    assert mapa_previa["EST-002"]["alternativa_correta"] == "B"
+    assert mapa_previa["EST-002"]["alternativa_marcada"] == "D"
+    assert mapa_previa["EST-002"]["acertou"] is False
+    assert mapa_previa["EST-002"]["em_branco"] is False
+    assert mapa_previa["EST-002"]["nota_obtida"] == 0.0
+
+    assert mapa_previa["EST-003"]["alternativa_correta"] == "B"
+    assert mapa_previa["EST-003"]["alternativa_marcada"] == "BRANCO"
+    assert mapa_previa["EST-003"]["acertou"] is False
+    assert mapa_previa["EST-003"]["em_branco"] is True
+    assert mapa_previa["EST-003"]["nota_obtida"] == 0.0
+
+    # Confirma e verifica persistência no banco de dados
+    resp_conf = client.post(
+        f"/api/v1/importacoes/{lote['id']}/confirmar",
+        headers=headers_prof1,
+    )
+    assert resp_conf.status_code == 200, resp_conf.text
+    assert resp_conf.json()["registros_inseridos"] == 3
+
+    av_db = db_session.execute(
+        select(Avaliacao).where(Avaliacao.codigo == "AV-CORR-01")
+    ).scalar_one()
+    q_db = db_session.execute(
+        select(QuestaoAvaliacao).where(
+            QuestaoAvaliacao.avaliacao_id == av_db.id,
+            QuestaoAvaliacao.codigo_questao == "Q01",
+        )
+    ).scalar_one()
+    assert q_db.alternativa_correta == "B"
+
+    resps_db = {
+        r.estudante_id: r
+        for r in db_session.execute(
+            select(RespostaAvaliacao).where(RespostaAvaliacao.questao_id == q_db.id)
+        )
+        .scalars()
+        .all()
+    }
+    assert resps_db[cenario["est1"].id].alternativa_marcada == "B"
+    assert resps_db[cenario["est1"].id].acertou is True
+    assert resps_db[cenario["est1"].id].em_branco is False
+    assert resps_db[cenario["est1"].id].nota_obtida == 2.5
+
+    assert resps_db[cenario["est2"].id].alternativa_marcada == "D"
+    assert resps_db[cenario["est2"].id].acertou is False
+    assert resps_db[cenario["est2"].id].em_branco is False
+    assert resps_db[cenario["est2"].id].nota_obtida == 0.0
+
+    assert resps_db[cenario["est3"].id].alternativa_marcada == "BRANCO"
+    assert resps_db[cenario["est3"].id].acertou is False
+    assert resps_db[cenario["est3"].id].em_branco is True
+    assert resps_db[cenario["est3"].id].nota_obtida == 0.0
+
+
+def test_rejeicao_alternativa_marcada_invalida_e_questao_fechada_sem_gabarito(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """
+    6. Rejeição de alternativa marcada inválida (ex: 'F' ou vazia sem em_branco explícito).
+    7. Rejeição de questão fechada sem gabarito (`alternativa_correta` ausente ou inválida).
+    """
+    _criar_cenario_fase4(db_session)
+    headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+
+    # Caso 6a: Alternativa marcada 'F' (fora de A-E/BRANCO)
+    csv_alt_invalida = (
+        "id_avaliacao,titulo_avaliacao,disciplina,turma,periodo_letivo,data_avaliacao,"
+        "id_questao,tipo_questao,valor_questao,alternativa_correta,codigo_anonimo,"
+        "alternativa_marcada,em_branco,nota_obtida,faixa_dificuldade,topico\n"
+        "AV-INV-01,Prova 1,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q01,FECHADA,2.0,A,EST-001,F,Não,,Fácil,Álgebra\n"
+    ).encode("utf-8")
+
+    resp_6a = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_prof1,
+        files={"arquivo": ("alt_invalida.csv", csv_alt_invalida, "text/csv")},
+    )
+    assert resp_6a.status_code == 201
+    d_6a = resp_6a.json()
+    assert d_6a["status"] == "com_erros"
+    assert d_6a["pode_confirmar"] is False
+    assert any(
+        e["campo"] == "alternativa_marcada"
+        for e in d_6a["relatorio_validacao"]["valores_invalidos"]
+    )
+
+    # Caso 6b: Questão fechada com alternativa_marcada vazia e sem em_branco explícito -> deve rejeitar
+    csv_alt_vazia_sem_branco = (
+        "id_avaliacao,titulo_avaliacao,disciplina,turma,periodo_letivo,data_avaliacao,"
+        "id_questao,tipo_questao,valor_questao,alternativa_correta,codigo_anonimo,"
+        "alternativa_marcada,em_branco,nota_obtida,faixa_dificuldade,topico\n"
+        "AV-INV-02,Prova 1,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q01,FECHADA,2.0,A,EST-001,,,,,Álgebra\n"
+    ).encode("utf-8")
+
+    resp_6b = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_prof1,
+        files={"arquivo": ("alt_vazia.csv", csv_alt_vazia_sem_branco, "text/csv")},
+    )
+    assert resp_6b.status_code == 201
+    d_6b = resp_6b.json()
+    assert d_6b["status"] == "com_erros"
+    assert d_6b["pode_confirmar"] is False
+    assert any(
+        e["campo"] == "alternativa_marcada"
+        for e in d_6b["relatorio_validacao"]["valores_invalidos"]
+    )
+
+    # Caso 7: Questão fechada sem alternativa_correta (gabarito vazio)
+    csv_sem_gabarito = (
+        "id_avaliacao,titulo_avaliacao,disciplina,turma,periodo_letivo,data_avaliacao,"
+        "id_questao,tipo_questao,valor_questao,alternativa_correta,codigo_anonimo,"
+        "alternativa_marcada,em_branco,nota_obtida,faixa_dificuldade,topico\n"
+        "AV-INV-03,Prova 1,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q01,FECHADA,2.0,,EST-001,A,Não,,Fácil,Álgebra\n"
+    ).encode("utf-8")
+
+    resp_7 = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_prof1,
+        files={"arquivo": ("sem_gabarito.csv", csv_sem_gabarito, "text/csv")},
+    )
+    assert resp_7.status_code == 201
+    d_7 = resp_7.json()
+    assert d_7["status"] == "com_erros"
+    assert d_7["pode_confirmar"] is False
+    assert any(
+        e["campo"] == "alternativa_correta"
+        for e in d_7["relatorio_validacao"]["valores_invalidos"]
+    )
+
+
+def test_rejeicao_arquivo_legado_apenas_acertou_e_sem_coluna_alternativa_marcada(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """
+    8. Rejeição de arquivo que contenha somente o resultado binário `Acertou` (com mensagem clara de formato atualizado).
+    9. Rejeição de arquivo sem a coluna `alternativa_marcada` (erro estrutural `coluna_ausente`,
+       nunca convertendo respostas em branco automaticamente).
+    """
+    _criar_cenario_fase4(db_session)
+    headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+
+    # Caso 8: Planilha antiga contendo apenas Avaliação, Disciplina, Turma, Identificador, Questão, Acertou
+    csv_legado = (
+        "Avaliação,Disciplina,Turma,Identificador,Questão,Acertou\n"
+        "AV-ANTIGA-01,MAT,Turma 1A,EST-001,Q01,1\n"
+    ).encode("utf-8")
+
+    resp_8 = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_prof1,
+        files={"arquivo": ("planilha_antiga.csv", csv_legado, "text/csv")},
+    )
+    assert resp_8.status_code == 201, resp_8.text
+    d_8 = resp_8.json()
+    assert d_8["tipo_importacao"] == "AVALIACOES"
+    assert d_8["status"] == "com_erros"
+    assert d_8["pode_confirmar"] is False
+    assert "alternativa_marcada" in d_8["relatorio_validacao"]["colunas_ausentes"]
+    mensagens_erro_8 = " ".join(
+        e["mensagem"] for e in d_8["relatorio_validacao"]["erros"]
+    )
+    assert "formato" in mensagens_erro_8.lower() and "atualizado" in mensagens_erro_8.lower()
+
+    # Caso 9: Planilha moderna mas sem a coluna `alternativa_marcada` no cabeçalho
+    csv_sem_col_alt_marcada = (
+        "id_avaliacao,titulo_avaliacao,disciplina,turma,periodo_letivo,data_avaliacao,"
+        "id_questao,tipo_questao,valor_questao,alternativa_correta,codigo_anonimo,"
+        "em_branco,nota_obtida,faixa_dificuldade,topico\n"
+        "AV-SEM-COL-01,Prova 1,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q01,FECHADA,2.0,A,EST-001,Não,2.0,Fácil,Álgebra\n"
+    ).encode("utf-8")
+
+    resp_9 = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_prof1,
+        files={
+            "arquivo": (
+                "sem_coluna_alt_marcada.csv",
+                csv_sem_col_alt_marcada,
+                "text/csv",
+            )
+        },
+    )
+    assert resp_9.status_code == 201, resp_9.text
+    d_9 = resp_9.json()
+    assert d_9["status"] == "com_erros"
+    assert d_9["pode_confirmar"] is False
+    assert "alternativa_marcada" in d_9["relatorio_validacao"]["colunas_ausentes"]
+    assert d_9["previa_registros"] == []
+
+
+def test_validacao_questoes_abertas_na_importacao(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """
+    10. Validação de questões abertas:
+    - Não exigir alternativa_correta (e rejeitar se preenchida).
+    - Não aceitar alternativas A-E como resposta.
+    - Exigir `nota_obtida` quando a questão não estiver em branco.
+    - Respeitar o limite entre zero e o valor da questão.
+    """
+    _criar_cenario_fase4(db_session)
+    headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+
+    # 10a. Erros em questões abertas: alternativa_correta preenchida, alternativa_marcada='B',
+    # falta de nota_obtida quando não está em branco, e nota_obtida > valor_questao
+    csv_aberta_erros = (
+        "id_avaliacao,titulo_avaliacao,disciplina,turma,periodo_letivo,data_avaliacao,"
+        "id_questao,tipo_questao,valor_questao,alternativa_correta,codigo_anonimo,"
+        "alternativa_marcada,em_branco,nota_obtida,faixa_dificuldade,topico\n"
+        "AV-AB-01,Prova Discursiva,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q01,ABERTA,3.0,A,EST-001,,Não,2.0,Difícil,Geometria\n"
+        "AV-AB-01,Prova Discursiva,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q02,ABERTA,3.0,,EST-001,B,Não,2.0,Difícil,Geometria\n"
+        "AV-AB-01,Prova Discursiva,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q03,ABERTA,3.0,,EST-002,,Não,,Difícil,Geometria\n"
+        "AV-AB-01,Prova Discursiva,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q04,ABERTA,3.0,,EST-003,,Não,4.5,Difícil,Geometria\n"
+    ).encode("utf-8")
+
+    resp_erros = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_prof1,
+        files={"arquivo": ("aberta_erros.csv", csv_aberta_erros, "text/csv")},
+    )
+    assert resp_erros.status_code == 201
+    rel = resp_erros.json()["relatorio_validacao"]
+    assert resp_erros.json()["status"] == "com_erros"
+    campos_invalidos = [item["campo"] for item in rel["valores_invalidos"]]
+    assert "alternativa_correta" in campos_invalidos
+    assert "alternativa_marcada" in campos_invalidos
+    assert campos_invalidos.count("nota_obtida") >= 2
+
+    # 10b. Questão aberta válida (respondida com nota dentro do peso e em branco explícito)
+    csv_aberta_valida = (
+        "id_avaliacao,titulo_avaliacao,disciplina,turma,periodo_letivo,data_avaliacao,"
+        "id_questao,tipo_questao,valor_questao,alternativa_correta,codigo_anonimo,"
+        "alternativa_marcada,em_branco,nota_obtida,faixa_dificuldade,topico\n"
+        "AV-AB-02,Prova Discursiva,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q01,ABERTA,4.0,,EST-001,,Não,3.0,Difícil,Geometria\n"
+        "AV-AB-02,Prova Discursiva,MAT,Turma 1A,1º Bimestre,2026-04-20,"
+        "Q01,ABERTA,4.0,,EST-002,BRANCO,Sim,,Difícil,Geometria\n"
+    ).encode("utf-8")
+
+    resp_ok = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_prof1,
+        files={"arquivo": ("aberta_valida.csv", csv_aberta_valida, "text/csv")},
+    )
+    assert resp_ok.status_code == 201
+    assert resp_ok.json()["status"] == "validado"
+    assert resp_ok.json()["pode_confirmar"] is True
+
+
+def test_distribuicao_alternativas_indicadores_e_idempotencia_reimportacao(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """
+    12. Distribuição correta de alternativas no endpoint de indicadores (`GET /api/v1/indicadores/avaliacoes`):
+        - Conta a alternativa efetivamente marcada (A, B, C, D, E, BRANCO).
+        - Não contabiliza questões abertas na distribuição de alternativas.
+        - Não conta respostas em branco como erros.
+        - Soma das alternativas distribuídas corresponde ao total de respostas fechadas registradas.
+    13. Idempotência da reimportação:
+        - Reimportar o mesmo par (questão, estudante) atualiza a resposta sem duplicar registros.
+    """
+    _criar_cenario_fase4(db_session)
+    headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+
+    # 1ª Importação: Q01 (FECHADA, gabarito C) e Q02 (ABERTA, peso 4.0)
+    # Em Q01: EST-001 marca C (acerto), EST-002 marca A (erro), EST-003 deixa em BRANCO
+    csv_lote1 = (
+        "id_avaliacao,titulo_avaliacao,disciplina,turma,periodo_letivo,data_avaliacao,"
+        "id_questao,tipo_questao,valor_questao,alternativa_correta,codigo_anonimo,"
+        "alternativa_marcada,em_branco,nota_obtida,faixa_dificuldade,topico\n"
+        "AV-MAPA-01,Prova Mapa de Acertos,MAT,Turma 1A,1º Bimestre,2026-04-22,"
+        "Q01,FECHADA,2.0,C,EST-001,C,Não,,Adequada,Trigonometria\n"
+        "AV-MAPA-01,Prova Mapa de Acertos,MAT,Turma 1A,1º Bimestre,2026-04-22,"
+        "Q01,FECHADA,2.0,C,EST-002,A,Não,,Adequada,Trigonometria\n"
+        "AV-MAPA-01,Prova Mapa de Acertos,MAT,Turma 1A,1º Bimestre,2026-04-22,"
+        "Q01,FECHADA,2.0,C,EST-003,BRANCO,Sim,,Adequada,Trigonometria\n"
+        "AV-MAPA-01,Prova Mapa de Acertos,MAT,Turma 1A,1º Bimestre,2026-04-22,"
+        "Q02,ABERTA,4.0,,EST-001,,Não,3.5,Difícil,Demonstrações\n"
+    ).encode("utf-8")
+
+    lote1 = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_prof1,
+        files={"arquivo": ("mapa_lote1.csv", csv_lote1, "text/csv")},
+    ).json()
+    assert lote1["status"] == "validado"
+    conf1 = client.post(
+        f"/api/v1/importacoes/{lote1['id']}/confirmar",
+        headers=headers_prof1,
+    ).json()
+    assert conf1["registros_inseridos"] == 4
+    assert conf1["registros_atualizados"] == 0
+
+    av_db = db_session.execute(
+        select(Avaliacao).where(Avaliacao.codigo == "AV-MAPA-01")
+    ).scalar_one()
+
+    # Consulta GET /api/v1/indicadores/avaliacoes após 1ª importação
+    ind1 = client.get(
+        f"/api/v1/indicadores/avaliacoes?avaliacao_id={av_db.id}",
+        headers=headers_prof1,
+    ).json()
+    mapa_q1 = {q["codigo_questao"]: q for q in ind1["questoes"]}
+
+    q01_ind = mapa_q1["Q01"]
+    assert q01_ind["alternativa_correta"] == "C"
+    assert q01_ind["total_respostas_esperadas"] == 3
+    assert q01_ind["total_respostas_registradas"] == 3
+    assert q01_ind["quantidade_acertos"] == 1
+    assert q01_ind["quantidade_erros"] == 1  # Em branco NÃO é contado como erro
+    assert q01_ind["quantidade_em_branco"] == 1
+    assert q01_ind["taxa_acerto_percentual"] == 33.33
+    assert q01_ind["distribuicao_alternativas"] == {
+        "A": 1,
+        "B": 0,
+        "C": 1,
+        "D": 0,
+        "E": 0,
+        "BRANCO": 1,
+    }
+    assert (
+        sum(q01_ind["distribuicao_alternativas"].values())
+        == q01_ind["total_respostas_registradas"]
+    )
+
+    # Questão aberta não deve ter distribuição de alternativas A-E
+    q02_ind = mapa_q1["Q02"]
+    assert q02_ind["tipo_questao"] == "ABERTA"
+    assert q02_ind["alternativa_correta"] is None
+    assert q02_ind["distribuicao_alternativas"] == {}
+
+    # 2ª Importação (Reimportação idempotente): EST-002 corrige resposta de A para C,
+    # e EST-003 muda de BRANCO para D (erro)
+    csv_lote2 = (
+        "id_avaliacao,titulo_avaliacao,disciplina,turma,periodo_letivo,data_avaliacao,"
+        "id_questao,tipo_questao,valor_questao,alternativa_correta,codigo_anonimo,"
+        "alternativa_marcada,em_branco,nota_obtida,faixa_dificuldade,topico\n"
+        "AV-MAPA-01,Prova Mapa de Acertos,MAT,Turma 1A,1º Bimestre,2026-04-22,"
+        "Q01,FECHADA,2.0,C,EST-002,C,Não,,Adequada,Trigonometria\n"
+        "AV-MAPA-01,Prova Mapa de Acertos,MAT,Turma 1A,1º Bimestre,2026-04-22,"
+        "Q01,FECHADA,2.0,C,EST-003,D,Não,,Adequada,Trigonometria\n"
+    ).encode("utf-8")
+
+    lote2 = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_prof1,
+        files={"arquivo": ("mapa_lote2.csv", csv_lote2, "text/csv")},
+    ).json()
+    assert lote2["status"] == "validado"
+    assert lote2["registros_existentes"] == 2
+    assert lote2["registros_novos"] == 0
+
+    conf2 = client.post(
+        f"/api/v1/importacoes/{lote2['id']}/confirmar",
+        headers=headers_prof1,
+    ).json()
+    assert conf2["registros_inseridos"] == 0
+    assert conf2["registros_atualizados"] == 2
+
+    # Verifica que não houve duplicação de registros no banco e que os indicadores refletiram a atualização
+    ind2 = client.get(
+        f"/api/v1/indicadores/avaliacoes?avaliacao_id={av_db.id}",
+        headers=headers_prof1,
+    ).json()
+    q01_ind2 = {q["codigo_questao"]: q for q in ind2["questoes"]}["Q01"]
+    assert q01_ind2["total_respostas_registradas"] == 3
+    assert q01_ind2["quantidade_acertos"] == 2
+    assert q01_ind2["quantidade_erros"] == 1
+    assert q01_ind2["quantidade_em_branco"] == 0
+    assert q01_ind2["taxa_acerto_percentual"] == 66.67
+    assert q01_ind2["distribuicao_alternativas"] == {
+        "A": 0,
+        "B": 0,
+        "C": 2,
+        "D": 1,
+        "E": 0,
+        "BRANCO": 0,
+    }
+    assert (
+        sum(q01_ind2["distribuicao_alternativas"].values())
+        == q01_ind2["total_respostas_registradas"]
+    )
+
+
+def test_isolamento_importacao_avaliacoes_entre_escolas_turmas_e_disciplinas(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """
+    Testa o isolamento de escopo na importação de avaliações entre escolas, turmas e disciplinas:
+    - Professor 1 (vinculado a MAT na Turma 1A e FIS na Turma 1B da Escola A):
+      * Rejeitado ao tentar importar avaliação de Física na Turma 1A (disciplina sem vínculo na turma).
+      * Rejeitado ao tentar importar avaliação na Turma 3A (turma sem vínculo).
+      * Rejeitado ao tentar importar avaliação na Turma 1A-Sul (outra escola).
+    - Gestor A (vinculado à Escola A):
+      * Rejeitado ao tentar importar avaliação para a Turma 1A-Sul (Escola B).
+    """
+    _criar_cenario_fase4(db_session)
+    headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+    headers_gestor_a = _login_headers(
+        client, "gestor.a@vertice.edu.br", "SenhaForte@123"
+    )
+
+    # 1. Professor 1 tenta importar avaliação de Física na Turma 1A (só leciona MAT em 1A)
+    csv_disc_nao_vinculada = (
+        "id_avaliacao,titulo_avaliacao,disciplina,turma,periodo_letivo,data_avaliacao,"
+        "id_questao,tipo_questao,valor_questao,alternativa_correta,codigo_anonimo,"
+        "alternativa_marcada,em_branco,nota_obtida,faixa_dificuldade,topico\n"
+        "AV-ESCOPO-01,Prova Física,FIS,Turma 1A,1º Bimestre,2026-04-22,"
+        "Q01,FECHADA,2.0,A,EST-001,A,Não,,Fácil,Cinemática\n"
+    ).encode("utf-8")
+
+    r_disc = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_prof1,
+        files={"arquivo": ("disc_proibida.csv", csv_disc_nao_vinculada, "text/csv")},
+    ).json()
+    assert r_disc["status"] == "com_erros"
+    assert r_disc["pode_confirmar"] is False
+    assert len(r_disc["relatorio_validacao"]["problemas_autorizacao"]) >= 1
+
+    # 2. Professor 1 tenta importar avaliação na Turma 3A (sem vínculo com a turma)
+    csv_turma_nao_vinculada = (
+        "id_avaliacao,titulo_avaliacao,disciplina,turma,periodo_letivo,data_avaliacao,"
+        "id_questao,tipo_questao,valor_questao,alternativa_correta,codigo_anonimo,"
+        "alternativa_marcada,em_branco,nota_obtida,faixa_dificuldade,topico\n"
+        "AV-ESCOPO-02,Prova 3A,QUI,Turma 3A,1º Bimestre,2026-04-22,"
+        "Q01,FECHADA,2.0,A,EST-004,A,Não,,Fácil,Estequiometria\n"
+    ).encode("utf-8")
+
+    r_turma = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_prof1,
+        files={"arquivo": ("turma_proibida.csv", csv_turma_nao_vinculada, "text/csv")},
+    ).json()
+    assert r_turma["status"] == "com_erros"
+    assert r_turma["pode_confirmar"] is False
+    assert len(r_turma["relatorio_validacao"]["problemas_autorizacao"]) >= 1
+
+    # 3. Gestor da Escola A tenta importar avaliação para a Turma 1A-Sul (pertencente à Escola B)
+    csv_outra_escola = (
+        "id_avaliacao,titulo_avaliacao,disciplina,turma,periodo_letivo,data_avaliacao,"
+        "id_questao,tipo_questao,valor_questao,alternativa_correta,codigo_anonimo,"
+        "alternativa_marcada,em_branco,nota_obtida,faixa_dificuldade,topico\n"
+        "AV-ESCOPO-03,Prova Sul,MAT,Turma 1A-Sul,1º Bimestre,2026-04-22,"
+        "Q01,FECHADA,2.0,A,EST-B01,A,Não,,Fácil,Funções\n"
+    ).encode("utf-8")
+
+    r_escola = client.post(
+        "/api/v1/importacoes/validar",
+        headers=headers_gestor_a,
+        files={"arquivo": ("outra_escola.csv", csv_outra_escola, "text/csv")},
+    ).json()
+    assert r_escola["status"] == "com_erros"
+    assert r_escola["pode_confirmar"] is False
+    assert len(r_escola["relatorio_validacao"]["problemas_autorizacao"]) >= 1
+
+

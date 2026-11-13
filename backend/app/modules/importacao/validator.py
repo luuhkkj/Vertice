@@ -101,7 +101,9 @@ MAPA_COLUNAS_CANONICAS: dict[str, str] = {
     "id_avaliacao": "id_avaliacao",
     "codigo_avaliacao": "id_avaliacao",
     "avaliacao_id": "id_avaliacao",
+    "avaliacao": "id_avaliacao",
     "titulo_avaliacao": "titulo_avaliacao",
+    "nome_avaliacao": "titulo_avaliacao",
     "data_avaliacao": "data_avaliacao",
     "id_questao": "id_questao",
     "codigo_questao": "id_questao",
@@ -120,6 +122,7 @@ MAPA_COLUNAS_CANONICAS: dict[str, str] = {
     "topico": "topico",
     "assunto": "topico",
     "em_branco": "em_branco",
+    "acertou": "acertou",
     # Colunas canônicas de Atividades / Participação (Bloco C — Fase 4)
     "id_atividade": "id_atividade",
     "codigo_atividade": "id_atividade",
@@ -144,6 +147,26 @@ COLUNAS_OBRIGATORIAS_AVALIACOES = (
     "turma",
     "id_questao",
     "codigo_anonimo",
+    "alternativa_marcada",
+)
+
+COLUNAS_MODELO_AVALIACOES: tuple[str, ...] = (
+    "id_avaliacao",
+    "titulo_avaliacao",
+    "disciplina",
+    "turma",
+    "periodo_letivo",
+    "data_avaliacao",
+    "id_questao",
+    "tipo_questao",
+    "valor_questao",
+    "alternativa_correta",
+    "codigo_anonimo",
+    "alternativa_marcada",
+    "em_branco",
+    "nota_obtida",
+    "faixa_dificuldade",
+    "topico",
 )
 
 COLUNAS_OBRIGATORIAS_ATIVIDADES = (
@@ -364,6 +387,39 @@ def validar_arquivo_upload(
         )
 
     return ext
+
+
+def gerar_arquivo_modelo_avaliacoes(formato: str = "csv") -> tuple[bytes, str, str]:
+    """
+    Gera o arquivo modelo oficial de importação de avaliações e respostas individuais
+    em CSV ou XLSX com todas as 16 colunas obrigatórias do modelo.
+    Retorna `(conteudo_bytes, media_type, nome_arquivo)`.
+    """
+    fmt_limpo = formato.strip().lower().lstrip(".")
+    df_modelo = pd.DataFrame(columns=list(COLUNAS_MODELO_AVALIACOES))
+
+    if fmt_limpo == "csv":
+        conteudo = df_modelo.to_csv(index=False, sep=";").encode("utf-8-sig")
+        return (
+            conteudo,
+            "text/csv; charset=utf-8",
+            "modelo_resultados_avaliacoes.csv",
+        )
+
+    if fmt_limpo in ("xlsx", "excel"):
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            df_modelo.to_excel(writer, index=False, sheet_name="Modelo")
+        return (
+            buffer.getvalue(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "modelo_resultados_avaliacoes.xlsx",
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Formato de modelo inválido. Use 'csv' ou 'xlsx'.",
+    )
 
 
 def ler_dataframe_bruto(conteudo_bytes: bytes, extensao: str) -> pd.DataFrame:
@@ -1664,7 +1720,11 @@ def identificar_tipo_importacao(
     }
     colunas_canonicas.discard(None)
 
-    if "id_avaliacao" in colunas_canonicas or "id_questao" in colunas_canonicas:
+    if (
+        "id_avaliacao" in colunas_canonicas
+        or "id_questao" in colunas_canonicas
+        or "acertou" in colunas_canonicas
+    ):
         return TipoImportacao.AVALIACOES
 
     if (
@@ -1786,6 +1846,39 @@ def processar_e_validar_dataframe_avaliacoes(
             )
 
     colunas_canonicas_presentes = set(mapa_orig_para_canon.values())
+    possui_coluna_acertou = "acertou" in colunas_canonicas_presentes
+
+    if possui_coluna_acertou and (
+        "alternativa_marcada" not in colunas_canonicas_presentes
+        or "alternativa_correta" not in colunas_canonicas_presentes
+    ):
+        prob_legado = ItemProblemaValidacao(
+            linha=1,
+            categoria="formato_desatualizado",
+            campo="acertou",
+            mensagem=(
+                "O formato da planilha de avaliações foi atualizado. "
+                "Arquivos antigos que contenham apenas o resultado binário 'Acertou' "
+                "não são mais aceitos; informe as colunas 'alternativa_marcada' e "
+                "'alternativa_correta' (gabarito) para que o sistema calcule os resultados."
+            ),
+        )
+        relatorio.valores_invalidos.append(prob_legado)
+        relatorio.erros.append(prob_legado)
+    elif possui_coluna_acertou:
+        relatorio.avisos.append(
+            ItemProblemaValidacao(
+                linha=1,
+                categoria="campo_ignorado",
+                campo="acertou",
+                mensagem=(
+                    "A coluna binária 'acertou' enviada no arquivo foi ignorada: "
+                    "o resultado é calculado automaticamente pelo backend a partir de "
+                    "'alternativa_marcada', 'alternativa_correta' e 'nota_obtida'."
+                ),
+            )
+        )
+
     faltantes = [
         col
         for col in COLUNAS_OBRIGATORIAS_AVALIACOES
@@ -1802,7 +1895,11 @@ def processar_e_validar_dataframe_avaliacoes(
             )
             relatorio.erros.append(prob)
 
-    if relatorio.colunas_ausentes or relatorio.colunas_proibidas_pii:
+    if (
+        relatorio.colunas_ausentes
+        or relatorio.colunas_proibidas_pii
+        or relatorio.valores_invalidos
+    ):
         relatorio.quantidade_erros = len(relatorio.erros)
         relatorio.quantidade_avisos = len(relatorio.avisos)
         if len(escolas_autorizadas) == 1:
@@ -2353,11 +2450,35 @@ def processar_e_validar_dataframe_avaliacoes(
         acertou_final: Optional[bool] = False
 
         if tipo_questao_enum == TipoQuestao.FECHADA:
-            if (
-                em_branco_bool is True
-                or not alt_marcada_raw
-                or alt_marcada_raw == "BRANCO"
+            if em_branco_bool is True and alt_marcada_raw in {"A", "B", "C", "D", "E"}:
+                relatorio.valores_invalidos.append(
+                    ItemProblemaValidacao(
+                        linha=linha_num,
+                        categoria="valor_invalido",
+                        campo="alternativa_marcada",
+                        mensagem=(
+                            f"Inconsistência na questão fechada '{codigo_questao}': "
+                            f"'em_branco' foi marcado como verdadeiro, mas 'alternativa_marcada' "
+                            f"foi preenchida com '{alt_marcada_raw}'."
+                        ),
+                    )
+                )
+            elif em_branco_bool is False and (
+                not alt_marcada_raw or alt_marcada_raw == "BRANCO"
             ):
+                relatorio.valores_invalidos.append(
+                    ItemProblemaValidacao(
+                        linha=linha_num,
+                        categoria="valor_invalido",
+                        campo="alternativa_marcada",
+                        mensagem=(
+                            f"Inconsistência na questão fechada '{codigo_questao}': "
+                            "'em_branco' foi indicado como falso, mas nenhuma alternativa válida (A-E) "
+                            "foi informada em 'alternativa_marcada'."
+                        ),
+                    )
+                )
+            elif em_branco_bool is True or alt_marcada_raw == "BRANCO":
                 if nota_obtida_val is not None and nota_obtida_val > 0.0:
                     relatorio.valores_invalidos.append(
                         ItemProblemaValidacao(
@@ -2371,6 +2492,19 @@ def processar_e_validar_dataframe_avaliacoes(
                 em_branco_final = True
                 nota_final = 0.0
                 acertou_final = False
+            elif not alt_marcada_raw:
+                relatorio.valores_invalidos.append(
+                    ItemProblemaValidacao(
+                        linha=linha_num,
+                        categoria="valor_invalido",
+                        campo="alternativa_marcada",
+                        mensagem=(
+                            f"O campo 'alternativa_marcada' é obrigatório para a questão fechada '{codigo_questao}'. "
+                            "Informe A, B, C, D, E ou represente a omissão explicitamente com 'BRANCO' "
+                            "(ou 'em_branco' = Sim/True)."
+                        ),
+                    )
+                )
             elif alt_marcada_raw not in {"A", "B", "C", "D", "E"}:
                 relatorio.valores_invalidos.append(
                     ItemProblemaValidacao(
@@ -2387,9 +2521,21 @@ def processar_e_validar_dataframe_avaliacoes(
                 alt_final = alt_marcada_raw
                 em_branco_final = False
                 acertou_final = alt_final == (alternativa_correta or "").upper()
+                if not acertou_final and nota_obtida_val is not None and nota_obtida_val > 0.0:
+                    relatorio.valores_invalidos.append(
+                        ItemProblemaValidacao(
+                            linha=linha_num,
+                            categoria="valor_invalido",
+                            campo="nota_obtida",
+                            mensagem=(
+                                f"A resposta marcada ('{alt_final}') na questão fechada '{codigo_questao}' "
+                                f"diverge do gabarito ('{alternativa_correta}') e não pode ter nota positiva ({nota_obtida_val})."
+                            ),
+                        )
+                    )
                 nota_final = (
                     round(float(nota_obtida_val), 2)
-                    if nota_obtida_val is not None
+                    if nota_obtida_val is not None and acertou_final
                     else round(float(valor_questao) if acertou_final else 0.0, 2)
                 )
         elif tipo_questao_enum == TipoQuestao.ABERTA:
@@ -2402,11 +2548,7 @@ def processar_e_validar_dataframe_avaliacoes(
                         mensagem=f"Questão ABERTA '{codigo_questao}' não aceita alternativa '{alt_marcada_raw}'.",
                     )
                 )
-            elif (
-                em_branco_bool is True
-                or alt_marcada_raw == "BRANCO"
-                or nota_obtida_val is None
-            ):
+            elif em_branco_bool is True or alt_marcada_raw == "BRANCO":
                 if nota_obtida_val is not None and nota_obtida_val > 0.0:
                     relatorio.valores_invalidos.append(
                         ItemProblemaValidacao(
@@ -2420,6 +2562,18 @@ def processar_e_validar_dataframe_avaliacoes(
                 em_branco_final = True
                 nota_final = 0.0
                 acertou_final = False
+            elif nota_obtida_val is None:
+                relatorio.valores_invalidos.append(
+                    ItemProblemaValidacao(
+                        linha=linha_num,
+                        categoria="valor_invalido",
+                        campo="nota_obtida",
+                        mensagem=(
+                            f"Questão ABERTA '{codigo_questao}' exige 'nota_obtida' entre 0 e {valor_questao} "
+                            "quando não estiver explicitamente marcada em branco ('em_branco'=Sim ou 'alternativa_marcada'=BRANCO)."
+                        ),
+                    )
+                )
             else:
                 alt_final = None
                 em_branco_final = False
