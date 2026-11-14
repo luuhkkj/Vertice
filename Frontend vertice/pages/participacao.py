@@ -550,10 +550,16 @@ def _renderizar_aba_entregas_atividade(
 
     with col_gerir:
         with st.expander("Editar atividade / alterar data limite", expanded=False):
+            periodo_atual = str(atividade_sel.get("periodo_letivo") or "")
             with st.form(f"form_editar_ativ_{atividade_id}"):
                 novo_titulo = st.text_input(
                     "Título",
                     value=str(atividade_sel.get("titulo") or ""),
+                )
+                novo_periodo = st.text_input(
+                    "Período letivo",
+                    value=periodo_atual,
+                    help="O período letivo somente pode ser alterado enquanto não houver entregas esperadas/registradas.",
                 )
                 novo_prazo = st.date_input("Nova data limite", value=prazo_at)
                 novo_status = st.selectbox(
@@ -570,9 +576,15 @@ def _renderizar_aba_entregas_atividade(
                     format_func=lambda s: ROTULOS_STATUS_ATIVIDADE.get(s, s),
                 )
                 if st.form_submit_button("Salvar alterações da atividade"):
+                    periodo_envio = (
+                        novo_periodo.strip()
+                        if novo_periodo.strip() != periodo_atual.strip()
+                        else None
+                    )
                     resp_upd = atualizar_atividade_api(
                         atividade_id=atividade_id,
                         titulo=novo_titulo,
+                        periodo_letivo=periodo_envio,
                         data_limite=novo_prazo.isoformat(),
                         status=novo_status,
                     )

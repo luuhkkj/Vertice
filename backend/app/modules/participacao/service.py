@@ -534,12 +534,27 @@ class ParticipacaoService:
             db, at, usuario_autenticado
         )
 
+        entregas_at = ParticipacaoRepository.list_entregas_by_atividade(
+            db=db,
+            atividade_id=at.id,
+        )
         prazo_anterior = at.data_limite
+
+        if dados.periodo_letivo is not None:
+            novo_periodo = dados.periodo_letivo.strip()
+            if novo_periodo != at.periodo_letivo:
+                if len(entregas_at) > 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=(
+                            "O período letivo da atividade não pode ser alterado "
+                            "após a geração dos registros de participação e entregas esperadas."
+                        ),
+                    )
+                at.periodo_letivo = novo_periodo
 
         if dados.titulo is not None:
             at.titulo = dados.titulo.strip()
-        if dados.periodo_letivo is not None:
-            at.periodo_letivo = dados.periodo_letivo.strip()
         if dados.data_limite is not None:
             at.data_limite = dados.data_limite
         if dados.nota_maxima is not None:
@@ -560,10 +575,6 @@ class ParticipacaoService:
                 StatusEntregaAtividade.PENDENTE
                 if hoje <= at.data_limite
                 else StatusEntregaAtividade.NAO_ENTREGUE
-            )
-            entregas_at = ParticipacaoRepository.list_entregas_by_atividade(
-                db=db,
-                atividade_id=at.id,
             )
             for ent in entregas_at:
                 if ent.data_entrega is None and ent.status_entrega in (

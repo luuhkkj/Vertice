@@ -752,3 +752,286 @@ def test_fase6_frontend_login_bloqueado_offline_e_participacao_integrada(
     finally:
         api_client.configurar_cliente_http_teste(None)
         st_mod.session_state.clear()
+
+
+# ==============================================================================
+# 6. CORREÇÕES FASE 6: BLOQUEIO DE ALTERAÇÃO DE PERÍODO E ELEGIBILIDADE HISTÓRICA
+# ==============================================================================
+def test_fase6_correcao_alteracao_periodo_letivo_e_mensagem_frontend(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    st_mod = _garantir_ambiente_frontend_para_teste()
+    cenario = _criar_cenario_fase4(db_session)
+    headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+    prazo_futuro = (date.today() + timedelta(days=5)).isoformat()
+
+    # 1. Cria atividade SEM entregas esperadas geradas
+    resp_ativ = client.post(
+        "/api/v1/atividades",
+        headers=headers_prof1,
+        json={
+            "codigo": "ATIV-PER-01",
+            "titulo": "Atividade Período Mutável",
+            "turma_id": str(cenario["turma_1a"].id),
+            "disciplina_id": str(cenario["disc_mat"].id),
+            "periodo_letivo": "1º Bimestre",
+            "data_limite": prazo_futuro,
+            "nota_maxima": 10.0,
+            "gerar_entregas_esperadas": False,
+        },
+    )
+    assert resp_ativ.status_code == 201
+    at_id = resp_ativ.json()["id"]
+
+    # Alteração de período sem entregas registradas -> permitida (200)
+    resp_mudar_ok = client.patch(
+        f"/api/v1/atividades/{at_id}",
+        headers=headers_prof1,
+        json={"periodo_letivo": "2º Bimestre"},
+    )
+    assert resp_mudar_ok.status_code == 200
+    assert resp_mudar_ok.json()["periodo_letivo"] == "2º Bimestre"
+
+    # Retorna para 1º Bimestre antes de gerar entregas esperadas
+    resp_voltar_ok = client.patch(
+        f"/api/v1/atividades/{at_id}",
+        headers=headers_prof1,
+        json={"periodo_letivo": "1º Bimestre"},
+    )
+    assert resp_voltar_ok.status_code == 200
+
+    # Gera entregas esperadas (agora existem 3 registros PENDENTE)
+    resp_gen = client.post(
+        f"/api/v1/atividades/{at_id}/gerar-entregas-esperadas",
+        headers=headers_prof1,
+    )
+    assert resp_gen.status_code == 200
+    entregas_antes = client.get(
+        f"/api/v1/atividades/{at_id}/entregas", headers=headers_prof1
+    ).json()
+    ids_antes = {e["id"] for e in entregas_antes}
+    assert len(ids_antes) == 3
+
+    # Reenvio do mesmo periodo_letivo ao editar outro campo -> permitido (200)
+    resp_mesmo_per = client.patch(
+        f"/api/v1/atividades/{at_id}",
+        headers=headers_prof1,
+        json={"titulo": "Título Atualizado", "periodo_letivo": "1º Bimestre"},
+    )
+    assert resp_mesmo_per.status_code == 200
+
+    # 2. Tentativa de alterar período com entregas pendentes -> bloqueada (422) e entregas preservadas
+    resp_bloqueado_pend = client.patch(
+        f"/api/v1/atividades/{at_id}",
+        headers=headers_prof1,
+        json={"periodo_letivo": "2º Bimestre"},
+    )
+    assert resp_bloqueado_pend.status_code == 422
+    assert "período letivo" in resp_bloqueado_pend.json()["detail"].lower()
+
+    entregas_pos_pend = client.get(
+        f"/api/v1/atividades/{at_id}/entregas", headers=headers_prof1
+    ).json()
+    assert {e["id"] for e in entregas_pos_pend} == ids_antes
+
+    # 3. Registra entrega realizada com nota e tenta alterar período -> bloqueada (422) e histórico intacto
+    resp_realizada = client.post(
+        f"/api/v1/atividades/{at_id}/entregas",
+        headers=headers_prof1,
+        json={
+            "codigo_anonimo": "EST-001",
+            "data_entrega": date.today().isoformat(),
+            "nota": 8.0,
+        },
+    )
+    assert resp_realizada.status_code == 201
+
+    resp_bloqueado_real = client.patch(
+        f"/api/v1/atividades/{at_id}",
+        headers=headers_prof1,
+        json={"periodo_letivo": "3º Bimestre"},
+    )
+    assert resp_bloqueado_real.status_code == 422
+
+    entregas_final = {
+        e["codigo_anonimo"]: e
+        for e in client.get(
+            f"/api/v1/atividades/{at_id}/entregas", headers=headers_prof1
+        ).json()
+    }
+    assert entregas_final["EST-001"]["status_entrega"] == "ENTREGUE"
+    assert entregas_final["EST-001"]["nota"] == 8.0
+    assert entregas_final["EST-002"]["status_entrega"] == "PENDENTE"
+    assert entregas_final["EST-003"]["status_entrega"] == "PENDENTE"
+
+    # 4. Verifica propagação da mensagem de erro do backend via api_client (utilizado em pages/participacao.py)
+    import data.api_client as api_client
+
+    importlib.reload(api_client)
+    try:
+        api_client.configurar_cliente_http_teste(_adaptar_client_para_api_client(client))
+        st_mod.session_state.clear()
+        assert api_client.autenticar_usuario_api("prof1@vertice.edu.br", "SenhaForte@123").ok
+
+        resp_front_err = api_client.atualizar_atividade_api(
+            atividade_id=at_id,
+            periodo_letivo="4º Bimestre",
+        )
+        assert resp_front_err.ok is False
+        assert resp_front_err.status_code == 422
+        assert "não pode ser alterado" in (resp_front_err.erro or "").lower()
+    finally:
+        api_client.configurar_cliente_http_teste(None)
+        st_mod.session_state.clear()
+
+
+def test_fase6_correcao_elegibilidade_historica_inativos_transferidos_e_preservacao(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    from app.modules.participacao.repository import ParticipacaoRepository
+
+    cenario = _criar_cenario_fase4(db_session)
+    headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+    prazo_futuro = (date.today() + timedelta(days=5)).isoformat()
+
+    # Estudante inativo vinculado à Turma 1A no 1º Bimestre nunca deve ser elegível
+    est_inat = Estudante(
+        escola_id=cenario["escola_a"].id,
+        codigo_anonimo="EST-INAT-01",
+        historico_reprovacoes=0,
+        ativo=False,
+    )
+    db_session.add(est_inat)
+    db_session.flush()
+    db_session.add(
+        BoletimPeriodo(
+            estudante_id=est_inat.id,
+            escola_id=cenario["escola_a"].id,
+            turma_id=cenario["turma_1a"].id,
+            ano_letivo=2026,
+            periodo_letivo="1º Bimestre",
+        )
+    )
+
+    # Estudante que entra apenas em período posterior (2º Bimestre) na Turma 1A
+    est_fut = Estudante(
+        escola_id=cenario["escola_a"].id,
+        codigo_anonimo="EST-FUT-2B",
+        historico_reprovacoes=0,
+        ativo=True,
+    )
+    db_session.add(est_fut)
+    db_session.flush()
+    db_session.add(
+        BoletimPeriodo(
+            estudante_id=est_fut.id,
+            escola_id=cenario["escola_a"].id,
+            turma_id=cenario["turma_1a"].id,
+            ano_letivo=2026,
+            periodo_letivo="2º Bimestre",
+        )
+    )
+    db_session.commit()
+
+    # Elegíveis no 1º Bimestre da Turma 1A: EST-001, EST-002, EST-003 (exclui inativo, futuro e Turma 3A)
+    elegiveis_1b = ParticipacaoRepository.list_estudantes_elegiveis_turma(
+        db=db_session,
+        escola_id=cenario["escola_a"].id,
+        turma_id=cenario["turma_1a"].id,
+        periodo_letivo="1º Bimestre",
+        ano_letivo=2026,
+    )
+    assert {e.codigo_anonimo for e in elegiveis_1b} == {"EST-001", "EST-002", "EST-003"}
+
+    # Cria atividade do 1º Bimestre e registra entregas para EST-001 e EST-002
+    at1_id = client.post(
+        "/api/v1/atividades",
+        headers=headers_prof1,
+        json={
+            "codigo": "ATIV-PRES-1B",
+            "titulo": "Atividade Preservação Histórica",
+            "turma_id": str(cenario["turma_1a"].id),
+            "disciplina_id": str(cenario["disc_mat"].id),
+            "periodo_letivo": "1º Bimestre",
+            "data_limite": prazo_futuro,
+            "nota_maxima": 10.0,
+            "gerar_entregas_esperadas": True,
+        },
+    ).json()["id"]
+
+    client.post(
+        f"/api/v1/atividades/{at1_id}/entregas",
+        headers=headers_prof1,
+        json={
+            "codigo_anonimo": "EST-001",
+            "data_entrega": date.today().isoformat(),
+            "nota": 9.0,
+        },
+    )
+    client.post(
+        f"/api/v1/atividades/{at1_id}/entregas",
+        headers=headers_prof1,
+        json={
+            "codigo_anonimo": "EST-002",
+            "data_entrega": date.today().isoformat(),
+            "nota": 7.5,
+        },
+    )
+
+    # Mudanças posteriores na situação dos estudantes:
+    # - EST-001 é desativado posteriormente (ativo=False)
+    # - EST-002 muda para Turma 3A no 2º Bimestre
+    # - EST-003 já havia evadido no 1º Bimestre
+    cenario["est1"].ativo = False
+    db_session.add(cenario["est1"])
+    db_session.add(
+        BoletimPeriodo(
+            estudante_id=cenario["est2"].id,
+            escola_id=cenario["escola_a"].id,
+            turma_id=cenario["turma_3a"].id,
+            ano_letivo=2026,
+            periodo_letivo="2º Bimestre",
+        )
+    )
+    db_session.commit()
+
+    # Nova elegibilidade no 2º Bimestre da Turma 1A exclui inativo, evadido e transferido,
+    # mantendo apenas EST-FUT-2B (pois 2º Bimestre já tem boletim específico para EST-FUT-2B)
+    elegiveis_2b = ParticipacaoRepository.list_estudantes_elegiveis_turma(
+        db=db_session,
+        escola_id=cenario["escola_a"].id,
+        turma_id=cenario["turma_1a"].id,
+        periodo_letivo="2º Bimestre",
+        ano_letivo=2026,
+    )
+    assert {e.codigo_anonimo for e in elegiveis_2b} == {"EST-FUT-2B"}
+
+    # Reexecutar gerar-entregas-esperadas na atividade histórica do 1º Bimestre NÃO apaga
+    # os registros já gravados de EST-001 (agora inativo) nem de EST-002/EST-003
+    resp_regerar = client.post(
+        f"/api/v1/atividades/{at1_id}/gerar-entregas-esperadas",
+        headers=headers_prof1,
+    )
+    assert resp_regerar.status_code == 200
+    assert resp_regerar.json()["entregas_criadas"] == 0
+
+    entregas_preservadas = {
+        e["codigo_anonimo"]: e
+        for e in client.get(
+            f"/api/v1/atividades/{at1_id}/entregas", headers=headers_prof1
+        ).json()
+    }
+    assert set(entregas_preservadas.keys()) == {"EST-001", "EST-002", "EST-003"}
+    assert entregas_preservadas["EST-001"]["nota"] == 9.0
+    assert entregas_preservadas["EST-002"]["nota"] == 7.5
+
+    # Indicadores preservam o histórico das 3 entregas esperadas e 2 realizadas
+    ind_pres = client.get(
+        f"/api/v1/indicadores/participacao?atividade_id={at1_id}",
+        headers=headers_prof1,
+    ).json()
+    assert ind_pres["total_entregas_esperadas"] == 3
+    assert ind_pres["entregas_realizadas"] == 2
+    assert ind_pres["taxa_entrega_geral_percentual"] == 66.67
