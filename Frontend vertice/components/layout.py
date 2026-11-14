@@ -2,6 +2,7 @@
 """Cabeçalho, navegação e títulos das páginas do Vértice."""
 
 import base64
+from html import escape
 import unicodedata
 from pathlib import Path
 
@@ -204,7 +205,10 @@ def _estilos_icones():
 
 
 def _sair():
-    """Encerra o acesso e retorna à tela de Login."""
+    """Encerra o acesso com segurança no backend/sessão e retorna à tela de Login."""
+    from data.api_client import encerrar_sessao_api
+
+    encerrar_sessao_api()
 
     st.session_state["logado"] = False
     st.session_state["perfil"] = "professor"
@@ -219,11 +223,7 @@ def _sair():
         "login_professor",
         "email_atual",
         "entrada_resultado",
-        "access_token",
-        "usuario_api",
-        "papel_api",
-        "sessao_api_expirada",
-        "mensagem_sessao_expirada",
+        "entrada_lote_atual",
     ):
         st.session_state.pop(chave, None)
 
@@ -479,10 +479,21 @@ def render_header(paginas=None):
                 st.markdown(f"**{NOME_APP}**")
 
         with col_escola:
+            nome_escola_cabecalho = st.session_state.get("escola_nome_atual")
+            if not nome_escola_cabecalho:
+                escola_id = st.session_state.get("escola_id_atual")
+                if escola_id:
+                    from data.api_client import obter_escola_api
+
+                    resp_esc = obter_escola_api(str(escola_id))
+                    if resp_esc.ok and isinstance(resp_esc.dados, dict):
+                        nome_escola_cabecalho = resp_esc.dados.get("nome")
+                        if nome_escola_cabecalho:
+                            st.session_state["escola_nome_atual"] = nome_escola_cabecalho
             st.html(
                 f"""
                 <div class="vertice-escola-central">
-                    {NOME_ESCOLA}
+                    {escape(str(nome_escola_cabecalho or NOME_ESCOLA))}
                 </div>
                 """
             )

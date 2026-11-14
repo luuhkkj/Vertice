@@ -1,17 +1,27 @@
 
-"""Tela: Entrada de Dados."""
+"""Tela: Entrada de Dados — Importação em duas etapas, prévia, confirmação, descarte e histórico real."""
 
 import base64
 from hashlib import sha256
 from html import escape
 from io import BytesIO
 from pathlib import Path
+from typing import Any, Optional
 
 import pandas as pd
 import streamlit as st
 
 from components.layout import titulo_pagina
-from data import mock_data
+from data.api_client import (
+    RespostaAPI,
+    baixar_modelo_importacao_api,
+    confirmar_importacao_api,
+    descartar_importacao_api,
+    listar_importacoes_api,
+    obter_previa_importacao_api,
+    possui_sessao_api_ativa,
+    validar_importacao_api,
+)
 from utils.formatacao import numero_br
 
 
@@ -21,15 +31,29 @@ PASTA_ICONS = (
     / "icons"
 )
 
-COLUNAS_ESTUDANTES = [
-    "Identificador",
-    "Série",
-    "Turma",
-    "Turno",
-    "Frequência",
-    "Média geral",
-    "Risco",
+COLUNAS_DADOS_ESCOLARES = [
+    "codigo_anonimo",
+    "turma",
+    "disciplina",
+    "ano_letivo",
+    "periodo_letivo",
+    "frequencia_percentual",
+    "faltas",
+    "media_geral",
+    "nota",
+    "nota_prova",
+    "nota_trabalho",
+    "historico_reprovacoes",
+    "participacao_recuperacao",
+    "situacao_final",
 ]
+
+COLUNAS_OBRIGATORIAS_DADOS_ESCOLARES = (
+    "codigo_anonimo",
+    "turma",
+    "ano_letivo",
+    "periodo_letivo",
+)
 
 COLUNAS_AVALIACOES = [
     "id_avaliacao",
@@ -50,6 +74,30 @@ COLUNAS_AVALIACOES = [
     "topico",
 ]
 
+COLUNAS_ATIVIDADES = [
+    "id_atividade",
+    "titulo_atividade",
+    "disciplina",
+    "turma",
+    "periodo_letivo",
+    "ano_letivo",
+    "data_limite",
+    "nota_maxima",
+    "codigo_anonimo",
+    "status_entrega",
+    "data_entrega",
+    "nota",
+]
+
+COLUNAS_OBRIGATORIAS_ATIVIDADES = (
+    "id_atividade",
+    "turma",
+    "codigo_anonimo",
+)
+
+# Mantido por compatibilidade com referências anteriores
+COLUNAS_ESTUDANTES = COLUNAS_DADOS_ESCOLARES
+
 COLUNAS_LEGADAS_AVALIACOES = {
     "Avaliação",
     "avaliacao",
@@ -58,8 +106,21 @@ COLUNAS_LEGADAS_AVALIACOES = {
 }
 
 TIPOS_IMPORTACAO = {
-    "Estudantes": COLUNAS_ESTUDANTES,
+    "Dados escolares": COLUNAS_DADOS_ESCOLARES,
     "Resultados de avaliações": COLUNAS_AVALIACOES,
+    "Atividades": COLUNAS_ATIVIDADES,
+}
+
+MAPA_TIPO_API = {
+    "Dados escolares": "dados_escolares",
+    "Resultados de avaliações": "avaliacoes",
+    "Atividades": "atividades",
+}
+
+MAPA_TIPO_ROTULO = {
+    "dados_escolares": "Dados escolares",
+    "avaliacoes": "Resultados de avaliações",
+    "atividades": "Atividades",
 }
 
 
@@ -342,125 +403,134 @@ def _validar(dados, tipo):
             ),
         })
 
-    faltantes = [
+    if tipo in ("Dados escolares", "Estudantes"):
+        col_obrig = COLUNAS_OBRIGATORIAS_DADOS_ESCOLARES
+        faltantes_dados = [c for c in col_obrig if c not in dados.columns]
+        if faltantes_dados:
+            problemas.append({
+                "Linha": "Cabeçalho",
+                "Problema": "Colunas obrigatórias ausentes: " + ", ".join(faltantes_dados),
+            })
+            return None, pd.DataFrame(problemas)
+
+        dados = dados.copy()
+        for col in dados.columns:
+            dados[col] = dados[col].astype("string").str.strip()
+
+        for indice, linha in dados.iterrows():
+            vazias = [
+                col for col in col_obrig
+                if pd.isna(linha[col]) or linha[col] == ""
+            ]
+            if vazias:
+                problemas.append({
+                    "Linha": indice + 2,
+                    "Problema": "Campos obrigatórios vazios: " + ", ".join(vazias),
+                })
+
+        anos = _numero(dados["ano_letivo"])
+        for indice in dados.index[anos.isna() | ~anos.between(2000, 2100)]:
+            problemas.append({
+                "Linha": indice + 2,
+                "Problema": "ano_letivo deve estar entre 2000 e 2100",
+            })
+
+        if "frequencia_percentual" in dados.columns:
+            freqs = _numero(dados["frequencia_percentual"])
+            preenchida = dados["frequencia_percentual"].notna() & (dados["frequencia_percentual"] != "")
+            for indice in dados.index[preenchida & (freqs.isna() | ~freqs.between(0, 100))]:
+                problemas.append({
+                    "Linha": indice + 2,
+                    "Problema": "frequencia_percentual deve estar entre 0 e 100",
+                })
+
+        for col_nota in ("media_geral", "nota", "nota_prova", "nota_trabalho"):
+            if col_nota in dados.columns:
+                notas = _numero(dados[col_nota])
+                preenchida = dados[col_nota].notna() & (dados[col_nota] != "")
+                for indice in dados.index[preenchida & (notas.isna() | ~notas.between(0, 10))]:
+                    problemas.append({
+                        "Linha": indice + 2,
+                        "Problema": f"{col_nota} deve estar entre 0 e 10",
+                    })
+
+        erros = pd.DataFrame(problemas) if problemas else pd.DataFrame(columns=["Linha", "Problema"])
+        return (dados if erros.empty else None), erros
+
+    if tipo == "Atividades":
+        faltantes_at = [c for c in COLUNAS_OBRIGATORIAS_ATIVIDADES if c not in dados.columns]
+        if faltantes_at:
+            problemas.append({
+                "Linha": "Cabeçalho",
+                "Problema": "Colunas obrigatórias ausentes: " + ", ".join(faltantes_at),
+            })
+            return None, pd.DataFrame(problemas)
+
+        dados = dados.copy()
+        for col in dados.columns:
+            dados[col] = dados[col].astype("string").str.strip()
+
+        for indice, linha in dados.iterrows():
+            vazias = [
+                col for col in COLUNAS_OBRIGATORIAS_ATIVIDADES
+                if pd.isna(linha[col]) or linha[col] == ""
+            ]
+            if vazias:
+                problemas.append({
+                    "Linha": indice + 2,
+                    "Problema": "Campos obrigatórios vazios: " + ", ".join(vazias),
+                })
+
+        if "nota_maxima" in dados.columns:
+            nmax = _numero(dados["nota_maxima"])
+            preenchida = dados["nota_maxima"].notna() & (dados["nota_maxima"] != "")
+            for indice in dados.index[preenchida & (nmax.isna() | (nmax <= 0))]:
+                problemas.append({
+                    "Linha": indice + 2,
+                    "Problema": "nota_maxima deve ser maior que zero",
+                })
+
+        if "nota" in dados.columns:
+            nota_at = _numero(dados["nota"])
+            preenchida = dados["nota"].notna() & (dados["nota"] != "")
+            for indice in dados.index[preenchida & (nota_at.isna() | (nota_at < 0))]:
+                problemas.append({
+                    "Linha": indice + 2,
+                    "Problema": "nota não pode ser negativa",
+                })
+
+        erros = pd.DataFrame(problemas) if problemas else pd.DataFrame(columns=["Linha", "Problema"])
+        return (dados if erros.empty else None), erros
+
+    # Resultados de avaliações: mantém pré-validação completa das 16 colunas e consistência de em_branco
+    faltantes_av = [
         coluna
         for coluna in esperado
         if coluna not in dados.columns
     ]
-
-    extras = [
+    extras_av = [
         coluna
         for coluna in dados.columns
         if coluna not in esperado
     ]
-
-    if faltantes:
+    if faltantes_av:
         problemas.append({
             "Linha": "Cabeçalho",
-            "Problema": (
-                "Colunas ausentes: "
-                + ", ".join(faltantes)
-            ),
+            "Problema": "Colunas ausentes: " + ", ".join(faltantes_av),
         })
-
-    if extras:
+    if extras_av:
         problemas.append({
             "Linha": "Cabeçalho",
-            "Problema": (
-                "Colunas não previstas: "
-                + ", ".join(extras)
-            ),
+            "Problema": "Colunas não previstas: " + ", ".join(extras_av),
         })
-
     if problemas:
         return None, pd.DataFrame(problemas)
 
     dados = dados[esperado].copy()
-
     for coluna in esperado:
-        dados[coluna] = (
-            dados[coluna].astype("string").str.strip()
-        )
+        dados[coluna] = dados[coluna].astype("string").str.strip()
 
-    if tipo == "Estudantes":
-        for indice, linha in dados.iterrows():
-            vazias = [
-                coluna
-                for coluna in esperado
-                if pd.isna(linha[coluna])
-                or linha[coluna] == ""
-            ]
-
-            if vazias:
-                problemas.append({
-                    "Linha": indice + 2,
-                    "Problema": (
-                        "Campos vazios: "
-                        + ", ".join(vazias)
-                    ),
-                })
-
-        regras = {
-            "Série": mock_data.SERIES,
-            "Turma": mock_data.TURMAS,
-            "Turno": mock_data.TURNOS,
-            "Risco": mock_data.NIVEIS_RISCO,
-        }
-
-        for coluna, permitidos in regras.items():
-            if not permitidos:
-                continue
-            invalidos = (
-                ~dados[coluna].isin(permitidos)
-                & dados[coluna].notna()
-            )
-
-            for indice in dados.index[invalidos]:
-                problemas.append({
-                    "Linha": indice + 2,
-                    "Problema": (
-                        f"{coluna} fora das opções permitidas"
-                    ),
-                })
-
-        for coluna, minimo, maximo in [
-            ("Frequência", 0, 100),
-            ("Média geral", 0, 10),
-        ]:
-            numeros = _numero(dados[coluna])
-
-            invalidos = (
-                numeros.isna()
-                | ~numeros.between(minimo, maximo)
-            )
-
-            for indice in dados.index[invalidos]:
-                problemas.append({
-                    "Linha": indice + 2,
-                    "Problema": (
-                        f"{coluna} deve estar entre "
-                        f"{minimo} e {maximo}"
-                    ),
-                })
-
-            dados[coluna] = numeros
-
-        duplicados = dados[
-            "Identificador"
-        ].duplicated(keep=False)
-
-        for indice in dados.index[duplicados]:
-            problemas.append({
-                "Linha": indice + 2,
-                "Problema": "Identificador duplicado",
-            })
-
-        if not problemas:
-            dados["Status"] = dados["Risco"].map(
-                mock_data.STATUS_POR_RISCO
-            )
-
-    else:
+    if True:
         obrigatorias_avaliacao = [
             "id_avaliacao",
             "titulo_avaliacao",
@@ -782,366 +852,477 @@ def _dialogo_selecionar_arquivo(tipo):
         st.rerun()
 
 
-def _tela_resultado():
-    """Apresenta o resultado da validação em tela própria."""
+def _papel_usuario_entrada() -> str:
+    usuario = st.session_state.get("usuario_api") or {}
+    return str(
+        usuario.get("papel")
+        or st.session_state.get("papel_api")
+        or st.session_state.get("perfil")
+        or "professor"
+    ).strip().lower()
 
-    resultado = st.session_state.get(
-        "entrada_resultado"
+
+def enviar_validacao_importacao_api(
+    nome_arquivo: str,
+    conteudo_bytes: bytes,
+    tipo_selecionado: Optional[str] = None,
+) -> RespostaAPI:
+    """Etapa 1: envia o arquivo para validação e geração de prévia sem persistência acadêmica."""
+    mapa_validacao = {
+        "Dados escolares": "DADOS_ESCOLARES",
+        "Resultados de avaliações": "AVALIACOES",
+        "Atividades": "ATIVIDADES",
+    }
+    tipo_api = mapa_validacao.get(tipo_selecionado or "", tipo_selecionado)
+    return validar_importacao_api(
+        nome_arquivo=nome_arquivo,
+        conteudo_bytes=conteudo_bytes,
+        tipo_importacao=tipo_api,
     )
 
-    if not resultado:
+
+def confirmar_lote_importacao_api(lote_id: str) -> RespostaAPI:
+    """Etapa 2: confirma explicitamente um lote validado em transação atômica."""
+    return confirmar_importacao_api(lote_id)
+
+
+def descartar_lote_importacao_api(lote_id: str) -> RespostaAPI:
+    """Descarta explicitamente um lote validado ou com erros."""
+    return descartar_importacao_api(lote_id)
+
+
+def carregar_historico_importacoes_api(limit: int = 30) -> RespostaAPI:
+    """Carrega o histórico real de lotes visíveis no escopo do usuário autenticado."""
+    return listar_importacoes_api(skip=0, limit=limit)
+
+
+def _obter_conteudo_modelo_oficial(tipo: str, formato: str) -> bytes:
+    """Solicita o modelo oficial do endpoint do backend ou gera localmente pelo mesmo contrato."""
+    tipo_api = MAPA_TIPO_API.get(tipo, "dados_escolares")
+    if possui_sessao_api_ativa():
+        resp = baixar_modelo_importacao_api(tipo_api, formato=formato.lower())
+        if resp.ok and isinstance(resp.dados, (bytes, bytearray)) and resp.dados:
+            return bytes(resp.dados)
+    return _arquivo_modelo(tipo, "CSV" if formato.upper() == "CSV" else "Excel")
+
+
+def _extrair_problemas_relatorio(relatorio: dict[str, Any]) -> list[dict[str, Any]]:
+    linhas_prob: list[dict[str, Any]] = []
+    for col_aus in relatorio.get("colunas_ausentes") or []:
+        linhas_prob.append(
+            {
+                "Linha": "Cabeçalho",
+                "Categoria": "coluna_ausente",
+                "Campo": str(col_aus),
+                "Mensagem": f"Coluna obrigatória ausente: '{col_aus}'.",
+            }
+        )
+    for col_pii in relatorio.get("colunas_proibidas_pii") or []:
+        linhas_prob.append(
+            {
+                "Linha": "Cabeçalho",
+                "Categoria": "pii_proibido",
+                "Campo": str(col_pii),
+                "Mensagem": f"Coluna com dado pessoal proibido (LGPD): '{col_pii}'.",
+            }
+        )
+    for item in relatorio.get("erros") or []:
+        if not isinstance(item, dict):
+            continue
+        linhas_prob.append(
+            {
+                "Linha": item.get("linha") or "Cabeçalho",
+                "Categoria": item.get("categoria") or "erro",
+                "Campo": item.get("campo") or "—",
+                "Mensagem": item.get("mensagem") or "Erro de validação.",
+            }
+        )
+    return linhas_prob
+
+
+def _tela_lote_validado() -> None:
+    """Apresenta o resultado da Etapa 1 (prévia/erros) e botões explícitos da Etapa 2."""
+    lote = st.session_state.get("entrada_lote_atual")
+    confirmacao = st.session_state.get("entrada_confirmacao_atual")
+
+    if not isinstance(lote, dict):
         st.session_state["entrada_tela"] = "importacao"
         st.rerun()
         return
 
-    titulo_pagina("Resultado da validação")
-
-    st.caption(
-        f"Arquivo: {resultado['arquivo']}  •  "
-        f"Tipo: {resultado['tipo']}"
+    titulo_pagina(
+        "Prévia e Confirmação do Lote",
+        "Etapa 1 concluída. Nenhum dado acadêmico é gravado até a confirmação explícita abaixo.",
     )
 
-    erros = resultado["erros"]
+    lote_id = str(lote.get("id") or "")
+    tipo_raw = str(lote.get("tipo_importacao") or "")
+    tipo_rotulo = MAPA_TIPO_ROTULO.get(tipo_raw, tipo_raw)
+    status_lote = str(lote.get("status") or "").lower()
+    pode_confirmar = bool(lote.get("pode_confirmar"))
+    relatorio = lote.get("relatorio_validacao") or {}
 
-    if erros.empty:
+    st.caption(
+        f"Lote `{lote_id}`  •  Arquivo: `{lote.get('nome_arquivo')}`  •  "
+        f"Tipo: **{tipo_rotulo}**  •  Status atual: **{status_lote.upper()}**"
+    )
+
+    with st.container(key="entrada_metricas"):
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Total de linhas", numero_br(lote.get("total_linhas") or 0))
+        c2.metric("Registros válidos", numero_br(lote.get("registros_validos") or 0))
+        c3.metric("Novos", numero_br(lote.get("registros_novos") or 0))
+        c4.metric("Atualizações", numero_br(lote.get("registros_existentes") or 0))
+        c5.metric("Erros", numero_br(lote.get("quantidade_erros") or 0))
+
+    if isinstance(confirmacao, dict):
         st.success(
-            "Arquivo validado e processado com sucesso!"
+            confirmacao.get("mensagem")
+            or (
+                f"Importação confirmada em transação atômica: "
+                f"{confirmacao.get('registros_inseridos', 0)} inserido(s), "
+                f"{confirmacao.get('registros_atualizados', 0)} atualizado(s)."
+            )
         )
 
-        with st.container(key="entrada_metricas"):
-            col_registros, col_problemas = st.columns(2)
-
-            with col_registros:
-                st.metric(
-                    "Registros importados",
-                    numero_br(resultado["quantidade"]),
-                )
-
-            with col_problemas:
-                st.metric(
-                    "Problemas encontrados",
-                    "0",
-                )
-
-        st.markdown(
-            "#### Prévia dos dados importados"
+    turmas_id = relatorio.get("turmas_identificadas") or []
+    discs_id = relatorio.get("disciplinas_identificadas") or []
+    if turmas_id or discs_id:
+        st.info(
+            f"Turmas identificadas: {', '.join(turmas_id) or '—'}  •  "
+            f"Disciplinas identificadas: {', '.join(discs_id) or '—'}"
         )
 
-        with st.container(key="entrada_resultado_tabela"):
-            st.dataframe(
-                resultado["amostra"],
-                hide_index=True,
-                width="stretch",
-            )
+    avisos = relatorio.get("avisos") or []
+    if avisos:
+        with st.expander(f"Avisos da validação ({len(avisos)})", expanded=False):
+            st.dataframe(pd.DataFrame(avisos), hide_index=True, width="stretch")
 
-        if resultado.get("persistido_api"):
-            st.info(
-                "Os dados foram validados e persistidos no banco de dados "
-                "do Vértice com sucesso. O Mapa de Acertos e os indicadores "
-                "já estão atualizados."
-            )
-        else:
-            st.info(
-                "Os dados foram validados e salvos temporariamente nesta sessão. "
-                "Os estudantes e avaliações importados já alimentam a Visão Geral "
-                "e o Mapa de Acertos."
-            )
-            if resultado.get("aviso_api"):
-                st.caption(f"Nota da sincronização com o servidor: {resultado['aviso_api']}")
-
-    else:
+    problemas = _extrair_problemas_relatorio(relatorio)
+    if problemas:
         st.error(
-            f"A validação encontrou "
-            f"{numero_br(len(erros))} problema(s). "
-            "Nenhum registro deste arquivo foi importado."
+            f"Foram encontrados {len(problemas)} problema(s) impeditivo(s). "
+            "Corrija o arquivo e reenvie para validação; a confirmação está bloqueada."
         )
-
-        st.metric(
-            "Registros analisados",
-            numero_br(resultado["quantidade"]),
-        )
-
-        st.markdown("#### Problemas encontrados")
-
         with st.container(key="entrada_resultado_tabela"):
-            st.dataframe(
-                erros,
-                hide_index=True,
-                width="stretch",
-            )
+            st.dataframe(pd.DataFrame(problemas), hide_index=True, width="stretch")
 
-        st.warning(
-            "Corrija as linhas indicadas no arquivo e faça "
-            "uma nova importação. Dados de importações "
-            "anteriores não foram apagados."
-        )
+    previa = lote.get("previa_registros") or []
+    if previa:
+        st.markdown("#### Prévia dos registros validados")
+        with st.container(key="entrada_preview"):
+            st.dataframe(pd.DataFrame(previa).head(50), hide_index=True, width="stretch")
 
     st.divider()
+    col_confirmar, col_descartar, col_voltar = st.columns(3)
 
-    if st.button(
-        "← Voltar para Entrada de Dados",
-        key="entrada_voltar",
-        use_container_width=True,
-    ):
-        st.session_state["entrada_tela"] = "importacao"
-        st.rerun()
+    with col_confirmar:
+        if pode_confirmar and status_lote == "validado" and not isinstance(confirmacao, dict):
+            if st.button(
+                "Etapa 2 — Confirmar importação",
+                type="primary",
+                key="entrada_btn_confirmar_lote",
+                use_container_width=True,
+            ):
+                resp_conf = confirmar_lote_importacao_api(lote_id)
+                if resp_conf.ok and isinstance(resp_conf.dados, dict):
+                    st.session_state["entrada_confirmacao_atual"] = resp_conf.dados
+                    lote["status"] = str(resp_conf.dados.get("status") or "confirmado")
+                    lote["pode_confirmar"] = False
+                    st.session_state["entrada_lote_atual"] = lote
+                    st.rerun()
+                else:
+                    st.error(resp_conf.erro or "Não foi possível confirmar o lote no backend.")
+
+    with col_descartar:
+        if status_lote in ("validado", "com_erros") and not isinstance(confirmacao, dict):
+            if st.button(
+                "Descartar lote",
+                key="entrada_btn_descartar_lote",
+                use_container_width=True,
+            ):
+                resp_desc = descartar_lote_importacao_api(lote_id)
+                if resp_desc.ok:
+                    st.session_state.pop("entrada_lote_atual", None)
+                    st.session_state.pop("entrada_confirmacao_atual", None)
+                    st.session_state.pop("entrada_arquivo_selecionado", None)
+                    st.session_state["entrada_tela"] = "importacao"
+                    st.session_state["entrada_aviso"] = "Lote descartado com sucesso sem alterar dados acadêmicos."
+                    st.rerun()
+                else:
+                    st.error(resp_desc.erro or "Não foi possível descartar o lote.")
+
+    with col_voltar:
+        if st.button(
+            "← Voltar para Entrada de Dados",
+            key="entrada_voltar",
+            use_container_width=True,
+        ):
+            st.session_state.pop("entrada_confirmacao_atual", None)
+            st.session_state["entrada_tela"] = "importacao"
+            st.rerun()
+
+
+def _render_historico_importacoes() -> None:
+    """Aba de histórico real persistido no backend (`GET /api/v1/importacoes`)."""
+    st.subheader("Histórico real de importações")
+    resp_hist = carregar_historico_importacoes_api(limit=50)
+    if resp_hist.sessao_expirada:
+        st.warning(resp_hist.erro or "Sua sessão expirou. Faça login novamente.")
+        return
+    if resp_hist.sem_permissao:
+        st.error(resp_hist.erro or "Permissão insuficiente para consultar lotes de importação.")
+        return
+    if not resp_hist.ok:
+        st.error(resp_hist.erro or "Não foi possível consultar o histórico de lotes.")
+        return
+
+    lotes = resp_hist.dados if isinstance(resp_hist.dados, list) else []
+    if not lotes:
+        st.info("Nenhum lote de importação registrado neste escopo até o momento.")
+        return
+
+    linhas = [
+        {
+            "ID": str(item.get("id") or ""),
+            "Arquivo": item.get("nome_arquivo") or "—",
+            "Tipo": MAPA_TIPO_ROTULO.get(str(item.get("tipo_importacao") or ""), item.get("tipo_importacao")),
+            "Status": str(item.get("status") or "").upper(),
+            "Linhas": item.get("total_linhas") or 0,
+            "Válidos": item.get("registros_validos") or 0,
+            "Erros": item.get("quantidade_erros") or 0,
+            "Inseridos": item.get("registros_inseridos") or 0,
+            "Atualizados": item.get("registros_atualizados") or 0,
+            "Enviado em": str(item.get("enviado_em") or "")[:19].replace("T", " "),
+        }
+        for item in lotes
+        if isinstance(item, dict)
+    ]
+    st.dataframe(pd.DataFrame(linhas), hide_index=True, width="stretch")
+
+    pendentes = [
+        l for l in lotes
+        if isinstance(l, dict) and str(l.get("status") or "").lower() in ("validado", "com_erros")
+    ]
+    if pendentes:
+        mapa_lotes = {
+            f"{l.get('nome_arquivo')} ({str(l.get('status')).upper()}) — {str(l.get('id'))[:8]}": str(l.get("id"))
+            for l in pendentes
+        }
+        escolha = st.selectbox(
+            "Abrir lote pendente para revisão/confirmação/descarte",
+            list(mapa_lotes.keys()),
+            index=None,
+            placeholder="Selecione um lote pendente...",
+            key="entrada_hist_abrir_lote",
+        )
+        if escolha and st.button("Carregar prévia do lote selecionado", key="btn_hist_carregar_previa"):
+            resp_prev = obter_previa_importacao_api(mapa_lotes[escolha])
+            if resp_prev.ok and isinstance(resp_prev.dados, dict):
+                st.session_state["entrada_lote_atual"] = resp_prev.dados
+                st.session_state.pop("entrada_confirmacao_atual", None)
+                st.session_state["entrada_tela"] = "resultado"
+                st.rerun()
+            else:
+                st.error(resp_prev.erro or "Não foi possível carregar a prévia do lote.")
 
 
 def render():
-    """Renderiza a importação e a tela de validação."""
-
+    """Renderiza a importação oficial em duas etapas integrada ao backend."""
     aplicar_responsividade()
 
-    if st.session_state.get("perfil") != "administrador":
+    if not st.session_state.get("logado"):
+        st.error("É necessário entrar no sistema.")
+        return
+
+    papel = _papel_usuario_entrada()
+    if papel not in ("gestor", "professor"):
         st.error(
-            "Apenas administradores podem importar dados."
+            "Perfis administrativos globais não importam datasets pedagógicos diretamente. "
+            "Utilize uma conta de Gestor Escolar ou Professor."
         )
         return
 
-    st.session_state.setdefault(
-        "entrada_tela",
-        "importacao",
-    )
+    if not possui_sessao_api_ativa():
+        st.warning("Sessão da API inativa ou expirada. Faça login novamente para importar datasets.")
+        return
+
+    st.session_state.setdefault("entrada_tela", "importacao")
 
     if st.session_state["entrada_tela"] == "resultado":
-        _tela_resultado()
+        _tela_lote_validado()
         return
 
-    titulo_pagina("Entrada de Dados")
-
-    st.markdown(
-        "**1. Escolha o tipo de dados e baixe um modelo**"
+    titulo_pagina(
+        "Entrada de Dados",
+        "Importação padronizada em duas etapas: validação/prévia no servidor e confirmação explícita.",
     )
 
-    tipo = st.selectbox(
-        "Tipo de importação",
-        list(TIPOS_IMPORTACAO),
-        key="entrada_tipo",
-    )
+    aviso = st.session_state.pop("entrada_aviso", None)
+    if aviso:
+        st.success(aviso)
 
-    if st.session_state.get("entrada_tipo_anterior") != tipo:
-        st.session_state["entrada_tipo_anterior"] = tipo
-        st.session_state.pop(
-            "entrada_arquivo_selecionado",
-            None,
-        )
-        st.session_state.pop(
-            "entrada_resultado",
-            None,
-        )
+    tab_nova, tab_historico = st.tabs(["Nova importação", "Histórico de lotes"])
 
-    nome_base = (
-        "modelo_estudantes"
-        if tipo == "Estudantes"
-        else "modelo_resultados_avaliacoes"
-    )
+    with tab_historico:
+        _render_historico_importacoes()
 
-    with st.container(key="entrada_modelos"):
-        col_csv, col_excel, _ = st.columns(
-            [1, 1, 3]
+    with tab_nova:
+        st.markdown("**1. Escolha o tipo de dados e baixe o modelo oficial**")
+
+        tipo = st.selectbox(
+            "Tipo de importação",
+            list(TIPOS_IMPORTACAO),
+            key="entrada_tipo",
         )
 
-        with col_csv:
-            st.download_button(
-                "↓ Modelo CSV",
-                data=_arquivo_modelo(tipo, "CSV"),
-                file_name=f"{nome_base}.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
+        if st.session_state.get("entrada_tipo_anterior") != tipo:
+            st.session_state["entrada_tipo_anterior"] = tipo
+            st.session_state.pop("entrada_arquivo_selecionado", None)
+            st.session_state.pop("entrada_lote_atual", None)
+            st.session_state.pop("entrada_confirmacao_atual", None)
 
-        with col_excel:
-            st.download_button(
-                "↓ Modelo Excel",
-                data=_arquivo_modelo(tipo, "Excel"),
-                file_name=f"{nome_base}.xlsx",
-                mime=(
-                    "application/vnd.openxmlformats-officedocument."
-                    "spreadsheetml.sheet"
-                ),
-                use_container_width=True,
-            )
+        mapa_nomes_modelo = {
+            "Dados escolares": "modelo_dados_escolares",
+            "Resultados de avaliações": "modelo_resultados_avaliacoes",
+            "Atividades": "modelo_atividades_entregas",
+        }
+        nome_base = mapa_nomes_modelo.get(tipo, "modelo_vertice")
 
-    st.caption(
-        "Os modelos contêm apenas os nomes das colunas. "
-        "Substitua-os por dados anonimizados."
-    )
+        with st.container(key="entrada_modelos"):
+            col_csv, col_excel, _ = st.columns([1, 1, 3])
+            with col_csv:
+                st.download_button(
+                    "↓ Modelo CSV",
+                    data=_obter_conteudo_modelo_oficial(tipo, "CSV"),
+                    file_name=f"{nome_base}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+            with col_excel:
+                st.download_button(
+                    "↓ Modelo Excel",
+                    data=_obter_conteudo_modelo_oficial(tipo, "Excel"),
+                    file_name=f"{nome_base}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
 
-    icone_upload = _arquivo_base64("download.svg")
-    icone_arquivo = _arquivo_base64("arquivo.png")
-    icone_info = _arquivo_base64("info.svg")
+        st.caption(
+            "Colunas oficiais esperadas pelo validador (`"
+            + "`, `".join(TIPOS_IMPORTACAO[tipo])
+            + "`). Utilize sempre identificadores anônimos."
+        )
 
-    st.markdown(
-        "**2. Envie o arquivo preenchido**"
-    )
+        icone_upload = _arquivo_base64("download.svg")
+        icone_arquivo = _arquivo_base64("arquivo.png")
+        icone_info = _arquivo_base64("info.svg")
 
-    with st.container(key="entrada_upload"):
-        if icone_upload:
+        st.markdown("**2. Envie o arquivo preenchido**")
+
+        with st.container(key="entrada_upload"):
+            if icone_upload:
+                st.html(
+                    '<div class="entrada-upload-icone">'
+                    f'<img src="data:image/svg+xml;base64,{icone_upload}" alt="">'
+                    '</div>'
+                )
+
             st.html(
-                '<div class="entrada-upload-icone">'
-                f'<img src="data:image/svg+xml;base64,{icone_upload}" alt="">'
+                '<div class="entrada-upload-titulo">'
+                'Importação em massa (CSV/XLSX)'
+                '</div>'
+                '<div class="entrada-upload-instrucao">'
+                'Selecione um arquivo CSV ou Excel para validar na Etapa 1'
                 '</div>'
             )
 
-        st.html(
-            '<div class="entrada-upload-titulo">'
-            'Importação em massa (CSV/EXCEL)'
-            '</div>'
-            '<div class="entrada-upload-instrucao">'
-            'Selecione um arquivo CSV ou Excel para importar'
-            '</div>'
+            if st.button(
+                "Selecionar arquivo",
+                key="entrada_abrir_selecao",
+                use_container_width=True,
+            ):
+                _dialogo_selecionar_arquivo(tipo)
+
+        selecionado = st.session_state.get("entrada_arquivo_selecionado")
+        if not selecionado or selecionado.get("tipo") != tipo:
+            return
+
+        conteudo = selecionado["conteudo"]
+        nome = selecionado["nome"]
+
+        if len(conteudo) > 10 * 1024 * 1024:
+            st.error("O arquivo ultrapassa o limite de 10 MB.")
+            return
+
+        try:
+            dados = _ler_arquivo(conteudo, nome)
+        except Exception:
+            st.error("Não foi possível ler o arquivo. Confira se o CSV ou XLSX é válido.")
+            return
+
+        if dados.empty:
+            st.error("O arquivo não possui registros.")
+            return
+
+        nome_seguro = escape(nome)
+        icone_html = (
+            f'<img src="data:image/png;base64,{icone_arquivo}" alt="">'
+            if icone_arquivo
+            else ""
         )
-
-        if st.button(
-            "Selecionar arquivo",
-            key="entrada_abrir_selecao",
-            use_container_width=True,
-        ):
-            _dialogo_selecionar_arquivo(tipo)
-
-    selecionado = st.session_state.get(
-        "entrada_arquivo_selecionado"
-    )
-
-    if not selecionado or selecionado.get("tipo") != tipo:
-        return
-
-    conteudo = selecionado["conteudo"]
-    nome = selecionado["nome"]
-
-    if len(conteudo) > 10 * 1024 * 1024:
-        st.error(
-            "O arquivo ultrapassa o limite de 10 MB."
-        )
-        return
-
-    assinatura = sha256(
-        conteudo + tipo.encode("utf-8")
-    ).hexdigest()
-
-    try:
-        dados = _ler_arquivo(
-            conteudo,
-            nome,
-        )
-    except Exception:
-        st.error(
-            "Não foi possível ler o arquivo. "
-            "Confira se o CSV ou XLSX é válido."
-        )
-        return
-
-    if dados.empty:
-        st.error(
-            "O arquivo não possui registros."
-        )
-        return
-
-    nome_seguro = escape(nome)
-
-    icone_html = (
-        f'<img src="data:image/png;base64,{icone_arquivo}" alt="">'
-        if icone_arquivo
-        else ""
-    )
-
-    with st.container(key="entrada_arquivo_carregado"):
-        st.html(
-            '<div class="entrada-arquivo-linha">'
-            f'<div class="entrada-arquivo-icone">{icone_html}</div>'
-            '<div class="entrada-arquivo-conteudo">'
-            f'<div class="entrada-arquivo-nome">{nome_seguro}</div>'
-            '<div class="entrada-arquivo-registros">'
-            f'{numero_br(len(dados))} registros'
-            '</div></div></div>'
-        )
-
-    with st.container(key="entrada_preview"):
-        st.subheader(
-            "Pré-visualização dos Dados"
-        )
-
-        st.dataframe(
-            dados.head(5),
-            hide_index=True,
-            width="stretch",
-        )
-
-    icone_info_html = (
-        f'<img src="data:image/svg+xml;base64,{icone_info}" alt="">'
-        if icone_info
-        else ""
-    )
-
-    with st.container(key="entrada_info"):
-        st.html(
-            '<div class="entrada-info-linha">'
-            f'<div class="entrada-info-icone">{icone_info_html}</div>'
-            '<div class="entrada-info-texto">'
-            'Use apenas identificadores anônimos. '
-            'Não inclua nomes, CPF ou outros dados pessoais. '
-            'Os arquivos aprovados serão mantidos somente '
-            'na sessão atual.'
-            '</div></div>'
-        )
-
-    st.markdown(
-        "**3. Valide os dados**"
-    )
-
-    with st.container(key="entrada_processar"):
-        if st.button(
-            "Validar e processar dados",
-            type="primary",
-            key="entrada_validar",
-        ):
-            validados, erros = _validar(
-                dados,
-                tipo,
+        with st.container(key="entrada_arquivo_carregado"):
+            st.html(
+                '<div class="entrada-arquivo-linha">'
+                f'<div class="entrada-arquivo-icone">{icone_html}</div>'
+                '<div class="entrada-arquivo-conteudo">'
+                f'<div class="entrada-arquivo-nome">{nome_seguro}</div>'
+                '<div class="entrada-arquivo-registros">'
+                f'{numero_br(len(dados))} registros'
+                '</div></div></div>'
             )
 
-            st.session_state["entrada_resultado"] = {
-                "assinatura": assinatura,
-                "arquivo": nome,
-                "tipo": tipo,
-                "erros": erros,
-                "quantidade": len(dados),
-                "amostra": (
-                    validados.head(5).copy()
-                    if validados is not None
-                    else dados.head(5).copy()
-                ),
-            }
+        with st.container(key="entrada_preview"):
+            st.subheader("Amostra do arquivo enviado")
+            st.dataframe(dados.head(5), hide_index=True, width="stretch")
 
-            if validados is not None:
-                st.session_state.setdefault(
-                    "entrada_importacoes",
-                    {},
-                )[tipo] = validados
+        icone_info_html = (
+            f'<img src="data:image/svg+xml;base64,{icone_info}" alt="">'
+            if icone_info
+            else ""
+        )
+        with st.container(key="entrada_info"):
+            st.html(
+                '<div class="entrada-info-linha">'
+                f'<div class="entrada-info-icone">{icone_info_html}</div>'
+                '<div class="entrada-info-texto">'
+                'LGPD: use apenas códigos anônimos (`codigo_anonimo`). '
+                'Não inclua nomes, CPF, RG ou e-mail. A Etapa 1 apenas valida '
+                'e gera a prévia no servidor sem gravar dados acadêmicos.'
+                '</div></div>'
+            )
 
-                from data.api_client import (
-                    possui_sessao_api_ativa,
-                    validar_e_confirmar_importacao_api,
-                )
+        st.markdown("**3. Etapa 1 — Validar e gerar prévia no servidor**")
 
-                if possui_sessao_api_ativa():
-                    tipo_api = (
-                        "avaliacoes"
-                        if tipo == "Resultados de avaliações"
-                        else "dados_escolares"
-                    )
-                    resp_imp = validar_e_confirmar_importacao_api(
-                        nome_arquivo=nome,
-                        conteudo_bytes=conteudo,
-                        tipo_importacao=tipo_api,
-                    )
-                    st.session_state["entrada_resultado"]["persistido_api"] = (
-                        resp_imp.ok
-                    )
-                    if not resp_imp.ok and resp_imp.erro:
-                        st.session_state["entrada_resultado"]["aviso_api"] = (
-                            resp_imp.erro
-                        )
+        with st.container(key="entrada_processar"):
+            if st.button(
+                "Etapa 1 — Validar no servidor",
+                type="primary",
+                key="entrada_validar",
+            ):
+                with st.spinner("Validando arquivo no servidor do Vértice..."):
+                    resp_val = enviar_validacao_importacao_api(nome, conteudo, tipo)
 
-            st.session_state["entrada_tela"] = "resultado"
-            st.rerun()
+                if resp_val.sessao_expirada:
+                    st.warning(resp_val.erro or "Sua sessão expirou. Faça login novamente.")
+                    return
+                if resp_val.sem_permissao:
+                    st.error(resp_val.erro or "Permissão insuficiente para importar este dataset.")
+                    return
+                if resp_val.ok and isinstance(resp_val.dados, dict):
+                    st.session_state["entrada_lote_atual"] = resp_val.dados
+                    st.session_state.pop("entrada_confirmacao_atual", None)
+                    st.session_state["entrada_tela"] = "resultado"
+                    st.rerun()
+                else:
+                    st.error(resp_val.erro or "Falha ao validar arquivo no servidor.")

@@ -610,12 +610,12 @@ def _renderizar_aba_entregas_atividade(
                 "Clique em 'Atualizar / Gerar entregas esperadas da turma' acima."
             )
         else:
+            st.markdown("**Lista de entregas esperadas e realizadas (estudantes anonimizados)**")
             df_entregas = formatar_tabela_entregas_atividade(entregas)
             tabela_paginada(
                 df_entregas,
+                tamanho_pagina=12,
                 chave=f"part_entregas_{atividade_id}",
-                titulo="Lista de entregas esperadas e realizadas (estudantes anonimizados)",
-                itens_por_pagina=12,
             )
 
     if entregas:
@@ -783,11 +783,11 @@ def _renderizar_aba_historico_turma(
                         use_container_width=True,
                     )
 
+    st.markdown("**Histórico de participação por atividade e turma**")
     tabela_paginada(
         df_atividades,
+        tamanho_pagina=10,
         chave="part_historico_turma",
-        titulo="Histórico de participação por atividade e turma",
-        itens_por_pagina=10,
     )
 
     turma_itens = indicadores.get("taxa_por_turma") or []
@@ -816,11 +816,11 @@ def _renderizar_aba_historico_turma(
                 for t in turma_itens
             ]
         )
+        st.markdown("**Consolidação por turma**")
         tabela_paginada(
             df_turmas,
+            tamanho_pagina=10,
             chave="part_resumo_turmas",
-            titulo="Consolidação por turma",
-            itens_por_pagina=10,
         )
 
 
@@ -945,11 +945,11 @@ def _renderizar_aba_historico_individual(
         )
 
     if linhas_detalhe:
+        st.markdown(f"**Atividades esperadas e entregas de {codigo_sel}**")
         tabela_paginada(
             pd.DataFrame(linhas_detalhe),
+            tamanho_pagina=10,
             chave=f"part_ind_det_{estudante_id}",
-            titulo=f"Atividades esperadas e entregas de {codigo_sel}",
-            itens_por_pagina=10,
         )
     else:
         st.info("Não há entregas detalhadas registradas para este estudante no recorte.")
@@ -1026,17 +1026,32 @@ def _renderizar_aba_acompanhamento(
                 for item in resp_lista.dados
             ]
         )
+        st.markdown("**Acompanhamentos pedagógicos registrados na participação**")
         tabela_paginada(
             df_ac,
+            tamanho_pagina=8,
             chave="part_hist_acomp",
-            titulo="Acompanhamentos pedagógicos registrados na participação",
-            itens_por_pagina=8,
         )
 
 
 def render() -> None:
     """Ponto de entrada da página Participação."""
     aplicar_responsividade()
+
+    usuario_api = st.session_state.get("usuario_api") or {}
+    papel_atual = str(
+        usuario_api.get("papel")
+        or st.session_state.get("papel_api")
+        or st.session_state.get("perfil")
+        or ""
+    ).strip().lower()
+    if papel_atual == "administrador":
+        titulo_pagina("Participação")
+        st.info(
+            "O perfil administrativo não acessa dados pedagógicos de atividades ou estudantes. "
+            "Para acompanhar entregas e participação, utilize uma conta de gestor ou professor."
+        )
+        return
 
     contexto_api = carregar_contexto_participacao_api()
 

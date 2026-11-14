@@ -146,11 +146,20 @@ def render():
         return
 
     resp_status = consultar_status_assistente_api()
+    if resp_status.sessao_expirada:
+        st.warning(resp_status.erro or "Sua sessão expirou. Faça login novamente.")
+        return
+    if resp_status.sem_permissao:
+        st.error(resp_status.erro or "Permissão insuficiente para acessar o Assistente IA.")
+        return
+    if resp_status.indisponivel:
+        st.error(resp_status.erro or "Servidor do Vértice indisponível no momento.")
+        return
     status_info = resp_status.dados if (resp_status.ok and isinstance(resp_status.dados, dict)) else {}
     provedor_ativo = bool(status_info.get("provedor_llm_configurado"))
 
     usuario_api = st.session_state.get("usuario_api") or {}
-    papel = str(usuario_api.get("papel") or "")
+    papel = str(usuario_api.get("papel") or st.session_state.get("papel_api") or "").strip().lower()
 
     with st.container(key="assistente_card", border=True):
         icone_b64 = _icone_base64("sparkles-2.svg")
@@ -190,11 +199,15 @@ def render():
         if papel == "administrador":
             st.warning(
                 "Perfis administrativos não podem gerar contexto pedagógico de escolas, turmas ou estudantes. "
-                "Tentativas são bloqueadas e registradas na trilha de auditoria."
+                "Tentativas diretas na API são bloqueadas e registradas na trilha de auditoria."
             )
+            return
 
         # Seletor real de recorte de contexto
         resp_turmas = listar_turmas_api()
+        if resp_turmas.sessao_expirada:
+            st.warning(resp_turmas.erro or "Sua sessão expirou. Faça login novamente.")
+            return
         turmas = resp_turmas.dados if (resp_turmas.ok and isinstance(resp_turmas.dados, list)) else []
         mapa_turmas = {
             f"{t.get('nome', 'Turma')} ({t.get('ano_letivo', '')})".strip(): t.get("id")
@@ -202,6 +215,9 @@ def render():
         }
 
         resp_est = listar_estudantes_api(limit=200)
+        if resp_est.sessao_expirada:
+            st.warning(resp_est.erro or "Sua sessão expirou. Faça login novamente.")
+            return
         estudantes = resp_est.dados if (resp_est.ok and isinstance(resp_est.dados, list)) else []
         mapa_est = {
             str(e.get("codigo_anonimo") or e.get("id")): e.get("id")

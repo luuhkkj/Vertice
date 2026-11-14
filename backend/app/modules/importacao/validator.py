@@ -175,6 +175,38 @@ COLUNAS_OBRIGATORIAS_ATIVIDADES = (
     "codigo_anonimo",
 )
 
+COLUNAS_MODELO_DADOS_ESCOLARES: tuple[str, ...] = (
+    "codigo_anonimo",
+    "turma",
+    "disciplina",
+    "ano_letivo",
+    "periodo_letivo",
+    "frequencia_percentual",
+    "faltas",
+    "media_geral",
+    "nota",
+    "nota_prova",
+    "nota_trabalho",
+    "historico_reprovacoes",
+    "participacao_recuperacao",
+    "situacao_final",
+)
+
+COLUNAS_MODELO_ATIVIDADES: tuple[str, ...] = (
+    "id_atividade",
+    "titulo_atividade",
+    "disciplina",
+    "turma",
+    "periodo_letivo",
+    "ano_letivo",
+    "data_limite",
+    "nota_maxima",
+    "codigo_anonimo",
+    "status_entrega",
+    "data_entrega",
+    "nota",
+)
+
 # Colunas exatas de identificação pessoal direta estritamente proibidas pela LGPD / RN01
 PADROES_COLUNAS_PII_PROIBIDAS = {
     "nome",
@@ -389,21 +421,21 @@ def validar_arquivo_upload(
     return ext
 
 
-def gerar_arquivo_modelo_avaliacoes(formato: str = "csv") -> tuple[bytes, str, str]:
-    """
-    Gera o arquivo modelo oficial de importação de avaliações e respostas individuais
-    em CSV ou XLSX com todas as 16 colunas obrigatórias do modelo.
-    Retorna `(conteudo_bytes, media_type, nome_arquivo)`.
-    """
+def _exportar_arquivo_modelo(
+    colunas: tuple[str, ...],
+    nome_base: str,
+    formato: str = "csv",
+) -> tuple[bytes, str, str]:
+    """Gera um arquivo modelo vazio (CSV UTF-8-SIG com ';' ou XLSX) para o contrato informado."""
     fmt_limpo = formato.strip().lower().lstrip(".")
-    df_modelo = pd.DataFrame(columns=list(COLUNAS_MODELO_AVALIACOES))
+    df_modelo = pd.DataFrame(columns=list(colunas))
 
     if fmt_limpo == "csv":
         conteudo = df_modelo.to_csv(index=False, sep=";").encode("utf-8-sig")
         return (
             conteudo,
             "text/csv; charset=utf-8",
-            "modelo_resultados_avaliacoes.csv",
+            f"{nome_base}.csv",
         )
 
     if fmt_limpo in ("xlsx", "excel"):
@@ -413,12 +445,43 @@ def gerar_arquivo_modelo_avaliacoes(formato: str = "csv") -> tuple[bytes, str, s
         return (
             buffer.getvalue(),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "modelo_resultados_avaliacoes.xlsx",
+            f"{nome_base}.xlsx",
         )
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="Formato de modelo inválido. Use 'csv' ou 'xlsx'.",
+    )
+
+
+def gerar_arquivo_modelo_avaliacoes(formato: str = "csv") -> tuple[bytes, str, str]:
+    """
+    Gera o arquivo modelo oficial de importação de avaliações e respostas individuais
+    em CSV ou XLSX com todas as 16 colunas obrigatórias do modelo.
+    Retorna `(conteudo_bytes, media_type, nome_arquivo)`.
+    """
+    return _exportar_arquivo_modelo(
+        COLUNAS_MODELO_AVALIACOES,
+        "modelo_resultados_avaliacoes",
+        formato=formato,
+    )
+
+
+def gerar_arquivo_modelo_dados_escolares(formato: str = "csv") -> tuple[bytes, str, str]:
+    """Gera o arquivo modelo oficial de importação de dados escolares (CSV ou XLSX)."""
+    return _exportar_arquivo_modelo(
+        COLUNAS_MODELO_DADOS_ESCOLARES,
+        "modelo_dados_escolares",
+        formato=formato,
+    )
+
+
+def gerar_arquivo_modelo_atividades(formato: str = "csv") -> tuple[bytes, str, str]:
+    """Gera o arquivo modelo oficial de importação de atividades e entregas (CSV ou XLSX)."""
+    return _exportar_arquivo_modelo(
+        COLUNAS_MODELO_ATIVIDADES,
+        "modelo_atividades_entregas",
+        formato=formato,
     )
 
 

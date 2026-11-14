@@ -18,10 +18,49 @@ from app.modules.importacao.schemas import (
     LoteImportacaoResumoResponse,
 )
 from app.modules.importacao.service import ImportacaoService
-from app.modules.importacao.validator import gerar_arquivo_modelo_avaliacoes
+from app.modules.importacao.validator import (
+    gerar_arquivo_modelo_atividades,
+    gerar_arquivo_modelo_avaliacoes,
+    gerar_arquivo_modelo_dados_escolares,
+)
 from app.modules.usuarios.models import Usuario
 
 router = APIRouter()
+
+
+def _resposta_download_modelo(
+    conteudo: bytes,
+    media_type: str,
+    nome_arquivo: str,
+) -> Response:
+    return Response(
+        content=conteudo,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{nome_arquivo}"'
+        },
+    )
+
+
+@router.get(
+    "",
+    response_model=list[LoteImportacaoResumoResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Listar histórico de lotes de importação do usuário/escola",
+)
+def listar_lotes_importacao(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_importacao_datasets),
+) -> list[LoteImportacaoResumoResponse]:
+    """Lista o histórico de lotes de importação visíveis no escopo do usuário autenticado."""
+    return ImportacaoService.listar_lotes(
+        db=db,
+        usuario_autenticado=current_user,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.get(
@@ -43,13 +82,43 @@ def baixar_modelo_avaliacoes(
     conteudo, media_type, nome_arquivo = gerar_arquivo_modelo_avaliacoes(
         formato=formato
     )
-    return Response(
-        content=conteudo,
-        media_type=media_type,
-        headers={
-            "Content-Disposition": f'attachment; filename="{nome_arquivo}"'
-        },
+    return _resposta_download_modelo(conteudo, media_type, nome_arquivo)
+
+
+@router.get(
+    "/modelos/dados-escolares",
+    status_code=status.HTTP_200_OK,
+    summary="Baixar modelo oficial de planilha de dados escolares (CSV ou XLSX)",
+)
+def baixar_modelo_dados_escolares(
+    formato: str = Query(
+        default="csv",
+        description="Formato do arquivo de modelo: 'csv' ou 'xlsx'.",
+    ),
+    current_user: Usuario = Depends(require_importacao_datasets),
+) -> Response:
+    conteudo, media_type, nome_arquivo = gerar_arquivo_modelo_dados_escolares(
+        formato=formato
     )
+    return _resposta_download_modelo(conteudo, media_type, nome_arquivo)
+
+
+@router.get(
+    "/modelos/atividades",
+    status_code=status.HTTP_200_OK,
+    summary="Baixar modelo oficial de planilha de atividades e entregas (CSV ou XLSX)",
+)
+def baixar_modelo_atividades(
+    formato: str = Query(
+        default="csv",
+        description="Formato do arquivo de modelo: 'csv' ou 'xlsx'.",
+    ),
+    current_user: Usuario = Depends(require_importacao_datasets),
+) -> Response:
+    conteudo, media_type, nome_arquivo = gerar_arquivo_modelo_atividades(
+        formato=formato
+    )
+    return _resposta_download_modelo(conteudo, media_type, nome_arquivo)
 
 
 @router.post(

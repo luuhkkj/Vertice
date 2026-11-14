@@ -20,7 +20,7 @@ from config import API_BASE_URL
 
 
 _PADRAO_TOKEN_SENSIVEL = re.compile(
-    r"(Bearer\s+[A-Za-z0-9\-_\.]+|eyJ[A-Za-z0-9\-_\.]+)",
+    r"(Bearer\s+[A-Za-z0-9\-_\.]+|eyJ[A-Za-z0-9\-_\.]+|vtx_ml_[A-Za-z0-9\-_]+)",
     re.IGNORECASE,
 )
 
@@ -45,6 +45,7 @@ class RespostaAPI:
     sessao_expirada: bool = False
     sem_permissao: bool = False
     indisponivel: bool = False
+    headers: Optional[dict[str, str]] = None
 
 
 # Hook opcional para injeção de transporte/cliente em testes automatizados (ex.: FastAPI TestClient)
@@ -70,10 +71,60 @@ def possui_sessao_api_ativa() -> bool:
     return obter_token_sessao() is not None
 
 
+def registrar_usuario_sessao(
+    usuario: Any,
+    email_fallback: Optional[str] = None,
+) -> str:
+    """Armazena os dados canônicos do usuário autenticado em `st.session_state` sem alterar o papel do backend."""
+    usuario_dict = usuario if isinstance(usuario, dict) else {}
+    papel = str(usuario_dict.get("papel") or "").strip().lower()
+    if papel not in ("administrador", "gestor", "professor"):
+        papel = "professor"
+
+    nome = str(
+        usuario_dict.get("nome")
+        or usuario_dict.get("nome_completo")
+        or ""
+    ).strip()
+    email = str(usuario_dict.get("email") or email_fallback or "").strip().lower()
+    escola_id = usuario_dict.get("escola_id")
+
+    st.session_state["usuario_api"] = usuario_dict
+    st.session_state["perfil"] = papel
+    st.session_state["papel_api"] = papel
+    st.session_state["nome_atual"] = nome or email
+    st.session_state["professor_atual"] = nome if papel == "professor" else None
+    st.session_state["email_atual"] = email
+    st.session_state["escola_id_atual"] = str(escola_id) if escola_id else None
+    st.session_state.pop("escola_nome_atual", None)
+    return papel
+
+
+def limpar_estado_sessao() -> None:
+    """Remove todos os dados de autenticação e contexto pessoal da sessão atual."""
+    for chave in (
+        "access_token",
+        "usuario_api",
+        "perfil",
+        "papel_api",
+        "nome_atual",
+        "professor_atual",
+        "email_atual",
+        "escola_id_atual",
+        "escola_nome_atual",
+        "sessao_api_expirada",
+        "mensagem_sessao_expirada",
+        "entrada_lote_atual",
+        "entrada_resultado",
+    ):
+        st.session_state.pop(chave, None)
+
+
 def limpar_sessao_expirada(mensagem: Optional[str] = None) -> None:
     """Remove credenciais expiradas da sessão e registra aviso claro de expiração."""
     st.session_state.pop("access_token", None)
     st.session_state.pop("usuario_api", None)
+    st.session_state["logado"] = False
     st.session_state["sessao_api_expirada"] = True
     st.session_state["mensagem_sessao_expirada"] = (
         mensagem
@@ -161,20 +212,34 @@ def requisitar_api(
         )
 
     status_code = int(resp.status_code)
+    headers_resp = {
+        str(k).lower(): str(v)
+        for k, v in (getattr(resp, "headers", None) or {}).items()
+    }
     payload: Any = None
-    try:
-        if resp.content:
+    json_invalido = False
+    if getattr(resp, "content", b""):
+        try:
             payload = resp.json()
-    except Exception:
-        payload = None
+        except Exception:
+            payload = None
+            json_invalido = True
 
     if 200 <= status_code < 300:
+        if json_invalido and status_code != 204:
+            return RespostaAPI(
+                ok=False,
+                status_code=status_code,
+                erro="O servidor retornou uma resposta em formato inesperado.",
+                headers=headers_resp,
+            )
         st.session_state.pop("sessao_api_expirada", None)
         st.session_state.pop("mensagem_sessao_expirada", None)
         return RespostaAPI(
             ok=True,
             status_code=status_code,
             dados=payload,
+            headers=headers_resp,
         )
 
     if status_code == 401:
@@ -189,6 +254,7 @@ def requisitar_api(
             status_code=401,
             erro=msg_401,
             sessao_expirada=True,
+            headers=headers_resp,
         )
 
     if status_code == 403:
@@ -201,6 +267,7 @@ def requisitar_api(
             status_code=403,
             erro=msg_403,
             sem_permissao=True,
+            headers=headers_resp,
         )
 
     msg_erro = _extrair_detalhe_erro(
@@ -212,6 +279,113 @@ def requisitar_api(
         status_code=status_code,
         dados=payload,
         erro=msg_erro,
+        headers=headers_resp,
+    )
+
+
+def requisitar_bytes_api(
+    metodo: str,
+    caminho: str,
+    *,
+    params: Optional[dict[str, Any]] = None,
+    exigir_auth: bool = True,
+    timeout: float = 15.0,
+) -> RespostaAPI:
+    """Executa requisição HTTP autenticada esperando conteúdo binário (ex.: download de CSV/XLSX)."""
+    token = obter_token_sessao()
+    if exigir_auth and not token:
+        return RespostaAPI(
+            ok=False,
+            status_code=401,
+            erro="Sessão não autenticada na API. Realize o login para continuar.",
+            sessao_expirada=bool(st.session_state.get("sessao_api_expirada", False)),
+        )
+
+    headers: dict[str, str] = {"Accept": "*/*"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    caminho_norm = caminho if caminho.startswith("/") else f"/{caminho}"
+    params_limpos = (
+        {k: str(v) for k, v in params.items() if v is not None and str(v) != ""}
+        if params
+        else None
+    )
+
+    try:
+        if _cliente_http_override is not None:
+            resp = _cliente_http_override(
+                metodo.upper(),
+                f"/api/v1{caminho_norm}",
+                params=params_limpos,
+                headers=headers,
+            )
+        else:
+            with httpx.Client(timeout=timeout) as client:
+                resp = client.request(
+                    method=metodo.upper(),
+                    url=f"{API_BASE_URL}{caminho_norm}",
+                    params=params_limpos,
+                    headers=headers,
+                )
+    except Exception:
+        return RespostaAPI(
+            ok=False,
+            status_code=None,
+            erro="Não foi possível conectar ao servidor do Vértice para baixar o arquivo.",
+            indisponivel=True,
+        )
+
+    status_code = int(resp.status_code)
+    headers_resp = {
+        str(k).lower(): str(v)
+        for k, v in (getattr(resp, "headers", None) or {}).items()
+    }
+    if 200 <= status_code < 300:
+        return RespostaAPI(
+            ok=True,
+            status_code=status_code,
+            dados=bytes(getattr(resp, "content", b"") or b""),
+            headers=headers_resp,
+        )
+
+    payload: Any = None
+    try:
+        if getattr(resp, "content", b""):
+            payload = resp.json()
+    except Exception:
+        payload = None
+
+    if status_code == 401:
+        msg_401 = _extrair_detalhe_erro(
+            payload,
+            "Sua sessão expirou ou suas credenciais não são mais válidas. Faça login novamente.",
+        )
+        if exigir_auth:
+            limpar_sessao_expirada(msg_401)
+        return RespostaAPI(
+            ok=False,
+            status_code=401,
+            erro=msg_401,
+            sessao_expirada=True,
+            headers=headers_resp,
+        )
+    if status_code == 403:
+        return RespostaAPI(
+            ok=False,
+            status_code=403,
+            erro=_extrair_detalhe_erro(payload, "Permissão insuficiente para baixar o modelo."),
+            sem_permissao=True,
+            headers=headers_resp,
+        )
+    return RespostaAPI(
+        ok=False,
+        status_code=status_code,
+        erro=_extrair_detalhe_erro(
+            payload,
+            f"Falha ao baixar o arquivo solicitado (HTTP {status_code}).",
+        ),
+        headers=headers_resp,
     )
 
 
@@ -228,10 +402,26 @@ def autenticar_usuario_api(email: str, senha: str) -> RespostaAPI:
         usuario = resposta.dados.get("usuario") or {}
         if isinstance(token, str) and token.strip():
             st.session_state["access_token"] = token.strip()
-            st.session_state["usuario_api"] = usuario
+            registrar_usuario_sessao(usuario, email_fallback=email)
             st.session_state.pop("sessao_api_expirada", None)
             st.session_state.pop("mensagem_sessao_expirada", None)
     return resposta
+
+
+def obter_usuario_atual_api() -> RespostaAPI:
+    """Consulta o perfil completo do usuário autenticado (`GET /api/v1/auth/me`)."""
+    resposta = requisitar_api("GET", "/auth/me")
+    if resposta.ok and isinstance(resposta.dados, dict):
+        registrar_usuario_sessao(resposta.dados)
+    return resposta
+
+
+def encerrar_sessao_api() -> None:
+    """Solicita encerramento lógico de sessão no backend (`POST /auth/logout`) e limpa o estado local."""
+    if possui_sessao_api_ativa():
+        requisitar_api("POST", "/auth/logout", exigir_auth=False, timeout=3.0)
+    limpar_estado_sessao()
+    st.session_state["logado"] = False
 
 
 def consultar_indicadores_avaliacoes(
@@ -274,6 +464,32 @@ def listar_avaliacoes_api(
     )
 
 
+def listar_escolas_api(skip: int = 0, limit: int = 100) -> RespostaAPI:
+    """Lista as escolas acessíveis ao usuário autenticado (`GET /api/v1/escolas`)."""
+    return requisitar_api("GET", "/escolas", params={"skip": skip, "limit": limit})
+
+
+def obter_escola_api(escola_id: str) -> RespostaAPI:
+    """Obtém os detalhes de uma escola específica (`GET /api/v1/escolas/{id}`)."""
+    return requisitar_api("GET", f"/escolas/{escola_id}")
+
+
+def listar_usuarios_api(
+    *,
+    skip: int = 0,
+    limit: int = 100,
+    papel: Optional[str] = None,
+    apenas_ativos: Optional[bool] = None,
+) -> RespostaAPI:
+    """Lista usuários permitidos para administrador ou gestor (`GET /api/v1/usuarios`)."""
+    params: dict[str, Any] = {"skip": skip, "limit": limit}
+    if papel:
+        params["papel"] = papel
+    if apenas_ativos is not None:
+        params["apenas_ativos"] = str(apenas_ativos).lower()
+    return requisitar_api("GET", "/usuarios", params=params)
+
+
 def listar_turmas_api() -> RespostaAPI:
     """Lista as turmas autorizadas para o usuário autenticado (`GET /api/v1/turmas`)."""
     return requisitar_api("GET", "/turmas")
@@ -287,6 +503,26 @@ def listar_disciplinas_api() -> RespostaAPI:
 def listar_atribuicoes_api() -> RespostaAPI:
     """Lista os vínculos de turma e disciplina (`GET /api/v1/atribuicoes`)."""
     return requisitar_api("GET", "/atribuicoes")
+
+
+def criar_atribuicao_api(
+    *,
+    professor_id: str,
+    turma_id: str,
+    disciplina_id: Optional[str] = None,
+) -> RespostaAPI:
+    """Cria uma atribuição docente em `POST /api/v1/atribuicoes`."""
+    payload: dict[str, Any] = {
+        "professor_id": professor_id,
+        "turma_id": turma_id,
+        "disciplina_id": disciplina_id if disciplina_id else None,
+    }
+    return requisitar_api("POST", "/atribuicoes", json_body=payload)
+
+
+def remover_atribuicao_api(atribuicao_id: str) -> RespostaAPI:
+    """Remove uma atribuição docente em `DELETE /api/v1/atribuicoes/{id}`."""
+    return requisitar_api("DELETE", f"/atribuicoes/{atribuicao_id}")
 
 
 def criar_avaliacao_api(
@@ -339,36 +575,68 @@ def registrar_acompanhamento_pedagogico_api(
     return requisitar_api("POST", "/acompanhamentos", json_body=payload)
 
 
-def validar_e_confirmar_importacao_api(
+def validar_importacao_api(
     *,
     nome_arquivo: str,
     conteudo_bytes: bytes,
-    tipo_importacao: str,
+    tipo_importacao: Optional[str] = None,
 ) -> RespostaAPI:
-    """Executa a validação (`POST /api/v1/importacoes/validar`) e confirmação (`POST /api/v1/importacoes/{id}/confirmar`)."""
+    """Etapa 1: envia e valida um dataset sem persistir dados acadêmicos (`POST /api/v1/importacoes/validar`)."""
     mime_type = (
         "text/csv"
         if nome_arquivo.lower().endswith(".csv")
         else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    resp_val = requisitar_api(
-        "POST",
-        "/importacoes/validar",
-        params={"tipo_importacao": tipo_importacao},
-        files={"arquivo": (nome_arquivo, conteudo_bytes, mime_type)},
+    tipo_norm = (
+        tipo_importacao.strip().upper().replace("-", "_")
+        if isinstance(tipo_importacao, str) and tipo_importacao.strip()
+        else None
     )
-    if not resp_val.ok or not isinstance(resp_val.dados, dict):
-        return resp_val
-
-    lote_id = resp_val.dados.get("id")
-    pode_confirmar = bool(resp_val.dados.get("pode_confirmar"))
-    if not pode_confirmar or not lote_id:
-        return resp_val
-
+    params = {"tipo_importacao": tipo_norm} if tipo_norm else None
     return requisitar_api(
         "POST",
-        f"/importacoes/{lote_id}/confirmar",
+        "/importacoes/validar",
+        params=params,
+        files={"arquivo": (nome_arquivo, conteudo_bytes, mime_type)},
+        timeout=30.0,
     )
+
+
+def confirmar_importacao_api(lote_id: str) -> RespostaAPI:
+    """Etapa 2: confirma explicitamente um lote validado (`POST /api/v1/importacoes/{id}/confirmar`)."""
+    return requisitar_api("POST", f"/importacoes/{lote_id}/confirmar", timeout=30.0)
+
+
+def descartar_importacao_api(lote_id: str) -> RespostaAPI:
+    """Descarta explicitamente um lote pendente (`POST /api/v1/importacoes/{id}/descartar`)."""
+    return requisitar_api("POST", f"/importacoes/{lote_id}/descartar")
+
+
+def obter_previa_importacao_api(lote_id: str) -> RespostaAPI:
+    """Consulta o relatório e a prévia de um lote (`GET /api/v1/importacoes/{id}/previa`)."""
+    return requisitar_api("GET", f"/importacoes/{lote_id}/previa")
+
+
+def listar_importacoes_api(skip: int = 0, limit: int = 50) -> RespostaAPI:
+    """Lista o histórico real de lotes de importação no escopo do usuário (`GET /api/v1/importacoes`)."""
+    return requisitar_api("GET", "/importacoes", params={"skip": skip, "limit": limit})
+
+
+def baixar_modelo_importacao_api(
+    tipo_modelo: str,
+    formato: str = "csv",
+) -> RespostaAPI:
+    """Baixa o arquivo modelo oficial de planilha do backend (`GET /api/v1/importacoes/modelos/{tipo}`)."""
+    rotas_modelos = {
+        "avaliacoes": "/importacoes/modelos/avaliacoes",
+        "dados_escolares": "/importacoes/modelos/dados-escolares",
+        "dados-escolares": "/importacoes/modelos/dados-escolares",
+        "atividades": "/importacoes/modelos/atividades",
+    }
+    rota = rotas_modelos.get(tipo_modelo.strip().lower())
+    if not rota:
+        return RespostaAPI(ok=False, status_code=400, erro="Tipo de modelo de planilha inválido.")
+    return requisitar_bytes_api("GET", rota, params={"formato": formato})
 
 
 def listar_atividades_api(

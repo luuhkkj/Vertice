@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from urllib.parse import quote_plus
 
 from pydantic import BeforeValidator, computed_field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 ENV_FILE_PATH = BACKEND_DIR / ".env"
@@ -74,7 +74,11 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
 
     # CORS
-    BACKEND_CORS_ORIGINS: Annotated[list[str], BeforeValidator(parse_cors)] = [
+    BACKEND_CORS_ORIGINS: Annotated[
+        list[str],
+        NoDecode,
+        BeforeValidator(parse_cors),
+    ] = [
         "http://localhost:8501",
         "http://127.0.0.1:8501",
     ]

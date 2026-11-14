@@ -6,14 +6,31 @@ from typing import Optional
 import uuid
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import garantir_acesso_escola
+from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.escolas.models import Escola
 from app.modules.escolas.repository import EscolaRepository
 from app.modules.escolas.schemas import EscolaCreate, EscolaUpdate
-from app.modules.usuarios.models import Usuario
+from app.modules.turmas.models import Turma
+from app.modules.usuarios.models import PapelUsuario, Usuario
+
+
+def _escola_ids_autorizadas_professor(db: Session, professor: Usuario) -> set[uuid.UUID]:
+    """Retorna os IDs de escola vinculados diretamente ao professor ou às suas turmas."""
+    permitidas: set[uuid.UUID] = set()
+    if professor.escola_id is not None:
+        permitidas.add(professor.escola_id)
+    stmt = (
+        select(Turma.escola_id)
+        .join(ProfessorTurma, ProfessorTurma.turma_id == Turma.id)
+        .where(ProfessorTurma.professor_id == professor.id)
+    )
+    permitidas.update(db.execute(stmt).scalars().all())
+    return permitidas
 
 
 class EscolaService:
@@ -44,18 +61,69 @@ class EscolaService:
             ) from exc
 
     @staticmethod
-    def obter_por_id(db: Session, escola_id: uuid.UUID) -> Escola:
+    def _garantir_leitura_escola(
+        db: Session, usuario: Usuario, escola_id: uuid.UUID
+    ) -> None:
+        if usuario.papel == PapelUsuario.ADMINISTRADOR:
+            return
+        if usuario.papel == PapelUsuario.GESTOR:
+            garantir_acesso_escola(usuario, escola_id)
+            return
+        if escola_id not in _escola_ids_autorizadas_professor(db, usuario):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: escola fora do seu escopo institucional.",
+            )
+
+    @staticmethod
+    def obter_por_id(
+        db: Session,
+        escola_id: uuid.UUID,
+        usuario: Optional[Usuario] = None,
+    ) -> Escola:
         escola = EscolaRepository.get_by_id(db, escola_id)
         if escola is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Escola não encontrada.",
             )
+        if usuario is not None:
+            EscolaService._garantir_leitura_escola(db, usuario, escola.id)
         return escola
 
     @staticmethod
-    def listar_escolas(db: Session, skip: int = 0, limit: int = 100) -> list[Escola]:
-        return EscolaRepository.list_all(db, skip=skip, limit=limit)
+    def listar_escolas(
+        db: Session,
+        skip: int = 0,
+        limit: int = 100,
+        usuario: Optional[Usuario] = None,
+    ) -> list[Escola]:
+        if usuario is None or usuario.papel == PapelUsuario.ADMINISTRADOR:
+            return EscolaRepository.list_all(db, skip=skip, limit=limit)
+
+        if usuario.papel == PapelUsuario.GESTOR:
+            if usuario.escola_id is None:
+                return EscolaRepository.list_all(db, skip=skip, limit=limit)
+            stmt = (
+                select(Escola)
+                .where(Escola.id == usuario.escola_id)
+                .order_by(Escola.nome)
+                .offset(skip)
+                .limit(limit)
+            )
+            return list(db.execute(stmt).scalars().all())
+
+        escola_ids = _escola_ids_autorizadas_professor(db, usuario)
+        if not escola_ids:
+            return []
+        stmt = (
+            select(Escola)
+            .where(Escola.id.in_(escola_ids))
+            .order_by(Escola.nome)
+            .offset(skip)
+            .limit(limit)
+        )
+        return list(db.execute(stmt).scalars().all())
 
     @staticmethod
     def atualizar_escola(

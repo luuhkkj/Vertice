@@ -17,10 +17,10 @@ from components.graficos import (
 )
 from components.layout import titulo_pagina
 from components.tabelas import tabela_selecionavel
-from data import mock_data
 from data.api_client import (
     consultar_indicadores_avaliacoes,
     criar_avaliacao_api,
+    listar_acompanhamentos_api,
     listar_atribuicoes_api,
     listar_avaliacoes_api,
     listar_disciplinas_api,
@@ -28,7 +28,6 @@ from data.api_client import (
     possui_sessao_api_ativa,
     registrar_acompanhamento_pedagogico_api,
 )
-from data.atribuicoes import listar_atribuicoes
 from pages.entrada_dados import _arquivo_modelo
 from utils.formatacao import decimal_br, numero_br, percentual_br
 
@@ -220,45 +219,6 @@ def aplicar_responsividade():
     )
 
 
-def _atribuicoes_permitidas():
-    """Retorna as atribuições permitidas ao usuário na sessão local."""
-    atribuicoes = listar_atribuicoes()
-
-    if st.session_state.get("perfil") == "administrador":
-        return atribuicoes
-
-    professor = st.session_state.get("professor_atual")
-
-    return [
-        item
-        for item in atribuicoes
-        if item["Professor"] == professor
-    ]
-
-
-def _disciplinas_permitidas():
-    """Lista as disciplinas que o usuário pode visualizar na sessão local."""
-    if st.session_state.get("perfil") == "administrador":
-        return list(mock_data.DISCIPLINAS)
-
-    return sorted({
-        item["Disciplina"]
-        for item in _atribuicoes_permitidas()
-    })
-
-
-def _turmas_permitidas(disciplina):
-    """Lista as turmas autorizadas para uma disciplina na sessão local."""
-    if st.session_state.get("perfil") == "administrador":
-        return list(mock_data.TURMAS_AVALIACAO)
-
-    return sorted({
-        item["Turma"]
-        for item in _atribuicoes_permitidas()
-        if item["Disciplina"] == disciplina
-    })
-
-
 def _carregar_contexto_api() -> dict[str, Any]:
     """Consulta turmas, disciplinas, atribuições e avaliações reais na API do Vértice."""
     contexto: dict[str, Any] = {
@@ -337,11 +297,19 @@ def _carregar_contexto_api() -> dict[str, Any]:
                 d for d in disc_lista if str(d.get("id")) in ids_disc_prof
             ]
 
+    resp_acomp = listar_acompanhamentos_api(origem="MAPA_ACERTOS")
+    acomp_lista = (
+        resp_acomp.dados
+        if resp_acomp.ok and isinstance(resp_acomp.dados, list)
+        else []
+    )
+
     contexto["conectado"] = True
     contexto["turmas"] = turmas_lista
     contexto["disciplinas"] = disc_lista
     contexto["atribuicoes"] = atrib_lista
     contexto["avaliacoes"] = av_lista
+    contexto["acompanhamentos"] = acomp_lista
     return contexto
 
 
@@ -359,7 +327,13 @@ def _interpretar_questao(questao_item: dict[str, Any]) -> str:
         or questao_item.get("faixa_dificuldade_cadastrada")
         or "Adequada"
     )
-    base = mock_data.INTERPRETACAO_POR_DIFICULDADE.get(
+    interpretacao_por_dificuldade = {
+        "Fácil": "O percentual de acertos foi elevado.",
+        "Adequada": "O percentual de acertos foi satisfatório.",
+        "Atenção": "Esta questão requer acompanhamento.",
+        "Difícil": "Esta questão indica maior dificuldade.",
+    }
+    base = interpretacao_por_dificuldade.get(
         faixa,
         "Análise consolidada das respostas registradas para a questão.",
     )
@@ -392,10 +366,22 @@ def _interpretar_questao(questao_item: dict[str, Any]) -> str:
     return base
 
 
-def _construir_dataframe_questoes(questoes_api: list[dict[str, Any]]) -> pd.DataFrame:
+def _construir_dataframe_questoes(
+    questoes_api: list[dict[str, Any]],
+    acompanhamentos: Optional[list[dict[str, Any]]] = None,
+) -> pd.DataFrame:
     """Transforma a lista de `IndicadorQuestaoSchema` da API em DataFrame sem recalcular métricas."""
     linhas = []
-    acoes_sessao = st.session_state.get("ma_acoes", {})
+    acoes_por_questao: dict[str, str] = {}
+    for ac in acompanhamentos or []:
+        if not isinstance(ac, dict):
+            continue
+        desc = str(ac.get("descricao") or "")
+        tipo_ac = str(ac.get("tipo_acao") or "").strip()
+        if desc.startswith("[Questão ") and "]" in desc:
+            cod_q = desc[len("[Questão "):desc.index("]")].strip()
+            texto_q = desc[desc.index("]") + 1:].strip()
+            acoes_por_questao[cod_q] = f"{tipo_ac}: {texto_q}" if tipo_ac else texto_q
 
     for q in questoes_api:
         cod = str(q.get("codigo_questao") or "")
@@ -412,7 +398,7 @@ def _construir_dataframe_questoes(questoes_api: list[dict[str, Any]]) -> pd.Data
         taxa = q.get("taxa_acerto_percentual")
         taxa_num = float(taxa) if taxa is not None else 0.0
 
-        acao_reg = acoes_sessao.get(cod)
+        acao_reg = acoes_por_questao.get(cod)
         acao_sugerida = (
             f"Registrada: {acao_reg}"
             if acao_reg
@@ -531,59 +517,9 @@ def _dialogo_inserir_avaliacao(contexto_api: Optional[dict[str, Any]] = None):
                 st.error(resp.erro or "Não foi possível cadastrar a avaliação.")
         return
 
-    # Fallback de sessão local quando o backend não está conectado
-    disciplinas = _disciplinas_permitidas()
-    if not disciplinas:
-        st.warning("Nenhuma disciplina atribuída ao seu perfil.")
-        return
-
-    nome = st.text_input("Nome da avaliação", key="ma_novo_nome")
-    disciplina = st.selectbox(
-        "Disciplina",
-        disciplinas,
-        key="ma_nova_disciplina",
+    st.warning(
+        "Não há sessão autenticada conectada ao servidor para cadastrar avaliações."
     )
-    turmas = _turmas_permitidas(disciplina)
-    if not turmas:
-        st.info("Nenhuma turma disponível para esta disciplina.")
-        return
-
-    if st.session_state.get("ma_nova_turma") not in turmas:
-        st.session_state["ma_nova_turma"] = turmas[0]
-
-    turma = st.selectbox("Turma", turmas, key="ma_nova_turma")
-    tipo = st.selectbox("Tipo", mock_data.TIPOS_QUESTAO, key="ma_novo_tipo")
-    quantidade = st.number_input(
-        "Número de questões",
-        min_value=1,
-        max_value=100,
-        value=10,
-        step=1,
-        key="ma_nova_quantidade",
-    )
-
-    if st.button("Salvar", type="primary", key="ma_salvar_avaliacao"):
-        if not nome.strip():
-            st.error("Informe o nome da avaliação.")
-            return
-
-        st.session_state.setdefault("ma_avaliacoes_criadas", []).append({
-            "Nome": nome.strip(),
-            "Disciplina": disciplina,
-            "Turma": turma,
-            "Tipo": tipo,
-            "Questões": int(quantidade),
-            "Professor": (
-                st.session_state.get("professor_atual")
-                if st.session_state.get("perfil") == "professor"
-                else None
-            ),
-        })
-
-        st.session_state["ma_aviso"] = (
-            f'Avaliação "{nome.strip()}" cadastrada nesta sessão. Aguardando resultados.'
-        )
-        st.rerun()
 
 
 @st.dialog("Registrar ação pedagógica")
@@ -592,7 +528,7 @@ def _dialogo_registrar_acao(
     turma_id: Optional[str] = None,
     disciplina_id: Optional[str] = None,
 ):
-    """Permite registrar uma ação pedagógica vinculada à questão/avaliação."""
+    """Registra uma ação pedagógica persistida no backend (`POST /api/v1/acompanhamentos`)."""
     st.markdown(f"**Questão:** `{nome_questao}`")
 
     tipo_acao = st.selectbox(
@@ -615,23 +551,25 @@ def _dialogo_registrar_acao(
             st.error("Descreva a ação pedagógica (mínimo de 3 caracteres) antes de salvar.")
             return
 
-        descricao_completa = f"[Questão {nome_questao}] {texto.strip()}"
-        if possui_sessao_api_ativa() and turma_id:
-            resp = registrar_acompanhamento_pedagogico_api(
-                turma_id=str(turma_id),
-                disciplina_id=str(disciplina_id) if disciplina_id else None,
-                tipo_acao=tipo_acao,
-                descricao=descricao_completa,
+        if not possui_sessao_api_ativa() or not turma_id:
+            st.error(
+                "É necessário estar autenticado no servidor e com uma turma selecionada para registrar acompanhamentos."
             )
-            if not resp.ok:
-                st.error(resp.erro or "Erro ao salvar acompanhamento no servidor.")
-                return
+            return
 
-        st.session_state.setdefault("ma_acoes", {})[nome_questao] = (
-            f"{tipo_acao}: {texto.strip()}"
+        descricao_completa = f"[Questão {nome_questao}] {texto.strip()}"
+        resp = registrar_acompanhamento_pedagogico_api(
+            turma_id=str(turma_id),
+            disciplina_id=str(disciplina_id) if disciplina_id else None,
+            tipo_acao=tipo_acao,
+            descricao=descricao_completa,
         )
+        if not resp.ok:
+            st.error(resp.erro or "Erro ao salvar acompanhamento no servidor.")
+            return
+
         st.session_state["ma_aviso"] = (
-            f"Ação pedagógica registrada para a questão {nome_questao}."
+            f"Ação pedagógica registrada no servidor para a questão {nome_questao}."
         )
         st.rerun()
 
@@ -749,9 +687,8 @@ def _painel_questao(questao_item: dict[str, Any]):
         st.markdown("#### Interpretação pedagógica")
         st.write(_interpretar_questao(questao_item))
 
-        acao = st.session_state.get("ma_acoes", {}).get(cod_questao)
-        if acao:
-            st.caption(f"Ação registrada: {acao}")
+        if questao_item.get("_acao_registrada"):
+            st.caption(f"Ação registrada: {questao_item['_acao_registrada']}")
 
         if st.button(
             "Registrar ação pedagógica",
@@ -772,6 +709,7 @@ def _painel_questao(questao_item: dict[str, Any]):
 def _renderizar_painel_indicadores_reais(
     indicadores_payload: dict[str, Any],
     questao_filtro_codigo: Optional[str] = None,
+    acompanhamentos: Optional[list[dict[str, Any]]] = None,
 ):
     """Exibe os cartões de resumo, os 6 gráficos analíticos (Bloco C) e a tabela interativa."""
     questoes_todas: list[dict[str, Any]] = list(
@@ -850,7 +788,10 @@ def _renderizar_painel_indicadores_reais(
             "Entrada de Dados para preencher os gráficos de desempenho."
         )
 
-    df_questoes = _construir_dataframe_questoes(questoes_exibidas)
+    df_questoes = _construir_dataframe_questoes(
+        questoes_exibidas,
+        acompanhamentos=acompanhamentos,
+    )
 
     # Sincroniza seleção de questão via filtro superior ou clique na tabela
     if questao_filtro_codigo and questao_filtro_codigo != "Todas as questões":
@@ -1312,6 +1253,7 @@ def _renderizar_modo_api(contexto_api: dict[str, Any]):
     _renderizar_painel_indicadores_reais(
         dados_indicadores,
         questao_filtro_codigo=questao_filtro,
+        acompanhamentos=contexto_api.get("acompanhamentos"),
     )
 
 

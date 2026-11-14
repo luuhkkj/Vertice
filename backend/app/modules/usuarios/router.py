@@ -4,14 +4,15 @@ Nota de Segurança: Não existe endpoint público para criação de administrado
 A criação de usuários exige autenticação com papel de administrador.
 """
 
+from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import require_admin, require_gestor_ou_admin
 from app.database.connection import get_db
-from app.modules.usuarios.models import Usuario
+from app.modules.usuarios.models import PapelUsuario, Usuario
 from app.modules.usuarios.schemas import (
     UsuarioCreate,
     UsuarioResponse,
@@ -46,13 +47,31 @@ def criar_usuario(
     summary="Listar usuários (Administrador ou Gestor)",
 )
 def listar_usuarios(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=200),
+    papel: Optional[PapelUsuario] = Query(
+        default=None,
+        description="Filtra opcionalmente por papel (administrador, gestor ou professor).",
+    ),
+    apenas_ativos: bool = Query(
+        default=False,
+        description="Quando verdadeiro, retorna apenas usuários ativos.",
+    ),
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_gestor_ou_admin),
+    current_user: Usuario = Depends(require_gestor_ou_admin),
 ) -> list[Usuario]:
-    """Lista os usuários cadastrados. Permitido para `administrador` e `gestor`."""
-    return UsuarioService.listar_usuarios(db, skip=skip, limit=limit)
+    """
+    Lista usuários respeitando o escopo: `administrador` vê todos;
+    `gestor` vê os usuários vinculados à sua escola (e professores multi-escola sem vínculo fixo).
+    """
+    return UsuarioService.listar_usuarios(
+        db,
+        skip=skip,
+        limit=limit,
+        current_user=current_user,
+        papel=papel,
+        apenas_ativos=apenas_ativos,
+    )
 
 
 @router.get(
@@ -63,10 +82,10 @@ def listar_usuarios(
 def obter_usuario(
     usuario_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_gestor_ou_admin),
+    current_user: Usuario = Depends(require_gestor_ou_admin),
 ) -> Usuario:
-    """Retorna os detalhes de um usuário pelo ID."""
-    return UsuarioService.obter_por_id(db, usuario_id)
+    """Retorna os detalhes de um usuário pelo ID respeitando o escopo do solicitante."""
+    return UsuarioService.obter_por_id(db, usuario_id, current_user=current_user)
 
 
 @router.patch(

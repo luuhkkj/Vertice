@@ -3,7 +3,7 @@
 import streamlit as st
 
 from components.auth import painel_boas_vindas
-from data.api_client import autenticar_usuario_api
+from data.api_client import autenticar_usuario_api, registrar_usuario_sessao
 
 
 def render():
@@ -12,8 +12,8 @@ def render():
 
     with col_esquerda:
         painel_boas_vindas(
-            "Não tem uma conta ainda?",
-            "Cadastro",
+            "Precisa de uma conta?",
+            "Solicitar acesso",
             "cadastro",
         )
 
@@ -21,6 +21,12 @@ def render():
         with st.container(key="painel_azul"):
             with st.container(key="auth_formulario"):
                 st.html('<div class="auth-form-titulo">Login</div>')
+
+                if st.session_state.get("sessao_api_expirada"):
+                    st.warning(
+                        st.session_state.get("mensagem_sessao_expirada")
+                        or "Sua sessão expirou. Faça login novamente."
+                    )
 
                 email = st.text_input(
                     "Email",
@@ -34,7 +40,7 @@ def render():
                     key="login_senha",
                 )
 
-                st.html('<div class="auth-esqueceu">Esqueceu a senha?</div>')
+                st.html('<div class="auth-esqueceu">Acesso restrito a contas institucionais.</div>')
 
                 if st.button("Login", type="primary", key="btn_login"):
                     if not email.strip() or not senha:
@@ -46,21 +52,7 @@ def render():
 
                     if resp.ok and isinstance(resp.dados, dict):
                         usuario = resp.dados.get("usuario") or {}
-                        papel = str(usuario.get("papel", "professor")).lower()
-                        st.session_state["perfil"] = (
-                            "administrador"
-                            if papel in ("administrador", "gestor")
-                            else "professor"
-                        )
-                        st.session_state["papel_api"] = papel
-                        st.session_state["professor_atual"] = (
-                            usuario.get("nome_completo")
-                            if papel == "professor"
-                            else None
-                        )
-                        st.session_state["email_atual"] = usuario.get(
-                            "email", email.strip().lower()
-                        )
+                        registrar_usuario_sessao(usuario, email_fallback=email)
                         st.session_state["logado"] = True
                         st.rerun()
                     elif resp.indisponivel:

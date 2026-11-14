@@ -145,21 +145,8 @@ HTML = """
                     required
                 >
 
-                <label for="v-login-perfil">
-                    Tipo de acesso
-                </label>
-
-                <select id="v-login-perfil">
-                    <option value="administrador">
-                        Administrador
-                    </option>
-                    <option value="professor">
-                        Professor
-                    </option>
-                </select>
-
                 <p class="v-forgot">
-                    Esqueceu a senha?
+                    O perfil de acesso é definido automaticamente pela sua conta institucional.
                 </p>
 
                 <p
@@ -183,61 +170,21 @@ HTML = """
 
         <div class="v-form v-form-register">
 
-            <h2>Cadastro</h2>
+            <h2>Acesso Institucional</h2>
 
             <div class="v-fields">
-
-                <label for="v-cad-nome">Nome</label>
-
-                <input
-                    id="v-cad-nome"
-                    type="text"
-                    placeholder="Insira o seu nome"
-                    autocomplete="name"
-                >
-
-                <label for="v-cad-email">Email</label>
-
-                <input
-                    id="v-cad-email"
-                    type="email"
-                    placeholder="Insira o seu e-mail"
-                    autocomplete="email"
-                >
-
-                <label for="v-cad-senha">Senha</label>
-
-                <input
-                    id="v-cad-senha"
-                    type="password"
-                    placeholder="********"
-                    autocomplete="new-password"
-                >
-
-                <label for="v-cad-confirmar">
-                    Confirmar senha
-                </label>
-
-                <input
-                    id="v-cad-confirmar"
-                    type="password"
-                    placeholder="********"
-                    autocomplete="new-password"
-                >
-
-                <p
-                    class="v-error"
-                    id="v-cadastro-erro"
-                    role="alert"
-                    aria-live="polite"
-                ></p>
+                <p style="font-size: 14px; line-height: 1.6; color: #f7f4ed; margin: 8px 0 18px 0;">
+                    Por segurança e conformidade com a LGPD, o Vértice não permite autocadastro público.
+                    Solicite ao Administrador institucional o cadastro da sua conta (Gestor ou Professor)
+                    ou entre com suas credenciais já habilitadas.
+                </p>
 
                 <button
                     class="v-submit"
                     id="v-cadastrar"
                     type="button"
                 >
-                    Cadastrar
+                    Ir para Login
                 </button>
 
             </div>
@@ -768,8 +715,10 @@ export default function(component) {
             destino === "cadastro"
         );
 
-        el("v-cadastro-erro").textContent = "";
-        el("v-login-erro").textContent = "";
+        const loginErro = el("v-login-erro");
+        if (loginErro) {
+            loginErro.textContent = "";
+        }
     }
 
     el("v-ir-cadastro").onclick = () => {
@@ -785,7 +734,6 @@ export default function(component) {
         const campoEmail = el("v-login-email");
         const email = campoEmail.value.trim();
         const senha = el("v-login-senha").value;
-        const perfil = el("v-login-perfil").value;
         const erro = el("v-login-erro");
 
         if (!email || !senha) {
@@ -805,48 +753,13 @@ export default function(component) {
         setTriggerValue("submit", {
             tipo: "login",
             email: email,
-            senha: senha,
-            perfil: perfil
+            senha: senha
         });
     };
 
-    // Validação inicial do cadastro.
+    // Retorno ao login a partir do aviso de acesso institucional.
     el("v-cadastrar").onclick = () => {
-        const nome = el("v-cad-nome").value.trim();
-        const campoEmail = el("v-cad-email");
-        const email = campoEmail.value.trim();
-        const senha = el("v-cad-senha").value;
-        const confirmar = el("v-cad-confirmar").value;
-
-        const erro = el("v-cadastro-erro");
-
-        if (!nome || !email || !senha || !confirmar) {
-            erro.textContent =
-                "Preencha todos os campos.";
-            return;
-        }
-
-        if (!campoEmail.checkValidity()) {
-            erro.textContent =
-                "Informe um e-mail válido.";
-            return;
-        }
-
-        if (senha !== confirmar) {
-            erro.textContent =
-                "As senhas não coincidem.";
-            return;
-        }
-
-        erro.textContent = "";
-
         trocarTela("login");
-
-        window.setTimeout(() => {
-            setTriggerValue("submit", {
-                tipo: "cadastro"
-            });
-        }, 950);
     };
 }
 """
@@ -861,9 +774,15 @@ componente_auth = st.components.v2.component(
 
 
 def render():
-    """Renderiza Login e Cadastro na mesma interface."""
+    """Renderiza a autenticação institucional integrada ao backend."""
 
     _estilos_pagina()
+
+    if st.session_state.get("sessao_api_expirada"):
+        st.warning(
+            st.session_state.get("mensagem_sessao_expirada")
+            or "Sua sessão expirou. Faça login novamente para continuar."
+        )
 
     with st.container(key="vertice_auth_tela"):
         resultado = componente_auth(
@@ -881,33 +800,16 @@ def render():
         return
 
     if acao.get("tipo") == "login":
-        from data.api_client import autenticar_usuario_api
+        from data.api_client import autenticar_usuario_api, registrar_usuario_sessao
 
-        perfil = acao.get("perfil", "administrador")
         email = acao.get("email", "").strip().lower()
         senha = acao.get("senha", "")
-
-        if perfil not in ("administrador", "professor"):
-            st.error("Tipo de acesso inválido.")
-            return
 
         if email and senha:
             resp = autenticar_usuario_api(email, senha)
             if resp.ok and isinstance(resp.dados, dict):
                 usuario = resp.dados.get("usuario") or {}
-                papel_api = str(usuario.get("papel", perfil)).lower()
-                st.session_state["perfil"] = (
-                    "administrador"
-                    if papel_api in ("administrador", "gestor")
-                    else "professor"
-                )
-                st.session_state["papel_api"] = papel_api
-                st.session_state["professor_atual"] = (
-                    usuario.get("nome_completo")
-                    if papel_api == "professor"
-                    else None
-                )
-                st.session_state["email_atual"] = usuario.get("email", email)
+                registrar_usuario_sessao(usuario, email_fallback=email)
                 st.session_state["logado"] = True
                 st.rerun()
                 return
@@ -925,9 +827,6 @@ def render():
 
     elif acao.get("tipo") == "cadastro":
         st.session_state["tela_auth"] = "login"
-
-        st.toast(
-            "Cadastro demonstrativo concluído. "
-            "Os dados ainda não são salvos.",
-            icon="ℹ️",
+        st.info(
+            "O provisionamento de contas no Vértice é realizado exclusivamente pelo Administrador."
         )

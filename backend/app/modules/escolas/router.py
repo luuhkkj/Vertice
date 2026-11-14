@@ -45,10 +45,10 @@ def listar_escolas(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_qualquer_papel),
+    current_user: Usuario = Depends(require_qualquer_papel),
 ) -> list[Escola]:
-    """Lista todas as escolas cadastradas."""
-    return EscolaService.listar_escolas(db, skip=skip, limit=limit)
+    """Lista as escolas acessíveis ao usuário autenticado."""
+    return EscolaService.listar_escolas(db, skip=skip, limit=limit, usuario=current_user)
 
 
 @router.get(
@@ -59,10 +59,10 @@ def listar_escolas(
 def obter_escola(
     escola_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_qualquer_papel),
+    current_user: Usuario = Depends(require_qualquer_papel),
 ) -> Escola:
-    """Retorna os dados de uma escola específica."""
-    return EscolaService.obter_por_id(db, escola_id)
+    """Retorna os dados de uma escola acessível ao usuário autenticado."""
+    return EscolaService.obter_por_id(db, escola_id, usuario=current_user)
 
 
 @router.patch(

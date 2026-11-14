@@ -9,6 +9,7 @@ from components.layout import titulo_pagina
 from components.tabelas import tabela_paginada
 from data.api_client import (
     consultar_previsoes_estudante_api,
+    listar_disciplinas_api,
     listar_estudantes_api,
     listar_previsoes_api,
     listar_turmas_api,
@@ -159,13 +160,32 @@ def render():
         return
 
     resp_turmas = listar_turmas_api()
+    if resp_turmas.sessao_expirada:
+        st.warning(resp_turmas.erro or "Sua sessão expirou. Faça login novamente.")
+        return
+    if resp_turmas.sem_permissao:
+        st.error(resp_turmas.erro or "Permissão insuficiente para consultar turmas.")
+        return
+    if resp_turmas.indisponivel:
+        st.error(resp_turmas.erro or "Backend indisponível no momento.")
+        return
+
     turmas = resp_turmas.dados if (resp_turmas.ok and isinstance(resp_turmas.dados, list)) else []
     opcoes_turma: dict[str, Optional[str]] = {"Todas as turmas": None}
     for t in turmas:
         opcoes_turma[f"{t.get('nome', 'Turma')} ({t.get('ano_letivo', '')})".strip()] = t.get("id")
 
+    resp_discs = listar_disciplinas_api()
+    if resp_discs.sessao_expirada:
+        st.warning(resp_discs.erro or "Sua sessão expirou. Faça login novamente.")
+        return
+    discs = resp_discs.dados if (resp_discs.ok and isinstance(resp_discs.dados, list)) else []
+    opcoes_disc: dict[str, Optional[str]] = {"Todas as disciplinas": None}
+    for d in discs:
+        opcoes_disc[f"{d.get('nome', 'Disciplina')} ({d.get('codigo', '')})".strip()] = d.get("id")
+
     with st.container(key="estudantes_filtros"):
-        c1, c2, c3, c4 = st.columns([2, 2, 1.5, 1.5])
+        c1, c2, c3, c4, c5 = st.columns([1.8, 1.8, 1.8, 1.4, 1.2])
         with c1:
             busca = st.text_input(
                 "Buscar por código anonimizado",
@@ -179,35 +199,83 @@ def render():
                 key="est_turma_api",
             )
         with c3:
+            disc_label = st.selectbox(
+                "Disciplina",
+                options=list(opcoes_disc.keys()),
+                key="est_disc_api",
+            )
+        with c4:
             faixa_sel = st.selectbox(
                 "Faixa preditiva",
                 options=["Todas", "Baixo", "Moderado", "Alto", "Crítico", "Sem previsão"],
                 key="est_faixa_api",
             )
-        with c4:
+        with c5:
             ano_txt = st.text_input(
                 "Ano letivo",
                 value="",
-                placeholder="Ex.: 2025",
+                placeholder="Ex.: 2026",
                 key="est_ano_api",
             )
+        periodo_txt = st.text_input(
+            "Período letivo (opcional)",
+            value="",
+            placeholder="Ex.: 1º Bimestre",
+            key="est_periodo_api",
+        )
 
     ano_val = int(ano_txt.strip()) if ano_txt.strip().isdigit() else None
     turma_id_sel = opcoes_turma.get(turma_label)
+    disc_id_sel = opcoes_disc.get(disc_label)
+    periodo_val = periodo_txt.strip() or None
+
+    limite_servidor = 100
+    pagina_servidor = int(st.session_state.get("est_pagina_servidor", 1) or 1)
+    if pagina_servidor < 1:
+        pagina_servidor = 1
+    skip_servidor = (pagina_servidor - 1) * limite_servidor
 
     resp_est = listar_estudantes_api(
         turma_id=turma_id_sel,
+        disciplina_id=disc_id_sel,
         ano_letivo=ano_val,
-        limit=200,
+        periodo_letivo=periodo_val,
+        skip=skip_servidor,
+        limit=limite_servidor,
     )
     if not resp_est.ok:
-        st.error(resp_est.erro or "Erro ao consultar estudantes no servidor.")
+        if resp_est.sessao_expirada:
+            st.warning(resp_est.erro or "Sua sessão expirou. Faça login novamente.")
+        elif resp_est.sem_permissao:
+            st.error(resp_est.erro or "Permissão insuficiente para consultar estudantes.")
+        elif resp_est.indisponivel:
+            st.error(resp_est.erro or "Servidor do Vértice indisponível.")
+        else:
+            st.error(resp_est.erro or "Erro ao consultar estudantes no servidor.")
         return
 
     estudantes = resp_est.dados if isinstance(resp_est.dados, list) else []
+    total_header = (resp_est.headers or {}).get("x-total-count")
+    total_servidor = int(total_header) if (total_header and str(total_header).isdigit()) else len(estudantes)
+    total_paginas_srv = max(1, (total_servidor + limite_servidor - 1) // limite_servidor)
+    if pagina_servidor > total_paginas_srv:
+        st.session_state["est_pagina_servidor"] = 1
+
+    if total_paginas_srv > 1:
+        st.number_input(
+            f"Página no servidor (1–{total_paginas_srv} • {total_servidor} registros no total)",
+            min_value=1,
+            max_value=total_paginas_srv,
+            value=min(pagina_servidor, total_paginas_srv),
+            step=1,
+            key="est_pagina_servidor",
+        )
+
     resp_prev = listar_previsoes_api(
         turma_id=turma_id_sel,
+        disciplina_id=disc_id_sel,
         ano_letivo=ano_val,
+        periodo_letivo=periodo_val,
         limit=500,
     )
     previsoes = resp_prev.dados if (resp_prev.ok and isinstance(resp_prev.dados, list)) else []
@@ -225,7 +293,7 @@ def render():
         col_info, col_dl = st.columns([3, 1])
         with col_info:
             st.caption(
-                f"{len(df_exibicao)} estudante(s) anonimizado(s) no recorte autorizado • "
+                f"{len(df_exibicao)} exibido(s) nesta página (total no escopo: {total_servidor}) • "
                 "Previsões exibidas separadamente de dados observados."
             )
         with col_dl:
@@ -246,7 +314,7 @@ def render():
                 df_exibicao,
                 tamanho_pagina=10,
                 chave="est_tabela_api",
-                reiniciar_quando=(busca, turma_label, faixa_sel, ano_txt),
+                reiniciar_quando=(busca, turma_label, disc_label, faixa_sel, ano_txt, periodo_txt, pagina_servidor),
             )
 
     if not df_filtrado.empty:

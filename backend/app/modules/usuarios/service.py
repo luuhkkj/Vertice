@@ -69,18 +69,69 @@ class UsuarioService:
             ) from exc
 
     @staticmethod
-    def obter_por_id(db: Session, usuario_id: uuid.UUID) -> Usuario:
+    def _garantir_escopo_consulta_gestor(
+        current_user: Optional[Usuario],
+        alvo: Optional[Usuario] = None,
+    ) -> Optional[uuid.UUID]:
+        """Valida que um gestor só acesse usuários da própria escola (ou professores multi-escola sem vínculo fixo)."""
+        if current_user is None or current_user.papel == PapelUsuario.ADMINISTRADOR:
+            return None
+        if current_user.papel != PapelUsuario.GESTOR:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permissão insuficiente para consultar usuários.",
+            )
+        if current_user.escola_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Gestor sem unidade escolar vinculada não pode listar ou consultar usuários de escola.",
+            )
+        if alvo is not None:
+            mesmo_escopo = alvo.escola_id == current_user.escola_id
+            prof_multi = (
+                alvo.papel == PapelUsuario.PROFESSOR and alvo.escola_id is None
+            )
+            if not (mesmo_escopo or prof_multi):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: usuário pertence a outro escopo escolar ou administrativo.",
+                )
+        return current_user.escola_id
+
+    @staticmethod
+    def obter_por_id(
+        db: Session,
+        usuario_id: uuid.UUID,
+        current_user: Optional[Usuario] = None,
+    ) -> Usuario:
         usuario = UsuarioRepository.get_by_id(db, usuario_id)
         if usuario is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Usuário não encontrado.",
             )
+        UsuarioService._garantir_escopo_consulta_gestor(current_user, alvo=usuario)
         return usuario
 
     @staticmethod
-    def listar_usuarios(db: Session, skip: int = 0, limit: int = 100) -> list[Usuario]:
-        return UsuarioRepository.list_all(db, skip=skip, limit=limit)
+    def listar_usuarios(
+        db: Session,
+        skip: int = 0,
+        limit: int = 100,
+        current_user: Optional[Usuario] = None,
+        papel: Optional[PapelUsuario] = None,
+        apenas_ativos: bool = False,
+    ) -> list[Usuario]:
+        escola_escopo = UsuarioService._garantir_escopo_consulta_gestor(current_user)
+        return UsuarioRepository.list_filtered(
+            db,
+            escola_id_escopo=escola_escopo,
+            incluir_professores_sem_escola=(escola_escopo is not None),
+            papel=papel,
+            apenas_ativos=apenas_ativos,
+            skip=skip,
+            limit=limit,
+        )
 
     @staticmethod
     def atualizar_usuario(

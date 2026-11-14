@@ -68,6 +68,12 @@ class AtribuicaoService:
         if usuario is not None:
             garantir_acesso_escola(usuario, turma.escola_id)
 
+        if professor.escola_id is not None and professor.escola_id != turma.escola_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Professor vinculado a outra unidade escolar não pode ser associado a esta turma.",
+            )
+
         if dados.disciplina_id is not None:
             disciplina = DisciplinaRepository.get_by_id(db, dados.disciplina_id)
             if disciplina is None:

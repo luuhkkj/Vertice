@@ -182,6 +182,28 @@ class ImportacaoService:
         return ImportacaoService._construir_resposta_previa(lote_salvo)
 
     @staticmethod
+    def listar_lotes(
+        db: Session,
+        usuario_autenticado: Usuario,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> list[LoteImportacaoResumoResponse]:
+        """Lista lotes de importação visíveis para o usuário autenticado conforme seu escopo."""
+        garantir_escopo_importacao_usuario(usuario_autenticado)
+
+        if usuario_autenticado.papel == PapelUsuario.GESTOR:
+            assert usuario_autenticado.escola_id is not None
+            lotes = ImportacaoRepository.list_by_escola(
+                db, usuario_autenticado.escola_id, skip=skip, limit=limit
+            )
+        else:
+            lotes = ImportacaoRepository.list_by_usuario(
+                db, usuario_autenticado.id, skip=skip, limit=limit
+            )
+
+        return [LoteImportacaoResumoResponse.model_validate(lote) for lote in lotes]
+
+    @staticmethod
     def obter_resumo_lote(
         db: Session,
         lote_id: uuid.UUID,

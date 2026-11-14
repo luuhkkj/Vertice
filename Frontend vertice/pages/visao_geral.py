@@ -14,6 +14,7 @@ from components.graficos import (
 from components.layout import titulo_pagina
 from data.api_client import (
     consultar_indicadores_gerais_api,
+    listar_disciplinas_api,
     listar_previsoes_api,
     listar_turmas_api,
     possui_sessao_api_ativa,
@@ -281,25 +282,50 @@ def render():
         return
 
     resp_turmas = listar_turmas_api()
+    if resp_turmas.sessao_expirada:
+        st.warning(resp_turmas.erro or "Sua sessão expirou. Faça login novamente.")
+        return
+    if resp_turmas.sem_permissao:
+        st.error(resp_turmas.erro or "Permissão insuficiente para consultar turmas.")
+        return
+    if resp_turmas.indisponivel:
+        st.error(resp_turmas.erro or "Backend indisponível no momento.")
+        return
+
     turmas = resp_turmas.dados if (resp_turmas.ok and isinstance(resp_turmas.dados, list)) else []
     opcoes_turma: dict[str, Optional[str]] = {"Todas as turmas": None}
     for t in turmas:
         label = f"{t.get('nome', 'Turma')} ({t.get('ano_letivo', '')})".strip()
         opcoes_turma[label] = t.get("id")
 
+    resp_discs = listar_disciplinas_api()
+    if resp_discs.sessao_expirada:
+        st.warning(resp_discs.erro or "Sua sessão expirou. Faça login novamente.")
+        return
+    discs = resp_discs.dados if (resp_discs.ok and isinstance(resp_discs.dados, list)) else []
+    opcoes_disc: dict[str, Optional[str]] = {"Todas as disciplinas": None}
+    for d in discs:
+        opcoes_disc[f"{d.get('nome', 'Disciplina')} ({d.get('codigo', '')})".strip()] = d.get("id")
+
     with st.container(key="visao_geral_filtros"):
-        col_turma, col_ano, col_periodo, col_versao = st.columns(4)
+        col_turma, col_disc, col_ano, col_periodo, col_versao = st.columns(5)
         with col_turma:
             turma_label = st.selectbox(
                 "Turma",
                 options=list(opcoes_turma.keys()),
                 key="vg_turma_api",
             )
+        with col_disc:
+            disc_label = st.selectbox(
+                "Disciplina",
+                options=list(opcoes_disc.keys()),
+                key="vg_disc_api",
+            )
         with col_ano:
             ano_str = st.text_input(
                 "Ano letivo (opcional)",
                 value="",
-                placeholder="Ex.: 2025",
+                placeholder="Ex.: 2026",
                 key="vg_ano_api",
             )
         with col_periodo:
@@ -322,15 +348,19 @@ def render():
         ano_val = int(ano_str.strip())
 
     turma_id_sel = opcoes_turma.get(turma_label)
+    disc_id_sel = opcoes_disc.get(disc_label)
     resp_ind = consultar_indicadores_gerais_api(
         turma_id=turma_id_sel,
+        disciplina_id=disc_id_sel,
         ano_letivo=ano_val,
         periodo_letivo=periodo_str.strip() or None,
         modelo_versao=versao_str.strip() or None,
     )
 
     if not resp_ind.ok:
-        if resp_ind.sem_permissao:
+        if resp_ind.sessao_expirada:
+            st.warning(resp_ind.erro or "Sua sessão expirou. Faça login novamente.")
+        elif resp_ind.sem_permissao:
             st.error(resp_ind.erro or "Sem permissão para consultar este recorte.")
         elif resp_ind.indisponivel:
             st.error(resp_ind.erro or "Backend indisponível no momento.")
@@ -481,6 +511,7 @@ def render():
     if possui_risco:
         resp_prev = listar_previsoes_api(
             turma_id=turma_id_sel,
+            disciplina_id=disc_id_sel,
             ano_letivo=ano_val,
             periodo_letivo=periodo_str.strip() or None,
             modelo_versao=versao_str.strip() or None,
