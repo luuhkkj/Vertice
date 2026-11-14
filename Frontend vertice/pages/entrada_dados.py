@@ -2,7 +2,6 @@
 """Tela: Entrada de Dados — Importação em duas etapas, prévia, confirmação, descarte e histórico real."""
 
 import base64
-from hashlib import sha256
 from html import escape
 from io import BytesIO
 from pathlib import Path
@@ -1101,13 +1100,13 @@ def _render_historico_importacoes() -> None:
     st.dataframe(pd.DataFrame(linhas), hide_index=True, width="stretch")
 
     pendentes = [
-        l for l in lotes
-        if isinstance(l, dict) and str(l.get("status") or "").lower() in ("validado", "com_erros")
+        lote for lote in lotes
+        if isinstance(lote, dict) and str(lote.get("status") or "").lower() in ("validado", "com_erros")
     ]
     if pendentes:
         mapa_lotes = {
-            f"{l.get('nome_arquivo')} ({str(l.get('status')).upper()}) — {str(l.get('id'))[:8]}": str(l.get("id"))
-            for l in pendentes
+            f"{lote.get('nome_arquivo')} ({str(lote.get('status')).upper()}) — {str(lote.get('id'))[:8]}": str(lote.get("id"))
+            for lote in pendentes
         }
         escolha = st.selectbox(
             "Abrir lote pendente para revisão/confirmação/descarte",

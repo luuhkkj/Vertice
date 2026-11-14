@@ -19,11 +19,9 @@ from sqlalchemy.orm import Session
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.avaliacoes.models import (
     FaixaDificuldadeQuestao,
-    StatusAvaliacao,
     TipoQuestao,
 )
 from app.modules.avaliacoes.repository import AvaliacaoRepository
-from app.modules.avaliacoes.service import AvaliacaoService
 from app.modules.disciplinas.models import Disciplina
 from app.modules.escolas.models import Escola
 from app.modules.estudantes.models import SituacaoFinalPeriodo
@@ -34,7 +32,6 @@ from app.modules.importacao.schemas import (
     RelatorioValidacaoSchema,
 )
 from app.modules.participacao.models import (
-    StatusAtividade,
     StatusEntregaAtividade,
 )
 from app.modules.participacao.repository import ParticipacaoRepository

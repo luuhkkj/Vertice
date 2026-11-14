@@ -16,7 +16,6 @@ Cobre integralmente:
 
 from datetime import datetime, timedelta, timezone
 import importlib
-from types import SimpleNamespace
 from typing import Any
 import uuid
 

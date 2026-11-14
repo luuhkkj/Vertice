@@ -1,4 +1,7 @@
-"""Estruturas vazias aguardando os dados do backend."""
+"""
+Estruturas vazias mantidas apenas para compatibilidade retroativa com testes automatizados legados.
+Todas as páginas ativas do frontend utilizam exclusivamente os dados reais da API via `data/api_client.py`.
+"""
 import pandas as pd
 
 SERIES = []
@@ -30,12 +33,18 @@ INTERPRETACAO_POR_DIFICULDADE = {
 }
 
 def _classificar_entrega(percentual):
-    if percentual >= 90: return "Ótima"
-    if percentual >= 70: return "Boa"
-    if percentual >= 50: return "Atenção"
+    if percentual >= 90:
+        return "Ótima"
+    if percentual >= 70:
+        return "Boa"
+    if percentual >= 50:
+        return "Atenção"
     return "Crítica"
 
+
 def _classificar_status_entrega(percentual):
-    if percentual >= 75: return "Estável"
-    if percentual >= 50: return "Atenção"
+    if percentual >= 75:
+        return "Estável"
+    if percentual >= 50:
+        return "Atenção"
     return "Risco"

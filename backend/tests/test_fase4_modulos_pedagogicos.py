@@ -10,24 +10,16 @@ Suíte completa de testes automatizados da Fase 4:
 
 from datetime import date, timedelta
 from typing import Any
-import uuid
 
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
-from app.database.connection import engine as pg_engine
-from app.modules.acompanhamento.models import (
-    AcompanhamentoPedagogico,
-    OrigemAcompanhamento,
-)
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.avaliacoes.models import (
     Avaliacao,
-    FaixaDificuldadeQuestao,
     QuestaoAvaliacao,
     RespostaAvaliacao,
-    TipoQuestao,
 )
 from app.modules.disciplinas.models import Disciplina
 from app.modules.escolas.models import Escola
@@ -37,7 +29,6 @@ from app.modules.estudantes.models import (
     NotaDisciplina,
     SituacaoFinalPeriodo,
 )
-from app.modules.importacao.models import StatusLoteImportacao, TipoImportacao
 from app.modules.participacao.models import (
     Atividade,
     EntregaAtividade,

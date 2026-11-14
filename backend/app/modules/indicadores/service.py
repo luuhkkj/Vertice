@@ -17,7 +17,6 @@ from sqlalchemy.orm import Session
 
 from app.modules.avaliacoes.models import (
     ALTERNATIVAS_VALIDAS_GABARITO,
-    Avaliacao,
     FaixaDificuldadeQuestao,
     TipoQuestao,
 )

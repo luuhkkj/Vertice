@@ -1,9 +1,9 @@
 """
-Módulo de Indicadores Educacionais e Estatísticas Consolidadas.
-Futura implementação de:
-- router.py: endpoints para dashboards, gráficos e painéis analíticos
-- schemas.py: schemas de métricas consolidadas (médias, quartis, dispersão)
-- service.py: computação de KPIs pedagógicos
-- repository.py: views e consultas analíticas otimizadas
-"""
+Módulo de Indicadores Educacionais e Agregações Analíticas.
 
+Componentes implementados:
+- router.py: endpoints /indicadores/gerais, /indicadores/avaliacoes e /indicadores/participacao
+- schemas.py: contratos de KPIs escolares, Mapa de Acertos (A–E/BRANCO) e entregas de atividades
+- service.py: consolidação de métricas pedagógicas, risco preditivo e respeito ao isolamento multi-escola
+- repository.py: consultas agregadas de boletins, avaliações, entregas e previsões de risco
+"""

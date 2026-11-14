@@ -1,10 +1,10 @@
 """
-Módulo de Participação, Frequência e Engajamento.
-Futura implementação de:
-- router.py: taxas de presença e adesão em avaliações e aulas
-- schemas.py: schemas de registro e agregação de presença
-- models.py: modelos ORM de Frequência e Participação
-- service.py: cálculo de índices de infrequência e risco de abandono
-- repository.py: persistência e agrupamento temporal de participação
-"""
+Módulo de Participação, Atividades e Entregas Escolares.
 
+Componentes implementados:
+- router.py: cadastro de atividades, geração de entregas esperadas e registro/edição de entregas
+- schemas.py: contratos de Atividade, EntregaAtividade e consolidação de pendências/não entregas
+- models.py: modelos ORM Atividade, EntregaAtividade, StatusAtividade e StatusEntregaAtividade
+- service.py: regras de cálculo de entrega no prazo, atraso, pendência e não entrega após prazo
+- repository.py: consultas de atividades e entregas por turma, disciplina, estudante e período
+"""

@@ -20,6 +20,7 @@ from app.integrations.prediction.service import PredictionService
 
 __all__ = [
     "CAMPOS_PROIBIDOS_PREDICAO",
+    "CATALOGO_METADADOS_TECNICOS_PERMITIDOS",
     "CATALOGO_VARIAVEIS_PREDITIVAS",
     "CredencialIntegracaoPredicao",
     "FaixaRisco",
@@ -27,5 +28,6 @@ __all__ = [
     "PrevisaoRisco",
     "TipoPrevisao",
     "router",
+    "validar_metadados_tecnicos",
     "validar_variaveis_contra_leakage",
 ]

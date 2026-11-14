@@ -12,7 +12,7 @@ Características de segurança e isolamento:
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 import os
 from pathlib import Path
 import subprocess
@@ -26,7 +26,7 @@ from psycopg import sql
 import pytest
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine, URL, make_url
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings

@@ -2,6 +2,7 @@
 Camada de serviço para regras de negócio de Usuários.
 """
 
+from typing import Optional
 import uuid
 
 from fastapi import HTTPException, status

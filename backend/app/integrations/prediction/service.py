@@ -22,7 +22,6 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import require_acesso_pedagogico
 from app.integrations.prediction.leakage import (
     CAMPOS_PROIBIDOS_PREDICAO,
     CATALOGO_METADADOS_TECNICOS_PERMITIDOS,
@@ -57,7 +56,7 @@ from app.integrations.prediction.schemas import (
     VersaoModeloDisponivelSchema,
 )
 from app.modules.escolas.models import Escola
-from app.modules.estudantes.models import BoletimPeriodo, Estudante
+from app.modules.estudantes.models import Estudante
 from app.modules.estudantes.repository import EstudanteRepository
 from app.modules.estudantes.service import EstudanteService
 from app.modules.indicadores.repository import IndicadoresRepository

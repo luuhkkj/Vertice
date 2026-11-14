@@ -6,7 +6,7 @@ from typing import Optional
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user

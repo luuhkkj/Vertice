@@ -24,14 +24,12 @@ from __future__ import annotations
 
 from datetime import date
 import importlib
-from datetime import date
 import importlib.util
 import io
 import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
-import uuid
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -46,15 +44,15 @@ from app.main import app as fastapi_app  # noqa: F401 - garante ordem segura de 
 from app.modules.acompanhamento.models import AcompanhamentoPedagogico
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.avaliacoes.models import Avaliacao, QuestaoAvaliacao, RespostaAvaliacao
-from app.modules.estudantes.models import BoletimPeriodo, Estudante, NotaDisciplina
-from app.modules.importacao.models import LoteImportacao, StatusLoteImportacao
+from app.modules.estudantes.models import BoletimPeriodo, Estudante
+from app.modules.importacao.models import StatusLoteImportacao
 from app.modules.importacao.service import ImportacaoService
 from app.modules.importacao.validator import (
     COLUNAS_MODELO_ATIVIDADES,
     COLUNAS_MODELO_AVALIACOES,
     COLUNAS_MODELO_DADOS_ESCOLARES,
 )
-from app.modules.participacao.models import Atividade, EntregaAtividade
+from app.modules.participacao.models import Atividade
 from app.modules.usuarios.models import PapelUsuario
 from app.modules.usuarios.schemas import UsuarioCreate
 from app.modules.usuarios.service import UsuarioService

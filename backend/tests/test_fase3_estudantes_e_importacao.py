@@ -1456,7 +1456,6 @@ def test_integracao_postgres_fase3_importacao_isolamento_e_revalidacao() -> None
     from sqlalchemy.orm import sessionmaker
 
     from app.core.config import ENV_FILE_PATH, Settings
-    from app.modules.estudantes.repository import EstudanteRepository
     from app.modules.estudantes.service import EstudanteService
     from app.modules.importacao.service import ImportacaoService
 

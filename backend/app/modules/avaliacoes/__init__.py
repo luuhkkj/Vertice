@@ -1,10 +1,10 @@
 """
-Módulo de Avaliações e Provas.
-Futura implementação de:
-- router.py: cadastro de instrumentos avaliativos, gabaritos e mapas de acertos
-- schemas.py: schemas de avaliações, itens (questões) e notas
-- models.py: modelos ORM de Avaliação, Questão, RespostaEstudante
-- service.py: cálculo de notas, proficiências e matriz de habilidades
-- repository.py: agregação de acertos por habilidade e descritor
-"""
+Módulo de Avaliações, Questões e Respostas Individuais.
 
+Componentes implementados:
+- router.py: endpoints de cadastro e consulta de avaliações, questões e respostas
+- schemas.py: contratos de avaliações, itens (questões) e respostas (incluindo alternativa marcada)
+- models.py: modelos ORM Avaliacao, QuestaoAvaliacao e RespostaAvaliacao
+- service.py: validação de gabarito, correção automática/aberta e controle de escopo pedagógico
+- repository.py: consultas de avaliações, itens e respostas por turma/disciplina/estudante
+"""

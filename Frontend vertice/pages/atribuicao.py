@@ -373,7 +373,7 @@ def _tabela_atribuicoes(
         st.markdown("### Atribuições cadastradas")
 
         exibidas = (
-            [l for l in linhas if l["professor_id"] == professor_id_filtro]
+            [linha for linha in linhas if linha["professor_id"] == professor_id_filtro]
             if professor_id_filtro
             else linhas
         )

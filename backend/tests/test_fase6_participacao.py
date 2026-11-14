@@ -20,9 +20,7 @@ Cobre integralmente os requisitos da seção 11 (Bloco J):
 
 from datetime import date, timedelta
 import importlib
-from types import SimpleNamespace
 from typing import Any
-import uuid
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -30,7 +28,6 @@ from sqlalchemy.orm import Session
 from app.modules.estudantes.models import (
     BoletimPeriodo,
     Estudante,
-    SituacaoFinalPeriodo,
 )
 from app.modules.participacao.models import StatusAtividade
 from tests.test_fase4_modulos_pedagogicos import (
