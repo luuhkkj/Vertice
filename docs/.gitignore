@@ -1,0 +1,5 @@
+# Mantém os PDFs conceituais originais não versionados em docs/,
+# mas permite rastrear os documentos técnicos em Markdown (*.md).
+*
+!.gitignore
+!*.md

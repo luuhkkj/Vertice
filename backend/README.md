@@ -6,7 +6,7 @@ Backend RESTful do sistema **Vértice** para gestão e análise de dados educaci
 
 ## 🛠️ Tecnologias Utilizadas
 
-- **Linguagem:** Python 3.11+
+- **Linguagem:** Python 3.12 (padrão oficial dos Dockerfiles e do CI)
 - **Framework Web:** [FastAPI](https://fastapi.tiangolo.com/) & [Uvicorn](https://www.uvicorn.org/)
 - **Validação e Tipagem:** [Pydantic v2](https://docs.pydantic.dev/) e `pydantic-settings`
 - **Banco de Dados & ORM:** PostgreSQL, [SQLAlchemy 2](https://docs.sqlalchemy.org/) e `psycopg 3`
@@ -61,22 +61,32 @@ backend/
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py                 # Fixtures pytest com banco isolado em memória
+│   ├── postgres/
+│   │   └── test_postgres_integracao.py # Suíte real PostgreSQL + ciclo completo Alembic
 │   ├── test_health.py              # Testes de inicialização, health check e utilitários de segurança
 │   ├── test_auth_and_models.py     # Testes de persistência, autenticação, RBAC e vínculos
 │   ├── test_fase3_estudantes_e_importacao.py # Testes de importação em 2 etapas, autorização, LGPD e histórico
 │   ├── test_fase4_modulos_pedagogicos.py     # Testes de avaliações, participação, acompanhamento e indicadores
 │   ├── test_fase5_mapa_acertos_e_frontend.py # Testes de gabarito, mapa de acertos e integração frontend
 │   ├── test_fase6_participacao.py            # Testes de elegibilidade, entregas, prazos e participação
-│   └── test_fase7_predicao_e_ia.py           # Testes de predição, anti-leakage, contexto IA e auditoria
+│   ├── test_fase7_predicao_e_ia.py           # Testes de predição, anti-leakage, contexto IA e auditoria
+│   ├── test_fase8_integracao_final.py        # Testes de integração final, paginação, E2E e segurança
+│   └── test_api_docs_parity.py               # Verificação automática de paridade OpenAPI x API_ENDPOINTS.md
 ├── alembic/
 │   ├── versions/                   # Migrações versionadas do banco de dados
 │   ├── env.py                      # Script de execução do Alembic conectado ao Base.metadata
 │   ├── script.py.mako              # Template de migração
 │   └── README
+├── docs/
+│   ├── API_ENDPOINTS.md            # Referência completa dos endpoints REST v1
+│   └── FASE7_INTEGRACAO_PREDITIVA_E_IA.md
 ├── .env.example                    # Modelo de variáveis de ambiente
 ├── .gitignore                      # Regras de exclusão do Git
 ├── alembic.ini                     # Configuração base do Alembic
-├── requirements.txt                # Dependências do projeto
+├── Dockerfile                      # Imagem Python 3.12-slim do backend (usuário não-root)
+├── pytest.ini                      # Registro do marker `postgres`
+├── requirements.txt                # Dependências de execução e testes
+├── requirements-dev.txt            # Dependências de desenvolvimento e lint (Ruff)
 └── README.md                       # Documentação do backend
 ```
 
@@ -112,7 +122,7 @@ Exemplo de `backend/.env`:
 
 ```env
 PROJECT_NAME="Vértice Backend API"
-VERSION="0.2.0"
+VERSION="0.2.1"
 ENVIRONMENT="development"
 DEBUG=True
 API_V1_STR="/api/v1"
@@ -213,7 +223,10 @@ Resposta (`200 OK`):
     "nome": "Administrador Vértice",
     "email": "admin@vertice.edu.br",
     "papel": "administrador",
-    "ativo": true
+    "escola_id": null,
+    "ativo": true,
+    "criado_em": "2026-01-01T12:00:00Z",
+    "atualizado_em": "2026-01-01T12:00:00Z"
   }
 }
 ```
@@ -236,8 +249,8 @@ A validação de permissões ocorre integralmente no backend através das depend
 
 | Papel | Permissões no Sistema |
 | :--- | :--- |
-| **`administrador`** | Acesso administrativo de infraestrutura: cria e atualiza usuários (`POST /api/v1/usuarios`, `PATCH /api/v1/usuarios/{id}`) e gerencia cadastros estruturais (escolas, turmas, disciplinas e atribuições). **Não** possui permissão automática para importar datasets escolares. |
-| **`gestor`** | Representa a coordenação escolar: consulta usuários, gerencia turmas/atribuições de sua escola e realiza importação e consulta de datasets escolares exclusivamente para as turmas pertencentes à escola à qual está vinculado (`usuario.escola_id`). Gestores sem escola vinculada têm a importação bloqueada (`HTTP 403`). |
+| **`administrador`** | Acesso administrativo de infraestrutura: cria e atualiza usuários (`POST /api/v1/usuarios`, `PATCH /api/v1/usuarios/{id}`), emite/revoga credenciais de ML e gerencia cadastros estruturais (escolas, turmas, disciplinas e atribuições). **Não** possui acesso a importações, indicadores pedagógicos nem construção de contexto IA (`HTTP 403`). |
+| **`gestor`** | Papel canônico que consolida gestão e coordenação escolar no sistema (não existe papel separado `coordenador` em `PapelUsuario`): consulta usuários, cria/edita turmas, disciplinas e atribuições de sua escola e realiza importação, acompanhamento e consulta de indicadores exclusivamente para a escola vinculada em `usuario.escola_id`. Gestores sem escola vinculada têm operações escolares bloqueadas (`HTTP 403`). |
 | **`professor`** | Acesso restrito ao seu escopo pedagógico: importa datasets e consulta estudantes/históricos **exclusivamente** para as combinações de turma e disciplina às quais está vinculado em `professor_turmas`. Tentativas de importar ou acessar turmas/disciplinas sem vínculo retornam erro de autorização. |
 
 ---
@@ -304,16 +317,20 @@ A entrada de dados de estudantes e históricos escolares ocorre por meio de impo
 #### Exemplo de CSV Fictício Anonimizado
 
 ```csv
-codigo_anonimo,turma,disciplina,ano_letivo,periodo_letivo,frequencia_percentual,faltas,nota,nota_prova,nota_trabalho,historico_reprovacoes,participacao_recuperacao,situacao_final
-EST-2026-001,Turma 1A,MAT,2026,1º Bimestre,95.0,2,8.5,8.0,9.0,0,Nao,
-EST-2026-002,Turma 1A,MAT,2026,1º Bimestre,78.5,8,5.5,5.0,6.0,1,Sim,
-EST-2026-003,Turma 2A,MAT,2026,1º Bimestre,92.0,3,9.0,9.5,8.5,0,Nao,Aprovado
+codigo_anonimo,turma,disciplina,ano_letivo,periodo_letivo,frequencia_percentual,faltas,media_geral,nota,nota_prova,nota_trabalho,historico_reprovacoes,participacao_recuperacao,situacao_final
+EST-2026-001,Turma 1A,MAT,2026,1º Bimestre,95.0,2,8.5,8.5,8.0,9.0,0,Nao,
+EST-2026-002,Turma 1A,MAT,2026,1º Bimestre,78.5,8,5.8,5.5,5.0,6.0,1,Sim,
+EST-2026-003,Turma 2A,MAT,2026,1º Bimestre,92.0,3,9.0,9.0,9.5,8.5,0,Nao,Aprovado
 ```
 
 ### 5. Endpoints de Importação e Estudantes
 
 | Método | Rota | Descrição | Perfis Autorizados |
 | :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/importacoes` | Lista o histórico de lotes de importação no escopo do usuário | `gestor`, `professor` |
+| `GET` | `/api/v1/importacoes/modelos/dados-escolares` | Baixa modelo oficial de Dados Escolares (`?formato=csv\|xlsx`, 14 colunas) | `gestor`, `professor` |
+| `GET` | `/api/v1/importacoes/modelos/avaliacoes` | Baixa modelo oficial de Avaliações (`?formato=csv\|xlsx`, 16 colunas) | `gestor`, `professor` |
+| `GET` | `/api/v1/importacoes/modelos/atividades` | Baixa modelo oficial de Atividades (`?formato=csv\|xlsx`, 12 colunas) | `gestor`, `professor` |
 | `POST` | `/api/v1/importacoes/validar` | Upload (`multipart/form-data`, campo `arquivo`), validação de escopo/LGPD e geração de prévia | `gestor`, `professor` |
 | `GET` | `/api/v1/importacoes/{lote_id}` | Consulta o status e resumo de auditoria do lote | `gestor`, `professor` (escopo próprio) |
 | `GET` | `/api/v1/importacoes/{lote_id}/previa` | Retorna o relatório completo de validação e a prévia dos registros | `gestor`, `professor` (escopo próprio) |
@@ -481,8 +498,17 @@ uvicorn app.main:app --reload --port 8000
 
 - **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **ReDoc:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
+- **OpenAPI JSON:** [http://localhost:8000/api/v1/openapi.json](http://localhost:8000/api/v1/openapi.json)
 
-### Executar a Suíte de Testes Automatizados
+> As rotas de documentação acima permanecem habilitadas por padrão em `app/main.py` (recomendamos restringi-las em ambiente público de produção via reverse proxy).
+
+### Executar Lint e Suíte de Testes Automatizados
+
+- **Lint (Ruff na raiz do repositório, usando `pip install -r backend/requirements-dev.txt`):**
+
+```powershell
+ruff check backend "Frontend vertice"
+```
 
 - **Suíte padrão (SQLite em memória isolado por teste):**
 
@@ -498,4 +524,4 @@ cd backend
 pytest tests/postgres/test_postgres_integracao.py -m postgres -v
 ```
 
-> A referência completa dos endpoints HTTP v1 está documentada em [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md).
+> A referência completa dos endpoints HTTP v1 está documentada em [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md). Para guia completo de Cold Start e manutenção, consulte [../docs/INSTALACAO_E_COLD_START.md](../docs/INSTALACAO_E_COLD_START.md) e [../docs/MANUTENCAO_E_DESENVOLVIMENTO.md](../docs/MANUTENCAO_E_DESENVOLVIMENTO.md).

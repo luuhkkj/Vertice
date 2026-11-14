@@ -17,8 +17,14 @@ Plataforma educacional orientada a dados para acompanhamento longitudinal de est
 Vertice/
 ├── .env.example                     # Modelo de variáveis de ambiente para Docker Compose
 ├── .dockerignore
-├── .github/workflows/ci.yml         # Pipeline CI (SQLite, PostgreSQL + Alembic, Frontend, Compose)
-├── docker-compose.yml               # Orquestração PostgreSQL + Migrate + Backend + Frontend
+├── .github/workflows/ci.yml         # Pipeline CI (Ruff, SQLite, PostgreSQL + Alembic, Frontend, Compose E2E)
+├── docker-compose.yml               # Orquestração PostgreSQL (isolado) + Migrate + Backend + Frontend
+├── docker-compose.postgres-local.yml # Override opcional expondo PostgreSQL apenas em 127.0.0.1
+├── pyproject.toml                   # Configuração global do linter Ruff (Python 3.12)
+├── docs/
+│   ├── INSTALACAO_E_COLD_START.md   # Guia de instalação e bootstrap do zero
+│   ├── MANUTENCAO_E_DESENVOLVIMENTO.md # Fluxo de desenvolvimento, Alembic, backup e deploy
+│   └── ARQUITETURA_E_COMPATIBILIDADE.md # Autoridade técnica, RBAC, fluxos e compatibilidade
 ├── backend/
 │   ├── alembic/versions/            # Migrações Alembic (Fases 2, 3, 4 e 7)
 │   ├── app/
@@ -37,7 +43,9 @@ Vertice/
 │   ├── .env.example
 │   ├── Dockerfile
 │   ├── pytest.ini                   # Registro do marker `postgres`
-│   └── tests/                       # Suíte unitária/integração SQLite e tests/postgres/
+│   ├── requirements.txt
+│   ├── requirements-dev.txt         # Inclui Ruff para lint local e CI
+│   └── tests/                       # Suíte SQLite, paridade OpenAPI e tests/postgres/
 └── Frontend vertice/
     ├── app.py                       # Ponto de entrada Streamlit e roteamento por papel
     ├── config.py                    # Configuração de `VERTICE_API_URL`
@@ -68,9 +76,12 @@ Vertice/
 
 ## Documentação Detalhada
 
-- **Guia do Backend**: [backend/README.md](backend/README.md)
-- **Referência Completa de Endpoints (`v1`)**: [backend/docs/API_ENDPOINTS.md](backend/docs/API_ENDPOINTS.md)
-- **Arquitetura Preditiva e Assistente IA (Fase 7)**: [backend/docs/FASE7_INTEGRACAO_PREDITIVA_E_IA.md](backend/docs/FASE7_INTEGRACAO_PREDITIVA_E_IA.md)
+- **Guia Completo de Instalação e Cold Start (Docker e Local):** [docs/INSTALACAO_E_COLD_START.md](docs/INSTALACAO_E_COLD_START.md)
+- **Guia de Manutenção, Migrações, Testes e Deploy:** [docs/MANUTENCAO_E_DESENVOLVIMENTO.md](docs/MANUTENCAO_E_DESENVOLVIMENTO.md)
+- **Arquitetura, Matriz RBAC e Compatibilidade Histórica:** [docs/ARQUITETURA_E_COMPATIBILIDADE.md](docs/ARQUITETURA_E_COMPATIBILIDADE.md)
+- **Guia do Backend:** [backend/README.md](backend/README.md)
+- **Referência Completa de Endpoints (`v1`):** [backend/docs/API_ENDPOINTS.md](backend/docs/API_ENDPOINTS.md)
+- **Arquitetura Preditiva e Assistente IA (Fase 7):** [backend/docs/FASE7_INTEGRACAO_PREDITIVA_E_IA.md](backend/docs/FASE7_INTEGRACAO_PREDITIVA_E_IA.md)
 
 ---
 
@@ -109,11 +120,18 @@ docker compose exec backend python -m app.scripts.create_admin
 Acessos locais:
 - **Frontend Streamlit**: `http://localhost:8501`
 - **API Backend (Health)**: `http://localhost:8000/health`
-- **Swagger UI** (habilitado apenas se `DEBUG=True` no `.env`): `http://localhost:8000/docs`
+- **Swagger UI / ReDoc / OpenAPI** (habilitados por padrão em `backend/app/main.py`; restrinja externamente em produção): `http://localhost:8000/docs` | `/redoc` | `/api/v1/openapi.json`
+
+> Por segurança, o `docker-compose.yml` **não publica a porta `5432` do PostgreSQL no host** por padrão. Caso precise conectar ferramentas locais (`psql`, DBeaver, pgAdmin), utilize o override vinculado apenas a `127.0.0.1`:
+> ```bash
+> docker compose -f docker-compose.yml -f docker-compose.postgres-local.yml up -d
+> ```
 
 ---
 
 ## Como Executar Localmente (Sem Docker)
+
+> Requer **Python 3.12** e **PostgreSQL 16**. Consulte o passo a passo completo para PowerShell e Bash em [docs/INSTALACAO_E_COLD_START.md](docs/INSTALACAO_E_COLD_START.md).
 
 ### 1. Backend FastAPI + PostgreSQL
 
@@ -121,7 +139,7 @@ Acessos locais:
 cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 ```
 
@@ -146,16 +164,23 @@ streamlit run app.py
 
 ---
 
-## Execução dos Testes Automatizados
+## Execução de Lint e Testes Automatizados
 
-### 1. Suíte Principal (SQLite em memória, sem dependência externa)
+### 1. Lint Estático (Ruff — Backend e Frontend)
+
+```powershell
+# A partir da raiz do repositório (após instalar backend/requirements-dev.txt)
+ruff check backend "Frontend vertice"
+```
+
+### 2. Suíte Principal (SQLite em memória, sem dependência externa)
 
 ```powershell
 cd backend
 pytest -m "not postgres" -v
 ```
 
-### 2. Suíte Real de PostgreSQL + Ciclo Completo Alembic
+### 3. Suíte Real de PostgreSQL + Ciclo Completo Alembic
 
 Executa `alembic upgrade head -> downgrade base -> upgrade head -> check`, valida DDL, tipos nativos, chaves estrangeiras, índice único parcial (`disciplina_id IS NULL`), idempotência, rollback atômico e concorrência entre sessões em banco **isolado** com sufixo `_test` (nunca utiliza o banco principal configurado no `.env`):
 

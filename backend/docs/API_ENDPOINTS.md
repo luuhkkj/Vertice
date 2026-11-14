@@ -8,9 +8,11 @@ Documentação técnica dos endpoints expostos pelo backend FastAPI do **Vértic
 
 ### 1.1 Prefixo e Documentação Interativa
 - **Base API (`API_V1_STR`)**: `/api/v1`
-- **Swagger UI** (disponível apenas quando `DEBUG=True`): `/docs`
-- **ReDoc** (disponível apenas quando `DEBUG=True`): `/redoc`
-- **Esquema OpenAPI** (disponível apenas quando `DEBUG=True`): `/openapi.json`
+- **Swagger UI** (habilitado por padrão em `app/main.py`): `/docs`
+- **ReDoc** (habilitado por padrão em `app/main.py`): `/redoc`
+- **Esquema OpenAPI** (habilitado por padrão em `app/main.py`): `/api/v1/openapi.json`
+
+> **Nota de deploy em produção:** em ambientes expostos à internet pública, recomenda-se restringir ou desabilitar `/docs`, `/redoc` e `/api/v1/openapi.json` via reverse proxy ou configuração específica de aplicação.
 
 ### 1.2 Autenticação
 1. **Usuários Humanos (JWT Bearer)**
