@@ -1,5 +1,6 @@
+"""Tela: Visão geral integrada ao backend real do Vértice (Fase 7)."""
 
-"""Tela: Visão geral."""
+from typing import Any, Optional
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -8,15 +9,25 @@ import streamlit as st
 from components.cards import card, card_kpi
 from components.graficos import (
     grafico_barras_horizontais,
-    grafico_dispersao,
     grafico_rosca,
 )
 from components.layout import titulo_pagina
-from data import mock_data
-from data.atribuicoes import listar_atribuicoes
+from data.api_client import (
+    consultar_indicadores_gerais_api,
+    listar_previsoes_api,
+    listar_turmas_api,
+    possui_sessao_api_ativa,
+)
 
 
 CORES_KPI = ["azul", "verde", "laranja", "vermelho"]
+
+ROTULOS_FAIXAS = {
+    "BAIXO": "Baixo",
+    "MODERADO": "Moderado",
+    "ALTO": "Alto",
+    "CRITICO": "Crítico",
+}
 
 
 def aplicar_responsividade():
@@ -25,8 +36,6 @@ def aplicar_responsividade():
     st.html(
         """
         <style>
-            /* Evita que gráficos e cards ultrapassem a tela. */
-
             .st-key-vg_kpis_responsivos,
             .st-key-vg_graficos_linha_1,
             .st-key-vg_graficos_linha_2,
@@ -36,67 +45,45 @@ def aplicar_responsividade():
                 max-width: 100%;
             }
 
-            .st-key-vg_kpis_responsivos
-            [data-testid="stColumn"],
-            .st-key-vg_graficos_linha_1
-            [data-testid="stColumn"],
-            .st-key-vg_graficos_linha_2
-            [data-testid="stColumn"],
-            .st-key-visao_geral_filtros
-            [data-testid="stColumn"],
-            .st-key-vg_kpis_responsivos
-            [data-testid="column"],
-            .st-key-vg_graficos_linha_1
-            [data-testid="column"],
-            .st-key-vg_graficos_linha_2
-            [data-testid="column"],
-            .st-key-visao_geral_filtros
-            [data-testid="column"] {
+            .st-key-vg_kpis_responsivos [data-testid="stColumn"],
+            .st-key-vg_graficos_linha_1 [data-testid="stColumn"],
+            .st-key-vg_graficos_linha_2 [data-testid="stColumn"],
+            .st-key-visao_geral_filtros [data-testid="stColumn"],
+            .st-key-vg_kpis_responsivos [data-testid="column"],
+            .st-key-vg_graficos_linha_1 [data-testid="column"],
+            .st-key-vg_graficos_linha_2 [data-testid="column"],
+            .st-key-visao_geral_filtros [data-testid="column"] {
                 min-width: 0 !important;
             }
 
-            /* Tablet e janelas intermediárias. */
-
             @media (max-width: 1100px) {
-
-                /* Indicadores: duas colunas. */
-
-                .st-key-vg_kpis_responsivos
-                [data-testid="stHorizontalBlock"] {
+                .st-key-vg_kpis_responsivos [data-testid="stHorizontalBlock"] {
                     display: grid !important;
-                    grid-template-columns:
-                        repeat(2, minmax(0, 1fr)) !important;
-                    gap: 12px !important;
-                    width: 100% !important;
-                }
-
-                /* Gráficos: uma coluna. */
-
-                .st-key-vg_graficos_linha_1
-                [data-testid="stHorizontalBlock"],
-                .st-key-vg_graficos_linha_2
-                [data-testid="stHorizontalBlock"] {
-                    display: grid !important;
-                    grid-template-columns:
-                        minmax(0, 1fr) !important;
+                    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
                     gap: 14px !important;
                     width: 100% !important;
                 }
 
-                /* Os elementos ocupam sua célula inteira. */
+                .st-key-vg_kpis_responsivos
+                [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    min-width: 0 !important;
+                    flex: none !important;
+                }
 
-                .st-key-vg_kpis_responsivos
-                [data-testid="stColumn"],
+                .st-key-vg_graficos_linha_1 [data-testid="stHorizontalBlock"],
+                .st-key-vg_graficos_linha_2 [data-testid="stHorizontalBlock"] {
+                    display: grid !important;
+                    grid-template-columns: minmax(0, 1fr) !important;
+                    gap: 14px !important;
+                    width: 100% !important;
+                }
+
                 .st-key-vg_graficos_linha_1
-                [data-testid="stColumn"],
+                [data-testid="stHorizontalBlock"] > [data-testid="stColumn"],
                 .st-key-vg_graficos_linha_2
-                [data-testid="stColumn"],
-                .st-key-vg_kpis_responsivos
-                [data-testid="column"],
-                .st-key-vg_graficos_linha_1
-                [data-testid="column"],
-                .st-key-vg_graficos_linha_2
-                [data-testid="column"] {
+                [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
                     width: 100% !important;
                     max-width: 100% !important;
                     min-width: 0 !important;
@@ -104,48 +91,23 @@ def aplicar_responsividade():
                 }
             }
 
-            /* Celular. */
-
-            @media (max-width: 600px) {
-
-                /* Todos os indicadores em coluna. */
-
-                .st-key-vg_kpis_responsivos
-                [data-testid="stHorizontalBlock"] {
-                    grid-template-columns:
-                        minmax(0, 1fr) !important;
-                }
-
-                /* Série, turma e informação em coluna. */
-
-                .st-key-visao_geral_filtros
-                [data-testid="stHorizontalBlock"] {
+            @media (max-width: 640px) {
+                .st-key-vg_kpis_responsivos [data-testid="stHorizontalBlock"],
+                .st-key-visao_geral_filtros [data-testid="stHorizontalBlock"] {
                     display: grid !important;
-                    grid-template-columns:
-                        minmax(0, 1fr) !important;
-                    gap: 8px !important;
+                    grid-template-columns: minmax(0, 1fr) !important;
+                    gap: 10px !important;
                     width: 100% !important;
                 }
 
+                .st-key-vg_kpis_responsivos
+                [data-testid="stHorizontalBlock"] > [data-testid="stColumn"],
                 .st-key-visao_geral_filtros
-                [data-testid="stColumn"],
-                .st-key-visao_geral_filtros
-                [data-testid="column"] {
+                [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
                     width: 100% !important;
                     max-width: 100% !important;
                     min-width: 0 !important;
                     flex: none !important;
-                }
-
-                /* Ajuste dos gráficos para celular. */
-
-                .st-key-vg_graficos_linha_1
-                [data-testid="stPlotlyChart"],
-                .st-key-vg_graficos_linha_2
-                [data-testid="stPlotlyChart"] {
-                    width: 100% !important;
-                    min-width: 0 !important;
-                    max-width: 100% !important;
                 }
             }
         </style>
@@ -153,250 +115,131 @@ def aplicar_responsividade():
     )
 
 
-def obter_dados_importados():
-    """Consulta os estudantes validados na Entrada de Dados."""
-
-    importacoes = st.session_state.get(
-        "entrada_importacoes", {}
-    )
-
-    dados = importacoes.get("Estudantes")
-
-    if not isinstance(dados, pd.DataFrame):
-        return pd.DataFrame(
-            columns=mock_data.ESTUDANTES.columns
-        )
-
-    return dados.copy()
-
-
-def turmas_autorizadas():
-    """Obtém as turmas disponíveis para o perfil conectado."""
-
-    if st.session_state.get("perfil") == "administrador":
-        return {
-            f"{serie.replace(' ano', '')} {turma}"
-            for serie in mock_data.SERIES
-            for turma in mock_data.TURMAS
-        }
-
-    professor = st.session_state.get("professor_atual")
-
-    return {
-        item["Turma"]
-        for item in listar_atribuicoes()
-        if item["Professor"] == professor
-    }
-
-
-def filtrar_por_professor(dados):
-    """Restringe os estudantes às turmas autorizadas."""
-
-    if dados.empty:
-        return dados.copy()
-
-    if st.session_state.get("perfil") == "administrador":
-        return dados.copy()
-
-    permitidas = turmas_autorizadas()
-
-    turma_completa = (
-        dados["Série"].astype(str)
-        .str.replace(" ano", "", regex=False)
-        + " "
-        + dados["Turma"].astype(str)
-    )
-
-    return dados.loc[
-        turma_completa.isin(permitidas)
-    ].copy()
-
-
-def formatar_numero(valor):
+def formatar_numero(valor: Any) -> str:
     return f"{int(valor):,}".replace(",", ".")
 
 
-def formatar_percentual(valor):
-    return f"{valor:.1f}".replace(".", ",") + "%"
+def formatar_percentual(valor: Optional[float]) -> str:
+    if valor is None:
+        return "—"
+    return f"{float(valor):.1f}".replace(".", ",") + "%"
 
 
-def montar_indicadores(dados):
-    """Calcula os indicadores com os dados importados."""
+def formatar_decimal(valor: Optional[float]) -> str:
+    if valor is None:
+        return "—"
+    return f"{float(valor):.1f}".replace(".", ",")
 
-    if dados.empty:
-        return [
-            ("—", "Total de estudantes", "Aguardando dados"),
-            ("—", "Frequência média", "Aguardando dados"),
-            ("—", "Estudantes em atenção", "Aguardando dados"),
-            ("—", "Alto risco identificado", "Aguardando dados"),
-        ]
 
-    total = len(dados)
-    frequencia = dados["Frequência"].mean()
+def montar_kpis_visao_geral(indicadores: dict[str, Any]) -> list[tuple[str, str, str]]:
+    """
+    Constrói os KPIs da Visão Geral separando explicitamente métricas observadas
+    de estimativas preditivas provenientes do contrato `/indicadores/gerais`.
+    """
+    total_est = int(indicadores.get("total_estudantes_distintos") or 0)
+    freq_media = indicadores.get("frequencia_media")
+    media_geral = indicadores.get("media_geral")
+    possui_prev = bool(indicadores.get("possui_previsoes_risco"))
+    dist_risco = indicadores.get("distribuicao_faixas_risco") or []
 
-    em_atencao = dados["Risco"].isin(
-        ["Atenção", "Alto"]
-    ).sum()
+    sub_est = (
+        f"{formatar_numero(indicadores.get('total_registros_boletim') or 0)} boletins no recorte (dado observado)"
+        if total_est > 0
+        else "Aguardando registros escolares no recorte"
+    )
+    sub_freq = (
+        "Média dos boletins importados (dado observado)"
+        if freq_media is not None
+        else "Sem registros de frequência no recorte"
+    )
+    sub_media = (
+        "Média acadêmica registrada (dado observado)"
+        if media_geral is not None
+        else "Sem registros de notas no recorte"
+    )
 
-    alto_risco = (
-        dados["Risco"] == "Alto"
-    ).sum()
+    if possui_prev and dist_risco:
+        qtd_alto_critico = sum(
+            int(item.get("quantidade") or 0)
+            for item in dist_risco
+            if str(item.get("faixa") or "").upper() in {"ALTO", "CRITICO"}
+        )
+        m_nome = indicadores.get("modelo_nome_vigente") or "Modelo externo"
+        m_ver = indicadores.get("modelo_versao_vigente") or "—"
+        valor_risco = formatar_numero(qtd_alto_critico)
+        sub_risco = f"Estimativa preditiva (Alto/Crítico) • {m_nome} v{m_ver}"
+    else:
+        valor_risco = "Sem previsões"
+        sub_risco = "Aguardando envio de previsões preditivas"
 
     return [
         (
-            formatar_numero(total),
-            "Total de estudantes",
-            "Estudantes no filtro atual",
+            formatar_numero(total_est) if total_est > 0 else "—",
+            "Estudantes distintos",
+            sub_est,
         ),
         (
-            formatar_percentual(frequencia),
-            "Frequência média",
-            "Meta de referência: 85%",
+            formatar_percentual(freq_media),
+            "Frequência média observada",
+            sub_freq,
         ),
         (
-            formatar_numero(em_atencao),
-            "Estudantes em atenção",
-            "Inclui atenção e alto risco",
+            formatar_decimal(media_geral),
+            "Média geral observada",
+            sub_media,
         ),
         (
-            formatar_numero(alto_risco),
-            "Alto risco identificado",
-            "Estudantes classificados em alto risco",
+            valor_risco,
+            "Risco elevado (preditivo)",
+            sub_risco,
         ),
     ]
 
 
-def montar_dados_graficos(dados):
-    """Prepara os dados utilizados pelos quatro gráficos."""
+def preparar_dados_risco_visao_geral(
+    indicadores: dict[str, Any],
+) -> tuple[bool, pd.DataFrame, Optional[str]]:
+    """
+    Extrai a distribuição de faixas de risco somente quando `possui_previsoes_risco` for True.
+    Nunca gera faixas fictícias quando não houver previsões reais.
+    """
+    possui = bool(indicadores.get("possui_previsoes_risco"))
+    itens = indicadores.get("distribuicao_faixas_risco") or []
+    if not possui or not itens:
+        return (
+            False,
+            pd.DataFrame(columns=["Faixa de risco", "Estudantes", "Percentual (%)"]),
+            "Nenhuma previsão de risco foi registrada para o recorte selecionado.",
+        )
 
-    frequencia = (
-        dados.groupby("Série", as_index=False)["Frequência"]
-        .mean()
-        .rename(
-            columns={
-                "Frequência": "Frequência média (%)"
+    linhas = []
+    for item in itens:
+        faixa_cod = str(item.get("faixa") or "").upper()
+        linhas.append(
+            {
+                "Faixa de risco": ROTULOS_FAIXAS.get(faixa_cod, faixa_cod),
+                "Estudantes": int(item.get("quantidade") or 0),
+                "Percentual (%)": float(item.get("percentual") or 0.0),
             }
         )
+    df_risco = pd.DataFrame(linhas)
+    modelo = indicadores.get("modelo_nome_vigente") or "Modelo externo"
+    versao = indicadores.get("modelo_versao_vigente") or "—"
+    ultima = str(indicadores.get("ultima_previsao_em") or "")[:19].replace("T", " ")
+    nota = (
+        f"Modelo vigente: {modelo} (versão {versao})"
+        + (f" • Última previsão: {ultima} UTC" if ultima else "")
+        + ". Estimativa probabilística separada das métricas observadas."
     )
-
-    distribuicao = (
-        dados["Risco"]
-        .value_counts()
-        .reindex(
-            ["Baixo", "Atenção", "Alto"],
-            fill_value=0,
-        )
-        .rename_axis("Nível de risco")
-        .reset_index(name="Estudantes")
-    )
-
-    alto_risco = (
-        dados[dados["Risco"] == "Alto"]
-        .groupby("Série")
-        .size()
-        .reindex(
-            sorted(dados["Série"].unique()),
-            fill_value=0,
-        )
-        .rename("Estudantes em alto risco")
-        .reset_index()
-    )
-
-    notas = dados[
-        ["Frequência", "Média geral"]
-    ].rename(
-        columns={
-            "Frequência": "Frequência (%)"
-        }
-    )
-
-    return (
-        frequencia,
-        distribuicao,
-        alto_risco,
-        notas,
-    )
+    return True, df_risco, nota
 
 
-def montar_tabela_atencao(dados):
-    """Monta a tabela de acompanhamento dos estudantes."""
-
-    colunas = [
-        "ID anonimizado",
-        "Série/Turma",
-        "Frequência",
-        "Média geral",
-        "Nível de risco",
-    ]
-
-    if dados.empty:
-        return pd.DataFrame(columns=colunas)
-
-    atencao = dados[
-        dados["Risco"].isin(["Atenção", "Alto"])
-    ].copy()
-
-    if atencao.empty:
-        return pd.DataFrame(columns=colunas)
-
-    atencao = atencao.sort_values(
-        ["Frequência", "Média geral"],
-        ascending=True,
-    )
-
-    atencao["Série/Turma"] = (
-        atencao["Série"]
-        + " - "
-        + atencao["Turma"]
-    )
-
-    atencao["Frequência"] = (
-        atencao["Frequência"].map(
-            formatar_percentual
-        )
-    )
-
-    atencao["Média geral"] = (
-        atencao["Média geral"].map(
-            lambda valor: (
-                f"{valor:.1f}".replace(".", ",")
-            )
-        )
-    )
-
-    return (
-        atencao[
-            [
-                "Identificador",
-                "Série/Turma",
-                "Frequência",
-                "Média geral",
-                "Risco",
-            ]
-        ]
-        .rename(
-            columns={
-                "Identificador": "ID anonimizado",
-                "Risco": "Nível de risco",
-            }
-        )
-        .head(10)
-    )
-
-
-def grafico_vazio():
-    """Mantém o gráfico sem apresentar dados fictícios."""
-
+def grafico_vazio(mensagem: str = "Sem dados para o recorte atual"):
+    """Mantém o espaço gráfico limpo sem apresentar dados fictícios."""
     figura = go.Figure()
-
     figura.update_layout(
         height=290,
-        margin=dict(
-            l=15,
-            r=15,
-            t=15,
-            b=15,
-        ),
+        margin=dict(l=15, r=15, t=15, b=15),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(visible=False),
@@ -404,296 +247,274 @@ def grafico_vazio():
         showlegend=False,
         annotations=[
             dict(
-                text="Aguardando dados importados",
+                text=mensagem,
                 x=0.5,
                 y=0.5,
                 xref="paper",
                 yref="paper",
                 showarrow=False,
-                font=dict(
-                    size=13,
-                    color="#8792A2",
-                ),
+                font=dict(size=13, color="#8792A2"),
             )
         ],
     )
-
     return figura
 
 
-def exibir_grafico(figura, chave):
-    """Exibe os gráficos com os controles do Plotly."""
-
-    figura.update_layout(
-        height=290,
-        autosize=True,
-        margin=dict(
-            l=20,
-            r=20,
-            t=20,
-            b=20,
-        ),
-    )
-
-    st.plotly_chart(
-        figura,
-        width="stretch",
-        key=chave,
-        config={
-            "displayModeBar": True,
-            "displaylogo": False,
-            "responsive": True,
-        },
-    )
-
-
 def render():
-    """Renderiza a Visão Geral respeitando as permissões."""
+    """Renderiza a página de Visão Geral conectada à API real do Vértice."""
 
     aplicar_responsividade()
     titulo_pagina("Visão geral")
 
-    dados_importados = obter_dados_importados()
-    dados_permitidos = filtrar_por_professor(
-        dados_importados
-    )
-
-    permitidas = turmas_autorizadas()
-
-    series = [
-        serie
-        for serie in mock_data.SERIES
-        if any(
-            turma.startswith(
-                serie.replace(" ano", "") + " "
-            )
-            for turma in permitidas
+    if not possui_sessao_api_ativa():
+        st.warning(
+            "Faça login com sua conta institucional para visualizar os indicadores reais e previsões."
         )
-    ]
+        return
 
-    opcoes_series = ["Todas"] + series
+    usuario_api = st.session_state.get("usuario_api") or {}
+    if usuario_api.get("papel") == "administrador":
+        st.info(
+            "O perfil administrativo não acessa dados pedagógicos individuais ou escolares nesta visão. "
+            "Para analisar indicadores e previsões de risco, utilize uma conta de gestor ou professor."
+        )
+        return
 
-    if st.session_state.get("vg_serie") not in opcoes_series:
-        st.session_state["vg_serie"] = "Todas"
+    resp_turmas = listar_turmas_api()
+    turmas = resp_turmas.dados if (resp_turmas.ok and isinstance(resp_turmas.dados, list)) else []
+    opcoes_turma: dict[str, Optional[str]] = {"Todas as turmas": None}
+    for t in turmas:
+        label = f"{t.get('nome', 'Turma')} ({t.get('ano_letivo', '')})".strip()
+        opcoes_turma[label] = t.get("id")
 
     with st.container(key="visao_geral_filtros"):
-
-        col_serie, col_turma, col_info = st.columns(
-            [1, 1, 3],
-            vertical_alignment="bottom",
-        )
-
-        with col_serie:
-            serie = st.selectbox(
-                "Série",
-                opcoes_series,
-                key="vg_serie",
-            )
-
-        turmas = [
-            turma
-            for turma in mock_data.TURMAS
-            if any(
-                f"{s.replace(' ano', '')} {turma}"
-                in permitidas
-                for s in series
-                if serie == "Todas" or s == serie
-            )
-        ]
-
-        opcoes_turmas = ["Todas"] + turmas
-
-        if (
-            st.session_state.get("vg_turma")
-            not in opcoes_turmas
-        ):
-            st.session_state["vg_turma"] = "Todas"
-
+        col_turma, col_ano, col_periodo, col_versao = st.columns(4)
         with col_turma:
-            turma = st.selectbox(
+            turma_label = st.selectbox(
                 "Turma",
-                opcoes_turmas,
-                key="vg_turma",
+                options=list(opcoes_turma.keys()),
+                key="vg_turma_api",
+            )
+        with col_ano:
+            ano_str = st.text_input(
+                "Ano letivo (opcional)",
+                value="",
+                placeholder="Ex.: 2025",
+                key="vg_ano_api",
+            )
+        with col_periodo:
+            periodo_str = st.text_input(
+                "Período letivo (opcional)",
+                value="",
+                placeholder="Ex.: 1º Bimestre",
+                key="vg_periodo_api",
+            )
+        with col_versao:
+            versao_str = st.text_input(
+                "Versão do modelo (opcional)",
+                value="",
+                placeholder="Mais recente automática",
+                key="vg_versao_api",
             )
 
-        with col_info:
-            if (
-                st.session_state.get("perfil")
-                == "professor"
-            ):
-                professor = (
-                    st.session_state.get("professor_atual")
-                    or "Professor"
-                )
+    ano_val: Optional[int] = None
+    if ano_str.strip().isdigit():
+        ano_val = int(ano_str.strip())
 
-                st.caption(
-                    f"Visualização de: {professor}"
-                )
-            else:
-                st.caption(
-                    "Visualização geral da escola"
-                )
+    turma_id_sel = opcoes_turma.get(turma_label)
+    resp_ind = consultar_indicadores_gerais_api(
+        turma_id=turma_id_sel,
+        ano_letivo=ano_val,
+        periodo_letivo=periodo_str.strip() or None,
+        modelo_versao=versao_str.strip() or None,
+    )
 
-    dados = dados_permitidos.copy()
+    if not resp_ind.ok:
+        if resp_ind.sem_permissao:
+            st.error(resp_ind.erro or "Sem permissão para consultar este recorte.")
+        elif resp_ind.indisponivel:
+            st.error(resp_ind.erro or "Backend indisponível no momento.")
+        else:
+            st.warning(resp_ind.erro or "Não foi possível carregar os indicadores gerais.")
+        return
 
-    if not dados.empty:
-        if serie != "Todas":
-            dados = dados[
-                dados["Série"] == serie
-            ]
-
-        if turma != "Todas":
-            dados = dados[
-                dados["Turma"] == turma
-            ]
-
-    indicadores = montar_indicadores(dados)
+    indicadores = resp_ind.dados if isinstance(resp_ind.dados, dict) else {}
+    kpis = montar_kpis_visao_geral(indicadores)
 
     with st.container(key="vg_kpis_responsivos"):
-        colunas_kpi = st.columns(
-            4,
-            gap="small",
-        )
-
-        for coluna, cor, indicador in zip(
-            colunas_kpi,
-            CORES_KPI,
-            indicadores,
-        ):
-            with coluna:
-                valor, rotulo, rodape = indicador
-
+        colunas_kpi = st.columns(4)
+        for indice, (valor, titulo, subtitulo) in enumerate(kpis):
+            with colunas_kpi[indice]:
                 card_kpi(
                     valor,
-                    rotulo,
-                    rodape,
-                    cor,
+                    titulo,
+                    subtitulo,
+                    CORES_KPI[indice],
                 )
 
-    if dados.empty:
-        frequencia = None
-        distribuicao = None
-        alto_risco = None
-        notas = None
-    else:
-        (
-            frequencia,
-            distribuicao,
-            alto_risco,
-            notas,
-        ) = montar_dados_graficos(dados)
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+    possui_risco, df_risco, nota_risco = preparar_dados_risco_visao_geral(indicadores)
+    dist_serie = indicadores.get("distribuicao_por_serie") or []
+    evolucao = indicadores.get("evolucao_por_periodo") or []
 
     with st.container(key="vg_graficos_linha_1"):
+        col1, col2 = st.columns(2)
 
-        col_frequencia, col_risco = st.columns(
-            2,
-            gap="small",
-        )
-
-        with col_frequencia:
-            with card("Frequência média por série"):
-                figura = (
-                    grafico_barras_horizontais(
-                        frequencia,
-                        "Frequência média (%)",
-                        "Série",
-                    )
-                    if frequencia is not None
-                    else grafico_vazio()
-                )
-
-                exibir_grafico(
-                    figura,
-                    "vg_grafico_frequencia",
-                )
-
-        with col_risco:
-            with card("Distribuição de risco"):
-                figura = (
-                    grafico_rosca(
-                        distribuicao,
-                        "Nível de risco",
-                        "Estudantes",
-                    )
-                    if distribuicao is not None
-                    else grafico_vazio()
-                )
-
-                exibir_grafico(
-                    figura,
-                    "vg_grafico_risco",
-                )
-
-    with st.container(key="vg_graficos_linha_2"):
-
-        col_serie, col_notas = st.columns(
-            2,
-            gap="small",
-        )
-
-        with col_serie:
-            with card("Risco por série"):
-                figura = (
-                    grafico_barras_horizontais(
-                        alto_risco,
-                        "Estudantes em alto risco",
-                        "Série",
-                    )
-                    if alto_risco is not None
-                    else grafico_vazio()
-                )
-
-                exibir_grafico(
-                    figura,
-                    "vg_grafico_alto_risco",
-                )
-
-        with col_notas:
-            with card("Notas x frequência"):
-
-                if (
-                    notas is not None
-                    and len(notas) >= 2
-                    and notas["Frequência (%)"].nunique() >= 2
-                ):
-                    figura = grafico_dispersao(
-                        notas,
-                        "Frequência (%)",
-                        "Média geral",
+        with col1:
+            with card():
+                st.subheader("Frequência observada por série")
+                if not dist_serie:
+                    st.plotly_chart(
+                        grafico_vazio("Sem boletins importados neste recorte"),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
                     )
                 else:
-                    figura = grafico_vazio()
+                    df_serie = pd.DataFrame(
+                        [
+                            {
+                                "Série": str(item.get("chave") or "—"),
+                                "Frequência média (%)": float(
+                                    item.get("frequencia_media") or 0.0
+                                ),
+                            }
+                            for item in dist_serie
+                        ]
+                    )
+                    st.plotly_chart(
+                        grafico_barras_horizontais(
+                            df_serie,
+                            "Série",
+                            "Frequência média (%)",
+                        ),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                    )
 
-                exibir_grafico(
-                    figura,
-                    "vg_grafico_notas",
+        with col2:
+            with card():
+                st.subheader("Distribuição preditiva de risco")
+                if not possui_risco:
+                    st.info(nota_risco or "Aguardando previsões de risco.")
+                    st.plotly_chart(
+                        grafico_vazio("Nenhuma previsão preditiva disponível"),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                    )
+                else:
+                    st.plotly_chart(
+                        grafico_rosca(
+                            df_risco,
+                            "Faixa de risco",
+                            "Estudantes",
+                            {
+                                "Baixo": "#10B981",
+                                "Moderado": "#F59E0B",
+                                "Alto": "#EF4444",
+                                "Crítico": "#7F1D1D",
+                            },
+                        ),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                    )
+                    if nota_risco:
+                        st.caption(nota_risco)
+
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+
+    with st.container(key="vg_graficos_linha_2"):
+        col3, col4 = st.columns(2)
+
+        with col3:
+            with card():
+                st.subheader("Média observada por série")
+                if not dist_serie:
+                    st.plotly_chart(
+                        grafico_vazio("Sem dados observados por série"),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                    )
+                else:
+                    df_notas_serie = pd.DataFrame(
+                        [
+                            {
+                                "Série": str(item.get("chave") or "—"),
+                                "Média geral": float(item.get("media_geral") or 0.0),
+                            }
+                            for item in dist_serie
+                        ]
+                    )
+                    st.plotly_chart(
+                        grafico_barras_horizontais(
+                            df_notas_serie,
+                            "Série",
+                            "Média geral",
+                        ),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                    )
+
+        with col4:
+            with card():
+                st.subheader("Evolução longitudinal observada")
+                if not evolucao:
+                    st.plotly_chart(
+                        grafico_vazio("Sem períodos letivos consolidados"),
+                        use_container_width=True,
+                        config={"displayModeBar": False},
+                    )
+                else:
+                    df_evol = pd.DataFrame(
+                        [
+                            {
+                                "Período": f"{ev.get('ano_letivo')} • {ev.get('periodo_letivo')}",
+                                "Estudantes": int(ev.get("total_estudantes") or 0),
+                                "Frequência média (%)": ev.get("frequencia_media"),
+                                "Média geral": ev.get("media_geral"),
+                            }
+                            for ev in evolucao
+                        ]
+                    )
+                    st.dataframe(df_evol, use_container_width=True, hide_index=True)
+
+    if possui_risco:
+        resp_prev = listar_previsoes_api(
+            turma_id=turma_id_sel,
+            ano_letivo=ano_val,
+            periodo_letivo=periodo_str.strip() or None,
+            modelo_versao=versao_str.strip() or None,
+            limit=100,
+        )
+        if resp_prev.ok and isinstance(resp_prev.dados, list):
+            prioridade = [
+                p
+                for p in resp_prev.dados
+                if str(p.get("faixa_risco") or "").upper() in {"ALTO", "CRITICO"}
+            ]
+            st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+            with card():
+                st.subheader("Estudantes com estimativa preditiva de risco elevado")
+                st.caption(
+                    "Lista anonimizada de apoio preventivo. Não constitui diagnóstico definitivo."
                 )
-
-    with card("Estudantes que exigem atenção"):
-
-        tabela = montar_tabela_atencao(dados)
-
-        if tabela.empty:
-            st.caption(
-                "Nenhum estudante para exibir "
-                "com os dados e filtros atuais."
-            )
-        else:
-            st.dataframe(
-                tabela,
-                hide_index=True,
-                width="stretch",
-            )
-
-    if dados_importados.empty:
-        st.caption(
-            "Os indicadores serão preenchidos "
-            "após a importação e validação "
-            "dos dados dos estudantes."
-        )
-
-    elif dados.empty:
-        st.caption(
-            "Não há registros importados para "
-            "os filtros ou permissões selecionados."
-        )
+                if not prioridade:
+                    st.info("Nenhum estudante em faixa Alto ou Crítico neste recorte.")
+                else:
+                    df_prio = pd.DataFrame(
+                        [
+                            {
+                                "ID anonimizado": p.get("codigo_anonimo") or str(p.get("estudante_id")),
+                                "Turma": p.get("turma_nome") or "—",
+                                "Período": f"{p.get('ano_letivo')} • {p.get('periodo_letivo')}",
+                                "Faixa preditiva": ROTULOS_FAIXAS.get(
+                                    str(p.get("faixa_risco") or "").upper(),
+                                    p.get("faixa_risco"),
+                                ),
+                                "Pontuação": round(float(p.get("pontuacao_risco") or 0.0), 3),
+                                "Modelo/Versão": f"{p.get('modelo_nome')} v{p.get('modelo_versao')}",
+                            }
+                            for p in prioridade[:15]
+                        ]
+                    )
+                    st.dataframe(df_prio, use_container_width=True, hide_index=True)

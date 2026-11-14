@@ -5,7 +5,7 @@ Schemas Pydantic v2 para o módulo de Indicadores (Fase 4):
 - Indicadores de Participação (Bloco C / Atividades e Entregas)
 """
 
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 import uuid
 
@@ -69,6 +69,10 @@ class IndicadoresGeraisResponse(BaseModel):
     comparacao_periodo_anterior: Optional[ComparacaoPeriodoAnteriorSchema] = None
     possui_previsoes_risco: bool = False
     distribuicao_faixas_risco: list[FaixaRiscoResumoSchema] = []
+    modelo_nome_vigente: Optional[str] = None
+    modelo_versao_vigente: Optional[str] = None
+    ultima_previsao_em: Optional[datetime] = None
+    nota_metodologica_risco: Optional[str] = None
 
 
 # ==============================================================================

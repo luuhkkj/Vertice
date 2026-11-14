@@ -37,6 +37,17 @@ from app.modules.importacao.models import (
     StatusLoteImportacao,
     TipoImportacao,
 )
+from app.integrations.assistant.models import (
+    AuditoriaConsultaIA,
+    ResultadoAutorizacaoIA,
+    TipoContextoAssistente,
+)
+from app.integrations.prediction.models import (
+    CredencialIntegracaoPredicao,
+    FaixaRisco,
+    PrevisaoRisco,
+    TipoPrevisao,
+)
 from app.modules.participacao.models import (
     Atividade,
     EntregaAtividade,
@@ -77,4 +88,11 @@ __all__ = [
     "StatusEntregaAtividade",
     "AcompanhamentoPedagogico",
     "OrigemAcompanhamento",
+    "CredencialIntegracaoPredicao",
+    "PrevisaoRisco",
+    "FaixaRisco",
+    "TipoPrevisao",
+    "AuditoriaConsultaIA",
+    "ResultadoAutorizacaoIA",
+    "TipoContextoAssistente",
 ]

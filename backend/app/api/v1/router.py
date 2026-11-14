@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.database.connection import check_database_connection, get_db
+from app.integrations.assistant.router import router as assistant_router
+from app.integrations.prediction.router import router as prediction_router
 from app.modules.acompanhamento.router import router as acompanhamento_router
 from app.modules.atribuicoes.router import router as atribuicoes_router
 from app.modules.auth.router import router as auth_router
@@ -88,4 +90,10 @@ api_router.include_router(
 )
 api_router.include_router(
     indicadores_router, prefix="/indicadores", tags=["Indicadores"]
+)
+api_router.include_router(
+    prediction_router, prefix="/previsoes", tags=["Previsões Preditivas"]
+)
+api_router.include_router(
+    assistant_router, prefix="/assistente", tags=["Assistente IA"]
 )

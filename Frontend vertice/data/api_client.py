@@ -575,3 +575,181 @@ def listar_acompanhamentos_api(
     )
 
 
+# ==============================================================================
+# FASE 7 — INTEGRAÇÃO PREDITIVA E CONTEXTO DE ASSISTENTE IA
+# ==============================================================================
+
+
+def consultar_indicadores_gerais_api(
+    *,
+    turma_id: Optional[str] = None,
+    disciplina_id: Optional[str] = None,
+    ano_letivo: Optional[int] = None,
+    periodo_letivo: Optional[str] = None,
+    modelo_nome: Optional[str] = None,
+    modelo_versao: Optional[str] = None,
+) -> RespostaAPI:
+    """Consulta indicadores gerais consolidados (`GET /api/v1/indicadores/gerais`)."""
+    return requisitar_api(
+        "GET",
+        "/indicadores/gerais",
+        params={
+            "turma_id": turma_id,
+            "disciplina_id": disciplina_id,
+            "ano_letivo": ano_letivo,
+            "periodo_letivo": periodo_letivo,
+            "modelo_nome": modelo_nome,
+            "modelo_versao": modelo_versao,
+        },
+    )
+
+
+def listar_estudantes_api(
+    *,
+    turma_id: Optional[str] = None,
+    disciplina_id: Optional[str] = None,
+    ano_letivo: Optional[int] = None,
+    periodo_letivo: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 200,
+) -> RespostaAPI:
+    """Lista estudantes anonimizados no escopo autorizado (`GET /api/v1/estudantes`)."""
+    return requisitar_api(
+        "GET",
+        "/estudantes",
+        params={
+            "turma_id": turma_id,
+            "disciplina_id": disciplina_id,
+            "ano_letivo": ano_letivo,
+            "periodo_letivo": periodo_letivo,
+            "skip": skip,
+            "limit": limit,
+        },
+    )
+
+
+def obter_estudante_historico_api(estudante_id: str) -> RespostaAPI:
+    """Obtém histórico escolar anonimizado de um estudante (`GET /api/v1/estudantes/{id}`)."""
+    return requisitar_api("GET", f"/estudantes/{estudante_id}")
+
+
+def consultar_resumo_previsoes_api(
+    *,
+    turma_id: Optional[str] = None,
+    disciplina_id: Optional[str] = None,
+    ano_letivo: Optional[int] = None,
+    periodo_letivo: Optional[str] = None,
+    tipo_previsao: Optional[str] = None,
+    modelo_nome: Optional[str] = None,
+    modelo_versao: Optional[str] = None,
+) -> RespostaAPI:
+    """Consulta resumo agregado de previsões de risco (`GET /api/v1/previsoes/resumo`)."""
+    return requisitar_api(
+        "GET",
+        "/previsoes/resumo",
+        params={
+            "turma_id": turma_id,
+            "disciplina_id": disciplina_id,
+            "ano_letivo": ano_letivo,
+            "periodo_letivo": periodo_letivo,
+            "tipo_previsao": tipo_previsao,
+            "modelo_nome": modelo_nome,
+            "modelo_versao": modelo_versao,
+        },
+    )
+
+
+def listar_previsoes_api(
+    *,
+    turma_id: Optional[str] = None,
+    disciplina_id: Optional[str] = None,
+    ano_letivo: Optional[int] = None,
+    periodo_letivo: Optional[str] = None,
+    tipo_previsao: Optional[str] = None,
+    faixa_risco: Optional[str] = None,
+    modelo_nome: Optional[str] = None,
+    modelo_versao: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 200,
+) -> RespostaAPI:
+    """Lista previsões de risco autorizadas (`GET /api/v1/previsoes`)."""
+    return requisitar_api(
+        "GET",
+        "/previsoes",
+        params={
+            "turma_id": turma_id,
+            "disciplina_id": disciplina_id,
+            "ano_letivo": ano_letivo,
+            "periodo_letivo": periodo_letivo,
+            "tipo_previsao": tipo_previsao,
+            "faixa_risco": faixa_risco,
+            "modelo_nome": modelo_nome,
+            "modelo_versao": modelo_versao,
+            "skip": skip,
+            "limit": limit,
+        },
+    )
+
+
+def consultar_previsoes_estudante_api(
+    estudante_id: str,
+    *,
+    tipo_previsao: Optional[str] = None,
+    modelo_nome: Optional[str] = None,
+    modelo_versao: Optional[str] = None,
+) -> RespostaAPI:
+    """Consulta histórico append-only de previsões de um estudante (`GET /api/v1/previsoes/estudantes/{id}`)."""
+    return requisitar_api(
+        "GET",
+        f"/previsoes/estudantes/{estudante_id}",
+        params={
+            "tipo_previsao": tipo_previsao,
+            "modelo_nome": modelo_nome,
+            "modelo_versao": modelo_versao,
+        },
+    )
+
+
+def consultar_status_assistente_api() -> RespostaAPI:
+    """Consulta prontidão arquitetural do Assistente IA (`GET /api/v1/assistente/status`)."""
+    return requisitar_api("GET", "/assistente/status")
+
+
+def construir_contexto_assistente_api(
+    *,
+    tipo_contexto: str,
+    escola_id: Optional[str] = None,
+    turma_id: Optional[str] = None,
+    disciplina_id: Optional[str] = None,
+    estudante_id: Optional[str] = None,
+    ano_letivo: Optional[int] = None,
+    periodo_letivo: Optional[str] = None,
+    modelo_nome: Optional[str] = None,
+    modelo_versao: Optional[str] = None,
+    incluir_acompanhamentos: bool = True,
+) -> RespostaAPI:
+    """Solicita montagem autorizada e auditada de contexto para IA (`POST /api/v1/assistente/contexto`)."""
+    payload: dict[str, Any] = {
+        "tipo_contexto": tipo_contexto,
+        "incluir_acompanhamentos": incluir_acompanhamentos,
+    }
+    if escola_id:
+        payload["escola_id"] = escola_id
+    if turma_id:
+        payload["turma_id"] = turma_id
+    if disciplina_id:
+        payload["disciplina_id"] = disciplina_id
+    if estudante_id:
+        payload["estudante_id"] = estudante_id
+    if ano_letivo is not None:
+        payload["ano_letivo"] = ano_letivo
+    if periodo_letivo:
+        payload["periodo_letivo"] = periodo_letivo
+    if modelo_nome:
+        payload["modelo_nome"] = modelo_nome
+    if modelo_versao:
+        payload["modelo_versao"] = modelo_versao
+    return requisitar_api("POST", "/assistente/contexto", json_body=payload)
+
+
+

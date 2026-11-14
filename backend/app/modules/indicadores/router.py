@@ -40,6 +40,8 @@ def obter_indicadores_gerais(
     disciplina_id: Optional[uuid.UUID] = Query(default=None),
     ano_letivo: Optional[int] = Query(default=None, ge=2000, le=2100),
     periodo_letivo: Optional[str] = Query(default=None, max_length=30),
+    modelo_nome: Optional[str] = Query(default=None, max_length=100),
+    modelo_versao: Optional[str] = Query(default=None, max_length=50),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_acesso_pedagogico),
 ) -> IndicadoresGeraisResponse:
@@ -51,6 +53,8 @@ def obter_indicadores_gerais(
         disciplina_id=disciplina_id,
         ano_letivo=ano_letivo,
         periodo_letivo=periodo_letivo,
+        modelo_nome=modelo_nome,
+        modelo_versao=modelo_versao,
     )
 
 

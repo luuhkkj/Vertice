@@ -31,6 +31,7 @@ from app.modules.indicadores.schemas import (
     DistribuicaoItemSchema,
     EvolucaoParticipacaoItemSchema,
     EvolucaoPeriodoGeralSchema,
+    FaixaRiscoResumoSchema,
     IndicadorQuestaoSchema,
     IndicadorTopicoAvaliacaoSchema,
     IndicadoresAvaliacoesResponse,
@@ -187,13 +188,41 @@ class IndicadoresGeraisService:
         disciplina_id: Optional[uuid.UUID] = None,
         ano_letivo: Optional[int] = None,
         periodo_letivo: Optional[str] = None,
+        modelo_nome: Optional[str] = None,
+        modelo_versao: Optional[str] = None,
     ) -> IndicadoresGeraisResponse:
+        from app.integrations.prediction.service import PredictionService
+
         escolas_aut = IndicadoresRepository.validar_filtros_escopo(
             db=db,
             usuario=usuario,
             escola_id=escola_id,
             turma_id=turma_id,
             disciplina_id=disciplina_id,
+        )
+
+        resumo_risco = PredictionService.obter_resumo_previsoes(
+            db=db,
+            usuario=usuario,
+            escola_id=escola_id,
+            turma_id=turma_id,
+            disciplina_id=disciplina_id,
+            ano_letivo=ano_letivo,
+            periodo_letivo=periodo_letivo,
+            modelo_nome=modelo_nome,
+            modelo_versao=modelo_versao,
+        )
+        distribuicao_risco = (
+            [
+                FaixaRiscoResumoSchema(
+                    faixa=item.faixa,
+                    quantidade=item.quantidade,
+                    percentual=item.percentual,
+                )
+                for item in resumo_risco.distribuicao_faixas
+            ]
+            if resumo_risco.possui_previsoes
+            else []
         )
 
         boletins, mapa_vinculos_prof = (
@@ -209,7 +238,18 @@ class IndicadoresGeraisService:
         )
 
         if not boletins:
-            return IndicadoresGeraisResponse()
+            return IndicadoresGeraisResponse(
+                possui_previsoes_risco=resumo_risco.possui_previsoes,
+                distribuicao_faixas_risco=distribuicao_risco,
+                modelo_nome_vigente=resumo_risco.modelo_nome_vigente,
+                modelo_versao_vigente=resumo_risco.modelo_versao_vigente,
+                ultima_previsao_em=resumo_risco.ultima_previsao_em,
+                nota_metodologica_risco=(
+                    resumo_risco.aviso_metodologico
+                    if resumo_risco.possui_previsoes
+                    else None
+                ),
+            )
 
         estudantes_distintos_ids: set[uuid.UUID] = set()
         todas_freqs: list[float] = []
@@ -400,8 +440,16 @@ class IndicadoresGeraisService:
             ),
             evolucao_por_periodo=evolucao,
             comparacao_periodo_anterior=comparacao,
-            possui_previsoes_risco=False,
-            distribuicao_faixas_risco=[],
+            possui_previsoes_risco=resumo_risco.possui_previsoes,
+            distribuicao_faixas_risco=distribuicao_risco,
+            modelo_nome_vigente=resumo_risco.modelo_nome_vigente,
+            modelo_versao_vigente=resumo_risco.modelo_versao_vigente,
+            ultima_previsao_em=resumo_risco.ultima_previsao_em,
+            nota_metodologica_risco=(
+                resumo_risco.aviso_metodologico
+                if resumo_risco.possui_previsoes
+                else None
+            ),
         )
 
 

@@ -56,15 +56,18 @@ backend/
 │   │   └── acompanhamento/         # AcompanhamentoPedagogico individual/coletivo com trilha de auditoria
 │   └── integrations/               # Serviços externos e inteligência
 │       ├── __init__.py
-│       ├── prediction/             # Modelos de Machine Learning preditivos
-│       └── assistant/              # Integração com assistente inteligente (LLMs)
+│       ├── prediction/             # Contratos preditivos, prevenção de leakage, credenciais e previsões
+│       └── assistant/              # Contexto estruturado autorizado, auditoria e interface LLM agnóstica
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py                 # Fixtures pytest com banco isolado em memória
 │   ├── test_health.py              # Testes de inicialização, health check e utilitários de segurança
 │   ├── test_auth_and_models.py     # Testes de persistência, autenticação, RBAC e vínculos
 │   ├── test_fase3_estudantes_e_importacao.py # Testes de importação em 2 etapas, autorização, LGPD e histórico
-│   └── test_fase4_modulos_pedagogicos.py     # Testes de avaliações, participação, acompanhamento e indicadores
+│   ├── test_fase4_modulos_pedagogicos.py     # Testes de avaliações, participação, acompanhamento e indicadores
+│   ├── test_fase5_mapa_acertos_e_frontend.py # Testes de gabarito, mapa de acertos e integração frontend
+│   ├── test_fase6_participacao.py            # Testes de elegibilidade, entregas, prazos e participação
+│   └── test_fase7_predicao_e_ia.py           # Testes de predição, anti-leakage, contexto IA e auditoria
 ├── alembic/
 │   ├── versions/                   # Migrações versionadas do banco de dados
 │   ├── env.py                      # Script de execução do Alembic conectado ao Base.metadata
@@ -452,6 +455,18 @@ EST-2026-003,Turma 2A,MAT,2026,1º Bimestre,92.0,3,9.0,9.5,8.5,0,Nao,Aprovado
   - Suporta filtro por `estudante_id` (além de `turma_id`, `disciplina_id`, `periodo_letivo`, `ano_letivo` e `atividade_id`) para cálculo de histórico individual anonimizado e evolução por período.
 - **Tela de Participação no Frontend (`Frontend vertice/pages/participacao.py`):**
   - Substitui integralmente os dados mockados pela integração real com a API: criação transacional de atividades, atualização de prazo, sincronização idempotente de entregas esperadas, registro/edição de entregas e notas com pré-validação coerente, indicadores em tempo real, histórico consolidado por turma/atividade, histórico individual anonimizado e registro/consulta de acompanhamentos pedagógicos (`origem="participacao"`).
+
+### 8. Fundação de Integração Preditiva e Assistente IA (Fase 7)
+- **Módulo Preditivo (`app/integrations/prediction/`):**
+  - Recebimento unitário (`POST /api/v1/previsoes`) e em lote atômico (`POST /api/v1/previsoes/lote`) exclusivo para credenciais técnicas de serviço (`CredencialIntegracaoPredicao` emitidas por administradores com segredo `vtx_ml_*` armazenado somente em hash SHA-256 e enviado via `X-Service-Token`). Tokens comuns de usuário (JWT) são rejeitados com `HTTP 403`.
+  - Persistência histórica **append-only** em `previsoes_risco`, com pontuação `[0.0, 1.0]`, faixa controlada (`BAIXO`, `MODERADO`, `ALTO`, `CRITICO`), modelo/versão obrigatórios e assinatura de idempotência (`HTTP 409` em duplicidade).
+  - Prevenção estrita de Data Leakage (`leakage.py`): catálogo formal de variáveis elegíveis (`GET /api/v1/previsoes/contrato-variaveis`), inspeção preventiva (`POST /api/v1/previsoes/validar-variaveis`) e bloqueio automático (`HTTP 422`) de `situacao_final`, campos derivados pós-desfecho e PII.
+  - Política explícita de versão única no resumo (`GET /api/v1/previsoes/resumo`) e na integração com `GET /api/v1/indicadores/gerais`: quando não há previsões no escopo, `possui_previsoes_risco` permanece `False`; quando existem, contabiliza a última previsão por estudante na versão selecionada ou mais recente, sem misturar versões.
+- **Módulo Assistente IA (`app/integrations/assistant/`):**
+  - `AssistenteContextoService` (`POST /api/v1/assistente/contexto`) constrói pacotes estruturados e anonimizados nos níveis `ESCOLA`, `TURMA` e `INDIVIDUAL` reutilizando exclusivamente os serviços reais do Vértice (`IndicadoresGeraisService`, `IndicadoresAvaliacoesService`, `IndicadoresParticipacaoService`, `PredictionService`, `EstudanteService`, `AcompanhamentoService`).
+  - Auditoria persistente (`auditoria_consultas_ia` / `GET /api/v1/assistente/auditoria`) registra tanto consultas autorizadas (`AUTORIZADO`) quanto negadas (`NEGADO`), sem armazenar PII ou tokens.
+  - Abstração `ProvedorLLMBase` e `ProvedorLLMNaoConfigurado` (`GET /api/v1/assistente/status`, `POST /api/v1/assistente/consultar` retornando `503`), sem simulação de respostas generativas.
+- **Documentação Detalhada:** ver `docs/FASE7_INTEGRACAO_PREDITIVA_E_IA.md`.
 
 ---
 
