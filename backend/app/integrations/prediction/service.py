@@ -25,8 +25,12 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import require_acesso_pedagogico
 from app.integrations.prediction.leakage import (
     CAMPOS_PROIBIDOS_PREDICAO,
+    CATALOGO_METADADOS_TECNICOS_PERMITIDOS,
     CATALOGO_VARIAVEIS_PREDITIVAS,
+    CONTRATO_ALVO_SUPERVISIONADO_SITUACAO_FINAL,
     ResultadoValidacaoLeakage,
+    sanitizar_metadados_tecnicos_resposta,
+    validar_metadados_tecnicos,
     validar_variaveis_contra_leakage,
 )
 from app.integrations.prediction.models import (
@@ -117,8 +121,11 @@ class PredictionService:
     def obter_catalogo_variaveis() -> CatalogoVariaveisResponse:
         return CatalogoVariaveisResponse(
             politica_anti_leakage_ativa=True,
+            exige_contrato_para_desconhecidas=True,
             campos_proibidos_base=dict(CAMPOS_PROIBIDOS_PREDICAO),
             variaveis_elegiveis=list(CATALOGO_VARIAVEIS_PREDITIVAS),
+            alvo_supervisionado_reservado=CONTRATO_ALVO_SUPERVISIONADO_SITUACAO_FINAL,
+            metadados_tecnicos_permitidos=list(CATALOGO_METADADOS_TECNICOS_PERMITIDOS),
         )
 
     @staticmethod
@@ -128,6 +135,7 @@ class PredictionService:
         return validar_variaveis_contra_leakage(
             dados.variaveis,
             campos_proibidos_extras=dados.campos_proibidos_extras,
+            catalogo_extensao=dados.catalogo_extensao,
             lancar_excecao=False,
         )
 
@@ -306,7 +314,9 @@ class PredictionService:
             recebido_em=_garantir_utc(p.recebido_em),
             lote_externo_id=p.lote_externo_id,
             assinatura_idempotencia=p.assinatura_idempotencia,
-            metadados_tecnicos=p.metadados_tecnicos,
+            metadados_tecnicos=sanitizar_metadados_tecnicos_resposta(
+                p.metadados_tecnicos
+            ),
             aviso_metodologico=AVISO_METODOLOGICO_PADRAO,
         )
 
@@ -317,17 +327,19 @@ class PredictionService:
         credencial: CredencialIntegracaoPredicao,
         lote_externo_id_pai: Optional[str] = None,
     ) -> PrevisaoRisco:
-        # 1) Bloqueio rigoroso contra Data Leakage e PII em variáveis e metadados
+        # 1) Bloqueio rigoroso de Data Leakage/desconhecidas nas variáveis e contrato fechado em metadados
         if item.variaveis_utilizadas is not None:
             validar_variaveis_contra_leakage(
                 item.variaveis_utilizadas,
                 lancar_excecao=True,
             )
+        metadados_limpos: Optional[dict[str, Any]] = None
         if item.metadados_tecnicos is not None:
-            validar_variaveis_contra_leakage(
+            res_meta = validar_metadados_tecnicos(
                 item.metadados_tecnicos,
                 lancar_excecao=True,
             )
+            metadados_limpos = res_meta.metadados_aprovados or None
 
         # 2) Autorização da credencial para o modelo informado
         if (
@@ -459,7 +471,7 @@ class PredictionService:
             gerado_em=_garantir_utc(item.gerado_em),
             lote_externo_id=lote_resolvido,
             assinatura_idempotencia=assinatura,
-            metadados_tecnicos=item.metadados_tecnicos,
+            metadados_tecnicos=metadados_limpos,
             credencial_integracao_id=credencial.id,
             enviado_por_usuario_id=None,
         )

@@ -4,7 +4,9 @@ Pacote de integração preditiva do Vértice (Fase 7).
 
 from app.integrations.prediction.leakage import (
     CAMPOS_PROIBIDOS_PREDICAO,
+    CATALOGO_METADADOS_TECNICOS_PERMITIDOS,
     CATALOGO_VARIAVEIS_PREDITIVAS,
+    validar_metadados_tecnicos,
     validar_variaveis_contra_leakage,
 )
 from app.integrations.prediction.models import (

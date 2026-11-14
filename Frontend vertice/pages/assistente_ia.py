@@ -116,6 +116,8 @@ def montar_resumo_contexto_ui(contexto: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "auditoria_id": metadados.get("auditoria_id"),
+        "request_id": metadados.get("request_id"),
+        "conversation_id": metadados.get("conversation_id"),
         "tipo_contexto": metadados.get("tipo_contexto"),
         "codigo_anonimo": metadados.get("codigo_anonimo"),
         "fontes_utilizadas": metadados.get("fontes_utilizadas") or [],
@@ -256,6 +258,7 @@ def render():
             resumo_ui = montar_resumo_contexto_ui(ctx_salvo)
             st.caption(
                 f"Auditoria: {resumo_ui['auditoria_id']} • "
+                f"Request ID: {resumo_ui['request_id']} • "
                 f"Nível: {resumo_ui['tipo_contexto']} • "
                 f"Fontes: {', '.join(resumo_ui['fontes_utilizadas'])}"
             )

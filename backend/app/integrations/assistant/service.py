@@ -80,6 +80,11 @@ def _filtros_estruturais(solicitacao: SolicitacaoContextoAssistente) -> dict[str
         "modelo_nome": solicitacao.modelo_nome,
         "modelo_versao": solicitacao.modelo_versao,
         "incluir_acompanhamentos": solicitacao.incluir_acompanhamentos,
+        "conversation_id": (
+            str(solicitacao.conversation_id)
+            if solicitacao.conversation_id
+            else None
+        ),
     }
 
 
@@ -120,12 +125,15 @@ class AssistenteContextoService:
         solicitacao: SolicitacaoContextoAssistente,
         resultado: ResultadoAutorizacaoIA,
         motivo: str,
+        request_id: uuid.UUID,
         escola_fk_segura: Optional[uuid.UUID] = None,
         turma_fk_segura: Optional[uuid.UUID] = None,
         estudante_fk_segura: Optional[uuid.UUID] = None,
         fontes: Optional[list[str]] = None,
     ) -> AuditoriaConsultaIA:
         registro = AuditoriaConsultaIA(
+            request_id=request_id,
+            conversation_id=solicitacao.conversation_id,
             usuario_id=usuario.id,
             papel_usuario=usuario.papel.value,
             escola_id_solicitada=escola_fk_segura,
@@ -175,9 +183,10 @@ class AssistenteContextoService:
         usuario: Usuario,
     ) -> ContextoAssistenteEstruturado:
         """
-        Valida rigorosamente autorização e escopo, audita a decisão no banco e monta
-        o contexto estruturado reutilizando os serviços oficiais do Vértice.
+        Valida rigorosamente autorização e escopo, gera `request_id` único no backend,
+        audita a decisão no banco (inclusive em falhas inesperadas) e monta o contexto estruturado.
         """
+        request_id = uuid.uuid4()
         escola_obj, turma_obj, estudante_obj = (
             AssistenteContextoService._resolver_fks_existentes(db, solicitacao)
         )
@@ -196,6 +205,7 @@ class AssistenteContextoService:
                 solicitacao=solicitacao,
                 resultado=ResultadoAutorizacaoIA.NEGADO,
                 motivo=motivo,
+                request_id=request_id,
                 escola_fk_segura=escola_fk,
                 turma_fk_segura=turma_fk,
                 estudante_fk_segura=estudante_fk,
@@ -218,6 +228,7 @@ class AssistenteContextoService:
                     solicitacao=solicitacao,
                     resultado=ResultadoAutorizacaoIA.NEGADO,
                     motivo=motivo,
+                    request_id=request_id,
                     escola_fk_segura=escola_fk,
                     turma_fk_segura=None,
                     estudante_fk_segura=estudante_fk,
@@ -236,6 +247,7 @@ class AssistenteContextoService:
                     solicitacao=solicitacao,
                     resultado=ResultadoAutorizacaoIA.NEGADO,
                     motivo=motivo,
+                    request_id=request_id,
                     escola_fk_segura=escola_fk,
                     turma_fk_segura=turma_fk,
                     estudante_fk_segura=estudante_fk,
@@ -254,6 +266,7 @@ class AssistenteContextoService:
                     solicitacao=solicitacao,
                     resultado=ResultadoAutorizacaoIA.NEGADO,
                     motivo=motivo,
+                    request_id=request_id,
                     escola_fk_segura=escola_fk,
                     turma_fk_segura=turma_fk,
                     estudante_fk_segura=None,
@@ -273,6 +286,7 @@ class AssistenteContextoService:
                     solicitacao=solicitacao,
                     resultado=ResultadoAutorizacaoIA.NEGADO,
                     motivo=motivo,
+                    request_id=request_id,
                     escola_fk_segura=escola_fk,
                     turma_fk_segura=turma_fk,
                     estudante_fk_segura=estudante_fk,
@@ -300,6 +314,7 @@ class AssistenteContextoService:
                 solicitacao=solicitacao,
                 resultado=ResultadoAutorizacaoIA.NEGADO,
                 motivo=str(exc.detail),
+                request_id=request_id,
                 escola_fk_segura=escola_fk or escola_efetiva_id,
                 turma_fk_segura=turma_fk,
                 estudante_fk_segura=estudante_fk,
@@ -324,6 +339,7 @@ class AssistenteContextoService:
                     solicitacao=solicitacao,
                     resultado=ResultadoAutorizacaoIA.NEGADO,
                     motivo=motivo,
+                    request_id=request_id,
                     escola_fk_segura=escola_fk or estudante_obj.escola_id,  # type: ignore[union-attr]
                     turma_fk_segura=turma_fk,
                     estudante_fk_segura=estudante_fk,
@@ -336,116 +352,6 @@ class AssistenteContextoService:
         if escola_efetiva_id is None and escolas_aut:
             escola_efetiva_id = sorted(escolas_aut)[0]
 
-        # 4) Construção do contexto reutilizando exclusivamente os serviços reais do Vértice
-        fontes_utilizadas: list[str] = []
-        ind_gerais = None
-        ind_avaliacoes = None
-        ind_participacao = None
-        resumo_risco = None
-        previsoes_est = None
-        acompanhamentos = []
-
-        if solicitacao.tipo_contexto in {
-            TipoContextoAssistente.ESCOLA,
-            TipoContextoAssistente.TURMA,
-        }:
-            ind_gerais = IndicadoresGeraisService.calcular_indicadores_gerais(
-                db=db,
-                usuario=usuario,
-                escola_id=escola_efetiva_id,
-                turma_id=turma_efetiva_id,
-                disciplina_id=solicitacao.disciplina_id,
-                ano_letivo=solicitacao.ano_letivo,
-                periodo_letivo=solicitacao.periodo_letivo,
-                modelo_nome=solicitacao.modelo_nome,
-                modelo_versao=solicitacao.modelo_versao,
-            )
-            fontes_utilizadas.append("IndicadoresGeraisService")
-
-            ind_avaliacoes = IndicadoresAvaliacoesService.calcular_indicadores_avaliacoes(
-                db=db,
-                usuario=usuario,
-                escola_id=escola_efetiva_id,
-                turma_id=turma_efetiva_id,
-                disciplina_id=solicitacao.disciplina_id,
-                ano_letivo=solicitacao.ano_letivo,
-                periodo_letivo=solicitacao.periodo_letivo,
-            )
-            fontes_utilizadas.append("IndicadoresAvaliacoesService")
-
-            ind_participacao = (
-                IndicadoresParticipacaoService.calcular_indicadores_participacao(
-                    db=db,
-                    usuario=usuario,
-                    escola_id=escola_efetiva_id,
-                    turma_id=turma_efetiva_id,
-                    disciplina_id=solicitacao.disciplina_id,
-                    ano_letivo=solicitacao.ano_letivo,
-                    periodo_letivo=solicitacao.periodo_letivo,
-                )
-            )
-            fontes_utilizadas.append("IndicadoresParticipacaoService")
-
-            resumo_risco = PredictionService.obter_resumo_previsoes(
-                db=db,
-                usuario=usuario,
-                escola_id=escola_efetiva_id,
-                turma_id=turma_efetiva_id,
-                disciplina_id=solicitacao.disciplina_id,
-                ano_letivo=solicitacao.ano_letivo,
-                periodo_letivo=solicitacao.periodo_letivo,
-                modelo_nome=solicitacao.modelo_nome,
-                modelo_versao=solicitacao.modelo_versao,
-            )
-            fontes_utilizadas.append("PredictionService")
-
-            if solicitacao.incluir_acompanhamentos:
-                acompanhamentos = AcompanhamentoService.listar_acompanhamentos(
-                    db=db,
-                    usuario_autenticado=usuario,
-                    turma_id=turma_efetiva_id,
-                    limit=20,
-                )
-                fontes_utilizadas.append("AcompanhamentoService")
-        else:
-            # INDIVIDUAL
-            assert solicitacao.estudante_id is not None and estudante_hist is not None
-            fontes_utilizadas.append("EstudanteService")
-
-            ind_participacao = (
-                IndicadoresParticipacaoService.calcular_indicadores_participacao(
-                    db=db,
-                    usuario=usuario,
-                    escola_id=estudante_hist.escola_id,
-                    turma_id=turma_efetiva_id,
-                    disciplina_id=solicitacao.disciplina_id,
-                    ano_letivo=solicitacao.ano_letivo,
-                    periodo_letivo=solicitacao.periodo_letivo,
-                    estudante_id=solicitacao.estudante_id,
-                )
-            )
-            fontes_utilizadas.append("IndicadoresParticipacaoService")
-
-            previsoes_est = PredictionService.obter_historico_estudante(
-                db=db,
-                estudante_id=solicitacao.estudante_id,
-                usuario=usuario,
-                modelo_nome=solicitacao.modelo_nome,
-                modelo_versao=solicitacao.modelo_versao,
-            )
-            fontes_utilizadas.append("PredictionService")
-
-            if solicitacao.incluir_acompanhamentos:
-                acompanhamentos = AcompanhamentoService.listar_acompanhamentos(
-                    db=db,
-                    usuario_autenticado=usuario,
-                    turma_id=turma_efetiva_id,
-                    estudante_id=solicitacao.estudante_id,
-                    limit=20,
-                )
-                fontes_utilizadas.append("AcompanhamentoService")
-
-        # 5) Registro auditável da autorização
         escola_aud_fk = escola_fk or (
             escola_efetiva_id
             if (
@@ -457,12 +363,168 @@ class AssistenteContextoService:
             )
             else None
         )
+
+        # 4) Construção do contexto reutilizando exclusivamente os serviços reais do Vértice
+        fontes_utilizadas: list[str] = []
+        ind_gerais = None
+        ind_avaliacoes = None
+        ind_participacao = None
+        resumo_risco = None
+        previsoes_est = None
+        acompanhamentos = []
+
+        try:
+            if solicitacao.tipo_contexto in {
+                TipoContextoAssistente.ESCOLA,
+                TipoContextoAssistente.TURMA,
+            }:
+                ind_gerais = IndicadoresGeraisService.calcular_indicadores_gerais(
+                    db=db,
+                    usuario=usuario,
+                    escola_id=escola_efetiva_id,
+                    turma_id=turma_efetiva_id,
+                    disciplina_id=solicitacao.disciplina_id,
+                    ano_letivo=solicitacao.ano_letivo,
+                    periodo_letivo=solicitacao.periodo_letivo,
+                    modelo_nome=solicitacao.modelo_nome,
+                    modelo_versao=solicitacao.modelo_versao,
+                )
+                fontes_utilizadas.append("IndicadoresGeraisService")
+
+                ind_avaliacoes = (
+                    IndicadoresAvaliacoesService.calcular_indicadores_avaliacoes(
+                        db=db,
+                        usuario=usuario,
+                        escola_id=escola_efetiva_id,
+                        turma_id=turma_efetiva_id,
+                        disciplina_id=solicitacao.disciplina_id,
+                        ano_letivo=solicitacao.ano_letivo,
+                        periodo_letivo=solicitacao.periodo_letivo,
+                    )
+                )
+                fontes_utilizadas.append("IndicadoresAvaliacoesService")
+
+                ind_participacao = (
+                    IndicadoresParticipacaoService.calcular_indicadores_participacao(
+                        db=db,
+                        usuario=usuario,
+                        escola_id=escola_efetiva_id,
+                        turma_id=turma_efetiva_id,
+                        disciplina_id=solicitacao.disciplina_id,
+                        ano_letivo=solicitacao.ano_letivo,
+                        periodo_letivo=solicitacao.periodo_letivo,
+                    )
+                )
+                fontes_utilizadas.append("IndicadoresParticipacaoService")
+
+                resumo_risco = PredictionService.obter_resumo_previsoes(
+                    db=db,
+                    usuario=usuario,
+                    escola_id=escola_efetiva_id,
+                    turma_id=turma_efetiva_id,
+                    disciplina_id=solicitacao.disciplina_id,
+                    ano_letivo=solicitacao.ano_letivo,
+                    periodo_letivo=solicitacao.periodo_letivo,
+                    modelo_nome=solicitacao.modelo_nome,
+                    modelo_versao=solicitacao.modelo_versao,
+                )
+                fontes_utilizadas.append("PredictionService")
+
+                if solicitacao.incluir_acompanhamentos:
+                    acompanhamentos = AcompanhamentoService.listar_acompanhamentos(
+                        db=db,
+                        usuario_autenticado=usuario,
+                        turma_id=turma_efetiva_id,
+                        limit=20,
+                    )
+                    fontes_utilizadas.append("AcompanhamentoService")
+            else:
+                # INDIVIDUAL
+                assert solicitacao.estudante_id is not None and estudante_hist is not None
+                fontes_utilizadas.append("EstudanteService")
+
+                ind_participacao = (
+                    IndicadoresParticipacaoService.calcular_indicadores_participacao(
+                        db=db,
+                        usuario=usuario,
+                        escola_id=estudante_hist.escola_id,
+                        turma_id=turma_efetiva_id,
+                        disciplina_id=solicitacao.disciplina_id,
+                        ano_letivo=solicitacao.ano_letivo,
+                        periodo_letivo=solicitacao.periodo_letivo,
+                        estudante_id=solicitacao.estudante_id,
+                    )
+                )
+                fontes_utilizadas.append("IndicadoresParticipacaoService")
+
+                previsoes_est = PredictionService.obter_historico_estudante(
+                    db=db,
+                    estudante_id=solicitacao.estudante_id,
+                    usuario=usuario,
+                    modelo_nome=solicitacao.modelo_nome,
+                    modelo_versao=solicitacao.modelo_versao,
+                )
+                fontes_utilizadas.append("PredictionService")
+
+                if solicitacao.incluir_acompanhamentos:
+                    acompanhamentos = AcompanhamentoService.listar_acompanhamentos(
+                        db=db,
+                        usuario_autenticado=usuario,
+                        turma_id=turma_efetiva_id,
+                        estudante_id=solicitacao.estudante_id,
+                        limit=20,
+                    )
+                    fontes_utilizadas.append("AcompanhamentoService")
+        except HTTPException as exc:
+            db.rollback()
+            resultado_falha = (
+                ResultadoAutorizacaoIA.NEGADO
+                if exc.status_code in {status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN}
+                else ResultadoAutorizacaoIA.ERRO_EXECUCAO
+            )
+            AssistenteContextoService._registrar_auditoria(
+                db=db,
+                usuario=usuario,
+                solicitacao=solicitacao,
+                resultado=resultado_falha,
+                motivo=f"Falha controlada durante montagem do contexto ({exc.status_code}).",
+                request_id=request_id,
+                escola_fk_segura=escola_aud_fk,
+                turma_fk_segura=turma_fk,
+                estudante_fk_segura=estudante_fk,
+                fontes=fontes_utilizadas,
+            )
+            raise
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            AssistenteContextoService._registrar_auditoria(
+                db=db,
+                usuario=usuario,
+                solicitacao=solicitacao,
+                resultado=ResultadoAutorizacaoIA.ERRO_EXECUCAO,
+                motivo=f"Erro inesperado na montagem do contexto: {type(exc).__name__}.",
+                request_id=request_id,
+                escola_fk_segura=escola_aud_fk,
+                turma_fk_segura=turma_fk,
+                estudante_fk_segura=estudante_fk,
+                fontes=fontes_utilizadas,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=(
+                    f"Não foi possível concluir a montagem segura do contexto "
+                    f"(request_id={request_id})."
+                ),
+            ) from exc
+
+        # 5) Registro auditável somente após montagem integralmente concluída
         auditoria = AssistenteContextoService._registrar_auditoria(
             db=db,
             usuario=usuario,
             solicitacao=solicitacao,
             resultado=ResultadoAutorizacaoIA.AUTORIZADO,
             motivo=f"Contexto `{solicitacao.tipo_contexto.value}` autorizado e estruturado.",
+            request_id=request_id,
             escola_fk_segura=escola_aud_fk,
             turma_fk_segura=turma_fk,
             estudante_fk_segura=estudante_fk,
@@ -489,6 +551,8 @@ class AssistenteContextoService:
 
         metadados = MetadadosContextoAssistente(
             auditoria_id=auditoria.id,
+            request_id=request_id,
+            conversation_id=solicitacao.conversation_id,
             gerado_em=datetime.now(timezone.utc),
             tipo_contexto=solicitacao.tipo_contexto,
             usuario_papel=usuario.papel.value,
@@ -547,6 +611,8 @@ class AssistenteContextoService:
         usuario: Usuario,
         escola_id: Optional[uuid.UUID] = None,
         resultado_autorizacao: Optional[ResultadoAutorizacaoIA] = None,
+        request_id: Optional[uuid.UUID] = None,
+        conversation_id: Optional[uuid.UUID] = None,
         skip: int = 0,
         limit: int = 100,
     ) -> list[AuditoriaConsultaIAResponse]:
@@ -576,6 +642,8 @@ class AssistenteContextoService:
             escola_id=escola_filtro,
             usuario_id=usuario_filtro,
             resultado_autorizacao=resultado_autorizacao,
+            request_id=request_id,
+            conversation_id=conversation_id,
             skip=skip,
             limit=limit,
         )

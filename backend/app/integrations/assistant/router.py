@@ -86,6 +86,8 @@ def consultar_assistente_llm(
 def listar_auditoria_assistente(
     escola_id: Optional[uuid.UUID] = Query(default=None),
     resultado_autorizacao: Optional[ResultadoAutorizacaoIA] = Query(default=None),
+    request_id: Optional[uuid.UUID] = Query(default=None),
+    conversation_id: Optional[uuid.UUID] = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -96,6 +98,8 @@ def listar_auditoria_assistente(
         usuario=current_user,
         escola_id=escola_id,
         resultado_autorizacao=resultado_autorizacao,
+        request_id=request_id,
+        conversation_id=conversation_id,
         skip=skip,
         limit=limit,
     )

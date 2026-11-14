@@ -727,12 +727,15 @@ def construir_contexto_assistente_api(
     modelo_nome: Optional[str] = None,
     modelo_versao: Optional[str] = None,
     incluir_acompanhamentos: bool = True,
+    conversation_id: Optional[str] = None,
 ) -> RespostaAPI:
     """Solicita montagem autorizada e auditada de contexto para IA (`POST /api/v1/assistente/contexto`)."""
     payload: dict[str, Any] = {
         "tipo_contexto": tipo_contexto,
         "incluir_acompanhamentos": incluir_acompanhamentos,
     }
+    if conversation_id:
+        payload["conversation_id"] = conversation_id
     if escola_id:
         payload["escola_id"] = escola_id
     if turma_id:

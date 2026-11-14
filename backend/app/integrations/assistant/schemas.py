@@ -38,6 +38,7 @@ class SolicitacaoContextoAssistente(BaseModel):
     modelo_nome: Optional[str] = Field(default=None, max_length=100)
     modelo_versao: Optional[str] = Field(default=None, max_length=50)
     incluir_acompanhamentos: bool = True
+    conversation_id: Optional[uuid.UUID] = None
 
     @model_validator(mode="after")
     def _validar_alvo_por_tipo(self) -> "SolicitacaoContextoAssistente":
@@ -59,6 +60,8 @@ class MetadadosContextoAssistente(BaseModel):
     """Metadados de rastreabilidade e privacidade do pacote de contexto montado."""
 
     auditoria_id: uuid.UUID
+    request_id: uuid.UUID
+    conversation_id: Optional[uuid.UUID] = None
     gerado_em: datetime
     tipo_contexto: TipoContextoAssistente
     usuario_papel: str
@@ -98,6 +101,8 @@ class AuditoriaConsultaIAResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    request_id: Optional[uuid.UUID] = None
+    conversation_id: Optional[uuid.UUID] = None
     usuario_id: uuid.UUID
     papel_usuario: str
     escola_id_solicitada: Optional[uuid.UUID]
@@ -144,5 +149,7 @@ class RespostaAssistenteLLM(BaseModel):
     modelo: Optional[str] = None
     resposta_texto: str
     auditoria_id: uuid.UUID
+    request_id: Optional[uuid.UUID] = None
+    conversation_id: Optional[uuid.UUID] = None
     citacoes_fontes: list[str] = []
     aviso_responsavel: str

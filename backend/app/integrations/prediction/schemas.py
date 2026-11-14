@@ -9,7 +9,10 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.integrations.prediction.leakage import VariavelPreditivaContrato
+from app.integrations.prediction.leakage import (
+    MetadadoTecnicoContrato,
+    VariavelPreditivaContrato,
+)
 from app.integrations.prediction.models import FaixaRisco, TipoPrevisao
 
 AVISO_METODOLOGICO_PADRAO = (
@@ -77,14 +80,18 @@ class ValidarVariaveisRequest(BaseModel):
 
     variaveis: list[str] | dict[str, Any]
     campos_proibidos_extras: Optional[list[str] | dict[str, str]] = None
+    catalogo_extensao: Optional[list[VariavelPreditivaContrato | dict[str, Any]]] = None
 
 
 class CatalogoVariaveisResponse(BaseModel):
-    """Contrato oficial de variáveis elegíveis e política anti-leakage do Vértice."""
+    """Contrato oficial de variáveis elegíveis, metadados e política anti-leakage do Vértice."""
 
     politica_anti_leakage_ativa: bool = True
+    exige_contrato_para_desconhecidas: bool = True
     campos_proibidos_base: dict[str, str]
     variaveis_elegiveis: list[VariavelPreditivaContrato]
+    alvo_supervisionado_reservado: VariavelPreditivaContrato
+    metadados_tecnicos_permitidos: list[MetadadoTecnicoContrato]
 
 
 class PrevisaoRecebimentoItem(BaseModel):

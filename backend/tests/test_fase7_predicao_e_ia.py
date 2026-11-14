@@ -871,3 +871,400 @@ def test_fase7_integracao_frontend_com_backend_e_estado_sem_previsoes(
     finally:
         api_client.configurar_cliente_http_teste(None)
         st.session_state.clear()
+
+
+# ==============================================================================
+# 8. TESTES CORRETIVOS DA FASE 7 — ANTI-LEAKAGE ESTRITO, METADADOS E AUDITORIA
+# ==============================================================================
+def test_fase7_correcoes_anti_leakage_variaveis_desconhecidas_e_contratos(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """Garante rejeição de variáveis desconhecidas, normalização Unicode e contratos completos."""
+    cenario = _criar_cenario_fase4(db_session)
+    headers_admin = _login_headers(client, "admin@vertice.edu.br", "SenhaForte@123")
+    headers_gestor = _login_headers(
+        client, "gestor.a@vertice.edu.br", "SenhaForte@123"
+    )
+    cred = _emitir_credencial_ml(client, headers_admin, nome="ML Strict AntiLeakage")
+    svc_headers = {"X-Service-Token": cred["chave_secreta"]}
+
+    # 1. Contrato expõe política estrita + referência reservada do alvo supervisionado
+    resp_cat = client.get("/api/v1/previsoes/contrato-variaveis", headers=headers_gestor)
+    assert resp_cat.status_code == 200
+    cat = resp_cat.json()
+    assert cat["exige_contrato_para_desconhecidas"] is True
+    alvo_ref = cat["alvo_supervisionado_reservado"]
+    assert alvo_ref["nome"] == "situacao_final"
+    assert alvo_ref["disponibilidade_temporal"] == "pos_desfecho"
+    assert alvo_ref["elegivel_predicao"] is False
+    assert alvo_ref["uso_exclusivo_alvo_supervisionado"] is True
+
+    # 2. Variável desconhecida / não catalogada NÃO passa silenciosamente (422 na ingestão, inválido na prévia)
+    base_prev = {
+        "estudante_id": str(cenario["est1"].id),
+        "turma_id": str(cenario["turma_1a"].id),
+        "ano_letivo": 2026,
+        "periodo_letivo": "1º Bimestre",
+        "tipo_previsao": "EVASAO",
+        "pontuacao_risco": 0.42,
+        "faixa_risco": "MODERADO",
+        "modelo_nome": "modelo_contrato_estrito",
+        "modelo_versao": "1.0.0",
+        "gerado_em": "2026-05-06T10:00:00Z",
+    }
+
+    resp_desc_prev = client.post(
+        "/api/v1/previsoes",
+        headers=svc_headers,
+        json={**base_prev, "variaveis_utilizadas": ["frequencia_percentual", "feature_misteriosa_x"]},
+    )
+    assert resp_desc_prev.status_code == 422
+    assert "feature_misteriosa_x" in resp_desc_prev.json()["detail"]
+
+    resp_val_desc = client.post(
+        "/api/v1/previsoes/validar-variaveis",
+        headers=headers_gestor,
+        json={"variaveis": ["frequencia_percentual", "feature_misteriosa_x"]},
+    )
+    assert resp_val_desc.status_code == 200
+    val_desc = resp_val_desc.json()
+    assert val_desc["valido"] is False
+    assert "feature_misteriosa_x" in val_desc["variaveis_desconhecidas_rejeitadas"]
+
+    # 3. Normalização Unicode, acentos, caixa, hífens, espaços e caminhos aninhados
+    for variante in [
+        "Situação-Final",
+        "SITUACAO FINAL",
+        "features.dados.cpf",
+        "features.pos_desfecho.data_evasao",
+        "aluno_nome",
+    ]:
+        res_var = validar_variaveis_contra_leakage([variante], lancar_excecao=False)
+        assert res_var.valido is False, variante
+        assert variante in res_var.variaveis_proibidas_detectadas, variante
+
+    # 4. Extensão explícita do catálogo só aprova contratos completos e elegíveis
+    res_ext_valido = client.post(
+        "/api/v1/previsoes/validar-variaveis",
+        headers=headers_gestor,
+        json={
+            "variaveis": ["frequencia_percentual", "media_simulados_anteriores"],
+            "catalogo_extensao": [
+                {
+                    "nome": "media_simulados_anteriores",
+                    "origem": "avaliacoes_historicas",
+                    "tipo": "float",
+                    "descricao": "Média de simulados de bimestres já encerrados.",
+                    "disponibilidade_temporal": "historico_anterior",
+                    "sensibilidade": "baixa_anonimizada",
+                    "elegivel_predicao": True,
+                }
+            ],
+        },
+    )
+    assert res_ext_valido.status_code == 200
+    assert res_ext_valido.json()["valido"] is True
+
+    # Contrato marcado como elegivel_predicao=False ou pos_desfecho ou pii_proibida deve ser rejeitado
+    res_ext_nao_elegivel = client.post(
+        "/api/v1/previsoes/validar-variaveis",
+        headers=headers_gestor,
+        json={
+            "variaveis": ["indice_auxiliar_interno"],
+            "catalogo_extensao": [
+                {
+                    "nome": "indice_auxiliar_interno",
+                    "origem": "sistema_escolar",
+                    "tipo": "float",
+                    "descricao": "Campo auxiliar não aprovado para inferência.",
+                    "disponibilidade_temporal": "ate_data_corte",
+                    "sensibilidade": "moderada_anonimizada",
+                    "elegivel_predicao": False,
+                }
+            ],
+        },
+    )
+    assert res_ext_nao_elegivel.status_code == 200
+    dados_ne = res_ext_nao_elegivel.json()
+    assert dados_ne["valido"] is False
+    assert "indice_auxiliar_interno" in dados_ne["variaveis_nao_elegiveis_rejeitadas"]
+
+    res_ext_incompleto = client.post(
+        "/api/v1/previsoes/validar-variaveis",
+        headers=headers_gestor,
+        json={
+            "variaveis": ["nova_feature"],
+            "catalogo_extensao": [{"nome": "nova_feature"}],
+        },
+    )
+    assert res_ext_incompleto.status_code == 200
+    dados_inc = res_ext_incompleto.json()
+    assert dados_inc["valido"] is False
+    assert "nova_feature" in dados_inc["variaveis_nao_elegiveis_rejeitadas"]
+
+    # Em modo estrito (lancar_excecao=True), extensão incompleta gera HTTP 422
+    import pytest
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_inc:
+        validar_variaveis_contra_leakage(
+            ["nova_feature"],
+            catalogo_extensao=[{"nome": "nova_feature"}],
+            lancar_excecao=True,
+        )
+    assert exc_inc.value.status_code == 422
+
+
+def test_fase7_correcoes_metadados_tecnicos_fechados_e_sanitizacao_api(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """Garante contrato operacional fechado para metadados_tecnicos e sanitização na saída."""
+    cenario = _criar_cenario_fase4(db_session)
+    headers_admin = _login_headers(client, "admin@vertice.edu.br", "SenhaForte@123")
+    headers_gestor = _login_headers(
+        client, "gestor.a@vertice.edu.br", "SenhaForte@123"
+    )
+    cred = _emitir_credencial_ml(client, headers_admin, nome="ML Metadata Guard")
+    svc_headers = {"X-Service-Token": cred["chave_secreta"]}
+
+    base_prev = {
+        "estudante_id": str(cenario["est1"].id),
+        "turma_id": str(cenario["turma_1a"].id),
+        "ano_letivo": 2026,
+        "periodo_letivo": "1º Bimestre",
+        "tipo_previsao": "RISCO_ACADEMICO",
+        "pontuacao_risco": 0.61,
+        "faixa_risco": "ALTO",
+        "modelo_nome": "modelo_metadados",
+        "modelo_versao": "1.0.0",
+        "gerado_em": "2026-05-06T12:00:00Z",
+    }
+
+    # 1. Metadados operacionais permitidos são aceitos e retornados
+    metadados_validos = {
+        "pipeline_execucao_id": "run-20260506-001",
+        "framework_ml": "xgboost",
+        "origem_pipeline": "airflow-dag-risco",
+        "data_corte_extracao": "2026-05-05",
+        "janela_corte_dias": 60,
+        "limiar_decisao": 0.5,
+        "calibracao_aplicada": True,
+        "tempo_inferencia_ms": 14.2,
+        "hash_artefato_modelo": "sha256:abc123def456",
+        "politica_limiares": {
+            "baixo_max": 0.25,
+            "moderado_max": 0.50,
+            "alto_max": 0.75,
+            "critico_min": 0.75,
+        },
+    }
+    resp_ok = client.post(
+        "/api/v1/previsoes",
+        headers=svc_headers,
+        json={
+            **base_prev,
+            "lote_externo_id": "lote-meta-ok",
+            "metadados_tecnicos": metadados_validos,
+        },
+    )
+    assert resp_ok.status_code == 201, resp_ok.text
+    assert resp_ok.json()["metadados_tecnicos"] == metadados_validos
+
+    # 2. Tentativa de contrabando de campo desconhecido, token/segredo, texto livre ou leakage é bloqueada (422)
+    payloads_invalidos = [
+        {"campo_nao_catalogado": "valor"},
+        {"pipeline_execucao_id": "Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig"},
+        {"api_key": "sk-super-secret"},
+        {"observacao_pedagogica": "Estudante João da Silva faltou ontem."},
+        {"politica_limiares": {"baixo_max": 0.2, "extra_invalido": 1.0}},
+        {"features_brutas": {"situacao_final": "APROVADO"}},
+    ]
+    for idx, meta_invalido in enumerate(payloads_invalidos):
+        resp_bad = client.post(
+            "/api/v1/previsoes",
+            headers=svc_headers,
+            json={
+                **base_prev,
+                "lote_externo_id": f"lote-meta-bad-{idx}",
+                "gerado_em": f"2026-05-06T12:0{idx + 1}:00Z",
+                "metadados_tecnicos": meta_invalido,
+            },
+        )
+        assert resp_bad.status_code == 422, (idx, resp_bad.text)
+
+    # 3. Sanitização defensiva na saída impede exposição de chaves não contratuais mesmo em registros legados
+    prev_legada = PrevisaoRisco(
+        estudante_id=cenario["est2"].id,
+        escola_id=cenario["escola_a"].id,
+        turma_id=cenario["turma_1a"].id,
+        ano_letivo=2026,
+        periodo_letivo="1º Bimestre",
+        tipo_previsao="EVASAO",
+        pontuacao_risco=0.33,
+        faixa_risco="MODERADO",
+        politica_classificacao_versao="v1.0",
+        modelo_nome="modelo_legado",
+        modelo_versao="0.9.0",
+        gerado_em=datetime(2026, 5, 1, 8, 0, tzinfo=timezone.utc),
+        assinatura_idempotencia=f"legado-{uuid.uuid4()}",
+        metadados_tecnicos={
+            "pipeline_execucao_id": "run-legado-1",
+            "cpf": "12345678900",
+            "segredo_interno": "vtx_ml_vazado",
+            "campo_legado_desconhecido": "valor_nao_contratado",
+        },
+    )
+    db_session.add(prev_legada)
+    db_session.commit()
+
+    resp_list = client.get(
+        "/api/v1/previsoes?modelo_nome=modelo_legado",
+        headers=headers_gestor,
+    )
+    assert resp_list.status_code == 200
+    dados_list = resp_list.json()
+    assert len(dados_list) == 1
+    assert dados_list[0]["metadados_tecnicos"] == {"pipeline_execucao_id": "run-legado-1"}
+
+    resp_hist_est2 = client.get(
+        f"/api/v1/previsoes/estudantes/{cenario['est2'].id}",
+        headers=headers_gestor,
+    )
+    assert resp_hist_est2.status_code == 200
+    hist_est2 = resp_hist_est2.json()
+    assert hist_est2["previsao_mais_recente"]["metadados_tecnicos"] == {
+        "pipeline_execucao_id": "run-legado-1"
+    }
+
+
+def test_fase7_correcoes_auditoria_ia_request_id_conversation_id_e_erro_execucao(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: Any,
+) -> None:
+    """Garante request_id gerado no backend, conversation_id opcional e ERRO_EXECUCAO em falha inesperada."""
+    cenario = _criar_cenario_fase4(db_session)
+    headers_admin = _login_headers(client, "admin@vertice.edu.br", "SenhaForte@123")
+    headers_gestor_a = _login_headers(
+        client, "gestor.a@vertice.edu.br", "SenhaForte@123"
+    )
+    headers_gestor_b = _login_headers(
+        client, "gestor.b@vertice.edu.br", "SenhaForte@123"
+    )
+    headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+
+    # 1. request_id é sempre gerado pelo backend (ignora tentativa de forja) + conversation_id é preservado
+    req_forjado = str(uuid.uuid4())
+    conv_id = str(uuid.uuid4())
+    resp_ok_1 = client.post(
+        "/api/v1/assistente/contexto",
+        headers=headers_gestor_a,
+        json={
+            "tipo_contexto": "TURMA",
+            "turma_id": str(cenario["turma_1a"].id),
+            "conversation_id": conv_id,
+            "request_id": req_forjado,
+        },
+    )
+    assert resp_ok_1.status_code == 200, resp_ok_1.text
+    meta_1 = resp_ok_1.json()["metadados"]
+    uuid.UUID(meta_1["request_id"])
+    assert meta_1["request_id"] != req_forjado
+    assert meta_1["conversation_id"] == conv_id
+
+    resp_ok_2 = client.post(
+        "/api/v1/assistente/contexto",
+        headers=headers_gestor_a,
+        json={
+            "tipo_contexto": "TURMA",
+            "turma_id": str(cenario["turma_1a"].id),
+            "conversation_id": conv_id,
+        },
+    )
+    assert resp_ok_2.status_code == 200
+    meta_2 = resp_ok_2.json()["metadados"]
+    assert meta_2["request_id"] != meta_1["request_id"]
+    assert meta_2["conversation_id"] == conv_id
+
+    # Filtro por conversation_id e request_id em /assistente/auditoria
+    resp_aud_conv = client.get(
+        f"/api/v1/assistente/auditoria?conversation_id={conv_id}",
+        headers=headers_gestor_a,
+    )
+    assert resp_aud_conv.status_code == 200
+    regs_conv = resp_aud_conv.json()
+    assert len(regs_conv) == 2
+    assert {r["request_id"] for r in regs_conv} == {meta_1["request_id"], meta_2["request_id"]}
+    assert all(r["resultado_autorizacao"] == "AUTORIZADO" for r in regs_conv)
+
+    # 2. Falha inesperada na montagem do contexto faz rollback e registra ERRO_EXECUCAO (nunca AUTORIZADO)
+    autorizados_antes = db_session.execute(
+        select(AuditoriaConsultaIA).where(
+            AuditoriaConsultaIA.resultado_autorizacao == ResultadoAutorizacaoIA.AUTORIZADO
+        )
+    ).scalars().all()
+
+    from app.modules.indicadores.service import IndicadoresGeraisService
+
+    def _falha_simulada(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("Falha simulada na camada de indicadores")
+
+    monkeypatch.setattr(
+        IndicadoresGeraisService,
+        "calcular_indicadores_gerais",
+        staticmethod(_falha_simulada),
+    )
+
+    conv_erro = str(uuid.uuid4())
+    resp_erro = client.post(
+        "/api/v1/assistente/contexto",
+        headers=headers_gestor_a,
+        json={
+            "tipo_contexto": "ESCOLA",
+            "escola_id": str(cenario["escola_a"].id),
+            "conversation_id": conv_erro,
+        },
+    )
+    assert resp_erro.status_code == 500
+    assert "request_id" in resp_erro.json()["detail"]
+
+    autorizados_depois = db_session.execute(
+        select(AuditoriaConsultaIA).where(
+            AuditoriaConsultaIA.resultado_autorizacao == ResultadoAutorizacaoIA.AUTORIZADO
+        )
+    ).scalars().all()
+    assert len(autorizados_depois) == len(autorizados_antes)
+
+    erros_execucao = db_session.execute(
+        select(AuditoriaConsultaIA).where(
+            AuditoriaConsultaIA.conversation_id == uuid.UUID(conv_erro)
+        )
+    ).scalars().all()
+    assert len(erros_execucao) == 1
+    assert erros_execucao[0].resultado_autorizacao == ResultadoAutorizacaoIA.ERRO_EXECUCAO
+    assert erros_execucao[0].request_id is not None
+
+    # 3. Consulta de auditoria respeita isolamento (Gestor B não vê Escola A; Professor vê apenas os próprios)
+    resp_aud_b = client.get(
+        f"/api/v1/assistente/auditoria?conversation_id={conv_erro}",
+        headers=headers_gestor_b,
+    )
+    assert resp_aud_b.status_code == 200
+    assert resp_aud_b.json() == []
+
+    resp_aud_prof1 = client.get(
+        f"/api/v1/assistente/auditoria?conversation_id={conv_id}",
+        headers=headers_prof1,
+    )
+    assert resp_aud_prof1.status_code == 200
+    assert resp_aud_prof1.json() == []
+
+    resp_aud_admin = client.get(
+        f"/api/v1/assistente/auditoria?request_id={erros_execucao[0].request_id}",
+        headers=headers_admin,
+    )
+    assert resp_aud_admin.status_code == 200
+    assert len(resp_aud_admin.json()) == 1
+    assert resp_aud_admin.json()[0]["resultado_autorizacao"] == "ERRO_EXECUCAO"

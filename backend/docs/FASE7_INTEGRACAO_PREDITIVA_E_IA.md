@@ -41,15 +41,23 @@ Gestor / Professor (JWT) ──▶ /api/v1/indicadores/gerais ◀─────
 - Reenvios idênticos são bloqueados com `HTTP 409 Conflict` via índice único em `assinatura_idempotencia`.
 - `POST /api/v1/previsoes/lote` processa o lote de forma **atômica**: qualquer falha de validação, leakage, escopo ou duplicidade aborta todo o lote antes do commit.
 
-### 2.3 Variáveis Permitidas vs. Proibidas (Prevenção de Data Leakage)
-- Definido formalmente em `leakage.py` e exposto em:
+### 2.3 Contrato Estrito de Variáveis e Prevenção de Data Leakage (`leakage.py`)
+- Definido formalmente em `backend/app/integrations/prediction/leakage.py` e exposto em:
   - `GET /api/v1/previsoes/contrato-variaveis`
   - `POST /api/v1/previsoes/validar-variaveis`
+- **Política padrão de negação para desconhecidas (`exige_contrato_para_desconhecidas = True`):** qualquer variável não catalogada e sem contrato completo em `VariavelPreditivaContrato` (`nome`, `origem`, `tipo`, `descricao`, `disponibilidade_temporal`, `sensibilidade`, `elegivel_predicao`) é **rejeitada automaticamente** (`HTTP 422` na ingestão / `variaveis_desconhecidas_rejeitadas` na validação prévia).
+- **Normalização Unicode e inspeção recursiva:** todas as chaves e caminhos aninhados passam por normalização Unicode (`NFKD`, remoção de acentos, caixa, espaços, hífens e prefixos) antes da conferência contra proibições e catálogo.
 - **Variáveis elegíveis (`CATALOGO_VARIAVEIS_PREDITIVAS`):** `frequencia_percentual`, `faltas`, `media_geral`, `notas_baixas`, `historico_reprovacoes`, `participacao_recuperacao`, `atrasos`, `idade`, `taxa_acerto_avaliacoes`, `taxa_entrega_atividades`, `entregas_atrasadas`, `entregas_nao_entregues`, `ano_letivo`, `periodo_letivo`, `turno`, `serie`.
+- **Variável-alvo supervisionada reservada (`CONTRATO_ALVO_SUPERVISIONADO_SITUACAO_FINAL`):** `situacao_final` é mantida exclusivamente como referência documental de desfecho (`disponibilidade_temporal = pos_desfecho`, `elegivel_predicao = False`, `uso_exclusivo_alvo_supervisionado = True`) para futura etapa de treinamento supervisionado, sendo bloqueada como entrada preditiva.
 - **Variáveis bloqueadas (`CAMPOS_PROIBIDOS_PREDICAO` -> `HTTP 422`):**
   - `situacao_final` e variantes pós-desfecho (`evadiu`, `reprovou`, `aprovado`, `desfecho`, `target`, `label`, `data_evasao`, `status_final`, `conclusao_periodo`, etc.).
-  - Atributos de identificação pessoal direta (LGPD): `nome`, `nome_completo`, `cpf`, `rg`, `email`, `telefone`, `endereco`, etc.
-- O validador suporta extensão dinâmica via `campos_proibidos_extras`.
+  - Atributos de identificação pessoal direta (LGPD): `nome`, `nome_completo`, `cpf`, `rg`, `email`, `telefone`, `endereco`, `aluno_nome`, etc.
+- Extensões de regras são suportadas via `campos_proibidos_extras` e `catalogo_extensao` (aceitas apenas mediante contrato completo com `elegivel_predicao=True`, disponibilidade anterior à data de corte e ausência de PII).
+
+### 2.4 Contrato Fechado de Metadados Técnicos (`metadados_tecnicos`)
+- `metadados_tecnicos` aceita exclusivamente chaves do catálogo operacional fechado (`CATALOGO_METADADOS_TECNICOS_PERMITIDOS`): `pipeline_execucao_id`, `framework_ml`, `origem_pipeline`, `data_corte_extracao`, `janela_corte_dias`, `limiar_decisao`, `calibracao_aplicada`, `tempo_inferencia_ms`, `hash_artefato_modelo` e `politica_limiares` (`baixo_max`, `moderado_max`, `alto_max`, `critico_min` em `[0.0, 1.0]`).
+- É proibido enviar campos desconhecidos, PII, variáveis de entrada/pós-desfecho, texto livre pedagógico ou segredos/tokens (`Bearer`, JWTs, `api_key`, `vtx_ml_*`), sendo tudo validado recursivamente com rejeição `HTTP 422`.
+- Todas as respostas da API passam por `sanitizar_metadados_tecnicos_resposta`, removendo chaves não contratuais caso existam registros legados no banco.
 
 ---
 
@@ -78,7 +86,10 @@ Todos os cálculos reutilizam exclusivamente os serviços existentes do Vértice
 - **Administrador:** bloqueado com `HTTP 403` em consultas/contextos pedagógicos; pode auditar metadados em `/assistente/auditoria`.
 - **Gestor:** acesso restrito à própria escola (`escola_id`).
 - **Professor:** acesso restrito às turmas e disciplinas em que possui vínculo real em `ProfessorTurma`.
-- **Trilha persistente:** todas as solicitações (`AUTORIZADO` e `NEGADO`) são gravadas em `auditoria_consultas_ia` com IDs estruturais e fontes utilizadas, sem armazenar PII ou tokens.
+- **Trilha persistente e rastreabilidade (`AuditoriaConsultaIA`):**
+  - Cada execução gera um `request_id` único no **backend** (sem possibilidade de sobrescrita pelo cliente) e aceita opcionalmente `conversation_id` para agrupar turnos relacionados, retornando ambos em `MetadadosContextoAssistente` e em `GET /api/v1/assistente/auditoria` (com filtros por `request_id` e `conversation_id`).
+  - Todas as tentativas são gravadas com `resultado_autorizacao` (`AUTORIZADO`, `NEGADO` ou `ERRO_EXECUCAO`), `motivo_decisao`, IDs estruturais, `filtros_utilizados`, `resumo_fontes_consultadas` e `criado_em`, sem armazenar PII, tokens ou texto livre de conversa.
+  - Em falhas inesperadas durante a montagem do contexto, a transação principal sofre *rollback* e uma nova sessão isolada registra `ERRO_EXECUCAO` antes de retornar `HTTP 500`, evitando falso registro de `AUTORIZADO`.
 
 ### 4.3 Abstração para Provedor LLM
 - `ProvedorLLMBase` define o contrato estável para futura conexão de modelos externos (Gemini/OpenAI/local).

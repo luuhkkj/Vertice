@@ -32,10 +32,11 @@ if TYPE_CHECKING:
 
 
 class ResultadoAutorizacaoIA(str, Enum):
-    """Resultado da validação de acesso antes da montagem de contexto para IA."""
+    """Resultado da validação de acesso e conclusão da montagem de contexto para IA."""
 
     AUTORIZADO = "AUTORIZADO"
     NEGADO = "NEGADO"
+    ERRO_EXECUCAO = "ERRO_EXECUCAO"
 
 
 class TipoContextoAssistente(str, Enum):
@@ -67,6 +68,16 @@ class AuditoriaConsultaIA(Base):
         Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
+    )
+    request_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        Uuid(as_uuid=True),
+        index=True,
+        nullable=True,
+    )
+    conversation_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        Uuid(as_uuid=True),
+        index=True,
+        nullable=True,
     )
     usuario_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
