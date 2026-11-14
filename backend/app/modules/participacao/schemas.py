@@ -85,8 +85,12 @@ class EntregaAtividadeResponse(BaseModel):
     estudante_id: uuid.UUID
     codigo_anonimo: Optional[str] = None
     data_entrega: Optional[date] = None
+    data_limite: Optional[date] = None
     nota: Optional[float] = None
+    nota_maxima: Optional[float] = None
     status_entrega: StatusEntregaAtividade
+    em_atraso: bool = False
+    dias_atraso: int = 0
     criado_em: datetime
     atualizado_em: datetime
 

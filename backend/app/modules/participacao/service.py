@@ -26,6 +26,7 @@ from app.modules.estudantes.repository import EstudanteRepository
 from app.modules.participacao.models import (
     Atividade,
     EntregaAtividade,
+    StatusAtividade,
     StatusEntregaAtividade,
 )
 from app.modules.participacao.repository import ParticipacaoRepository
@@ -68,6 +69,23 @@ class ParticipacaoService:
 
     @staticmethod
     def _serializar_entrega(ent: EntregaAtividade) -> EntregaAtividadeResponse:
+        at = ent.atividade
+        data_limite = at.data_limite if at is not None else None
+        nota_maxima = at.nota_maxima if at is not None else None
+        em_atraso = ent.status_entrega == StatusEntregaAtividade.ATRASADO or (
+            data_limite is not None
+            and ent.data_entrega is not None
+            and ent.data_entrega > data_limite
+        )
+        dias_atraso = (
+            (ent.data_entrega - data_limite).days
+            if (
+                data_limite is not None
+                and ent.data_entrega is not None
+                and ent.data_entrega > data_limite
+            )
+            else 0
+        )
         return EntregaAtividadeResponse(
             id=ent.id,
             atividade_id=ent.atividade_id,
@@ -76,8 +94,12 @@ class ParticipacaoService:
                 ent.estudante.codigo_anonimo if ent.estudante else None
             ),
             data_entrega=ent.data_entrega,
+            data_limite=data_limite,
             nota=ent.nota,
+            nota_maxima=nota_maxima,
             status_entrega=ent.status_entrega,
+            em_atraso=em_atraso,
+            dias_atraso=dias_atraso,
             criado_em=ent.criado_em,
             atualizado_em=ent.atualizado_em,
         )
@@ -170,14 +192,30 @@ class ParticipacaoService:
                 ),
             )
 
-        if status_informado is not None:
-            return status_informado
-
-        return (
+        status_esperado_sem_entrega = (
             StatusEntregaAtividade.PENDENTE
             if hoje <= data_limite
             else StatusEntregaAtividade.NAO_ENTREGUE
         )
+
+        if status_informado is not None and status_informado != status_esperado_sem_entrega:
+            if status_informado == StatusEntregaAtividade.PENDENTE:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        "Não é permitido informar status 'PENDENTE' após o vencimento "
+                        f"da data limite ({data_limite.isoformat()}) sem data de entrega."
+                    ),
+                )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "Não é permitido informar status 'NAO_ENTREGUE' enquanto a data limite "
+                    f"({data_limite.isoformat()}) ainda não venceu."
+                ),
+            )
+
+        return status_esperado_sem_entrega
 
     @staticmethod
     def validar_nota_atividade(
@@ -288,16 +326,32 @@ class ParticipacaoService:
         Retorna `(total_elegiveis, criadas, ja_existentes, atualizadas_nao_entregue)`.
         """
         hoje = data_referencia or date.today()
-        estudantes_turma = ParticipacaoRepository.list_estudantes_elegiveis_turma(
-            db=db,
-            escola_id=atividade.escola_id,
-            turma_id=atividade.turma_id,
-        )
         entregas_atuais = ParticipacaoRepository.list_entregas_by_atividade(
             db=db,
             atividade_id=atividade.id,
         )
         mapa_existentes = {e.estudante_id: e for e in entregas_atuais}
+
+        # Para atividades encerradas/arquivadas com registros já consolidados,
+        # preserva o retrato histórico dos estudantes esperados.
+        if (
+            atividade.status != StatusAtividade.ABERTA
+            and len(entregas_atuais) > 0
+        ):
+            estudantes_turma = [
+                e.estudante for e in entregas_atuais if e.estudante is not None
+            ]
+        else:
+            ano_turma = atividade.turma.ano_letivo if atividade.turma else None
+            estudantes_turma = (
+                ParticipacaoRepository.list_estudantes_elegiveis_turma(
+                    db=db,
+                    escola_id=atividade.escola_id,
+                    turma_id=atividade.turma_id,
+                    periodo_letivo=atividade.periodo_letivo,
+                    ano_letivo=ano_turma,
+                )
+            )
 
         status_inicial_sem_entrega = (
             StatusEntregaAtividade.PENDENTE
@@ -323,10 +377,37 @@ class ParticipacaoService:
                 criadas += 1
             else:
                 ja_existentes += 1
+                if entrega_exist.data_entrega is None:
+                    if (
+                        entrega_exist.status_entrega
+                        == StatusEntregaAtividade.PENDENTE
+                        and hoje > atividade.data_limite
+                    ):
+                        entrega_exist.status_entrega = (
+                            StatusEntregaAtividade.NAO_ENTREGUE
+                        )
+                        db.add(entrega_exist)
+                        atualizadas_nao_entregue += 1
+                    elif (
+                        entrega_exist.status_entrega
+                        == StatusEntregaAtividade.NAO_ENTREGUE
+                        and hoje <= atividade.data_limite
+                    ):
+                        entrega_exist.status_entrega = (
+                            StatusEntregaAtividade.PENDENTE
+                        )
+                        db.add(entrega_exist)
+
+        # Também reconcilia entregas já existentes de estudantes que não estejam mais
+        # na listagem atual da turma (mantendo histórico intacto).
+        ids_processados = {e.id for e in estudantes_turma}
+        for est_id, entrega_exist in mapa_existentes.items():
+            if est_id in ids_processados:
+                continue
+            ja_existentes += 1
+            if entrega_exist.data_entrega is None:
                 if (
-                    entrega_exist.data_entrega is None
-                    and entrega_exist.status_entrega
-                    == StatusEntregaAtividade.PENDENTE
+                    entrega_exist.status_entrega == StatusEntregaAtividade.PENDENTE
                     and hoje > atividade.data_limite
                 ):
                     entrega_exist.status_entrega = (
@@ -334,6 +415,13 @@ class ParticipacaoService:
                     )
                     db.add(entrega_exist)
                     atualizadas_nao_entregue += 1
+                elif (
+                    entrega_exist.status_entrega
+                    == StatusEntregaAtividade.NAO_ENTREGUE
+                    and hoje <= atividade.data_limite
+                ):
+                    entrega_exist.status_entrega = StatusEntregaAtividade.PENDENTE
+                    db.add(entrega_exist)
 
         db.flush()
         return (
@@ -446,6 +534,8 @@ class ParticipacaoService:
             db, at, usuario_autenticado
         )
 
+        prazo_anterior = at.data_limite
+
         if dados.titulo is not None:
             at.titulo = dados.titulo.strip()
         if dados.periodo_letivo is not None:
@@ -460,9 +550,34 @@ class ParticipacaoService:
             at.ativo = dados.ativo
 
         db.add(at)
+
+        # Rotina segura de reconciliação ao alterar data_limite:
+        # Atualiza somente entregas ainda não efetivadas (data_entrega is None),
+        # preservando integralmente entregas já realizadas e seus históricos.
+        if dados.data_limite is not None and at.data_limite != prazo_anterior:
+            hoje = date.today()
+            novo_status_sem_entrega = (
+                StatusEntregaAtividade.PENDENTE
+                if hoje <= at.data_limite
+                else StatusEntregaAtividade.NAO_ENTREGUE
+            )
+            entregas_at = ParticipacaoRepository.list_entregas_by_atividade(
+                db=db,
+                atividade_id=at.id,
+            )
+            for ent in entregas_at:
+                if ent.data_entrega is None and ent.status_entrega in (
+                    StatusEntregaAtividade.PENDENTE,
+                    StatusEntregaAtividade.NAO_ENTREGUE,
+                ):
+                    if ent.status_entrega != novo_status_sem_entrega:
+                        ent.status_entrega = novo_status_sem_entrega
+                        db.add(ent)
+
         db.commit()
-        db.refresh(at)
-        return ParticipacaoService._serializar_atividade(at)
+        at_carregada = ParticipacaoRepository.get_atividade_by_id(db, at.id)
+        assert at_carregada is not None
+        return ParticipacaoService._serializar_atividade(at_carregada)
 
     @staticmethod
     def registrar_ou_atualizar_entrega(
@@ -495,14 +610,23 @@ class ParticipacaoService:
                 ),
             )
 
-        # Verifica vínculo do estudante com a turma da atividade
+        # Verifica vínculo do estudante com a turma/período da atividade
+        # (ou presença já consolidada em entregas esperadas da própria atividade)
+        ano_turma = atividade.turma.ano_letivo if atividade.turma else None
         elegiveis_ids = {
             e.id
             for e in ParticipacaoRepository.list_estudantes_elegiveis_turma(
-                db, atividade.escola_id, atividade.turma_id
+                db,
+                atividade.escola_id,
+                atividade.turma_id,
+                periodo_letivo=atividade.periodo_letivo,
+                ano_letivo=ano_turma,
             )
         }
-        if estudante.id not in elegiveis_ids:
+        entrega = ParticipacaoRepository.get_entrega_by_atividade_e_estudante(
+            db, atividade.id, estudante.id
+        )
+        if estudante.id not in elegiveis_ids and entrega is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
@@ -520,9 +644,6 @@ class ParticipacaoService:
             status_informado=dados.status_entrega,
         )
 
-        entrega = ParticipacaoRepository.get_entrega_by_atividade_e_estudante(
-            db, atividade.id, estudante.id
-        )
         if entrega is None:
             entrega = EntregaAtividade(
                 atividade_id=atividade.id,

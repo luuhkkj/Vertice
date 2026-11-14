@@ -428,6 +428,7 @@ EST-2026-003,Turma 2A,MAT,2026,1º Bimestre,92.0,3,9.0,9.5,8.5,0,Nao,Aprovado
 - **Cliente HTTP Autenticado (`Frontend vertice/data/api_client.py`):**
   - Centraliza a comunicação com a API FastAPI (`VERTICE_API_URL`, padrão `http://127.0.0.1:8000/api/v1`), enviando o token JWT Bearer da sessão sem jamais expor tokens ou credenciais na interface, em logs ou em mensagens de erro.
   - Trata explicitamente sessão expirada (`HTTP 401`), permissão insuficiente (`HTTP 403`) e indisponibilidade de rede, sem apresentar dados fictícios como se fossem reais.
+  - **Bloqueio estrito de login offline (`pages/login.py` e `components/auth_animada.py`):** indisponibilidade do servidor ou falha de autenticação nunca marca `logado = True`; somente sessões autenticadas no backend dão acesso às telas analíticas.
 - **Mapa de Acertos e 6 Gráficos Analíticos (`Frontend vertice/pages/mapa_acertos.py` e `Frontend vertice/components/graficos.py`):**
   - Integra filtros dinâmicos por **Disciplina**, **Turma**, **Período letivo**, **Avaliação** e **Questão**, consumindo `GET /api/v1/indicadores/avaliacoes`.
   - Renderiza os 6 gráficos analíticos com dados reais:
@@ -437,6 +438,18 @@ EST-2026-003,Turma 2A,MAT,2026,1º Bimestre,92.0,3,9.0,9.5,8.5,0,Nao,Aprovado
     4. Comparação de desempenho entre questões (taxa de acerto % vs aproveitamento médio de nota %);
     5. Distribuição geral de acertos da avaliação (`distribuicao_acertos_estudantes`);
     6. Desempenho por tópico ou habilidade (`distribuicao_por_topico`).
+
+### 7. Participação, Entregas e Acompanhamento de Estudantes (Fase 6)
+- **Regras Estritas de Elegibilidade, Prazos e Reconciliação (`app/modules/participacao/`):**
+  - `ParticipacaoRepository.list_estudantes_elegiveis_turma` considera o recorte por `periodo_letivo` e `ano_letivo` da atividade em `boletins_periodo`, evitando incluir retroativamente estudantes de períodos futuros ou já marcados como `Evadido` em período anterior (limitação conhecida: `boletins_periodo` armazena granularidade por ano/período letivo, sem data exata de matrícula no meio do bimestre). Atividades `ENCERRADA` / `ARQUIVADA` com entregas consolidadas preservam seu retrato histórico.
+  - `ParticipacaoService.resolver_status_entrega` valida estritamente coerência com `data_limite`: sem `data_entrega`, rejeita com `HTTP 422` o status `PENDENTE` após o vencimento (`hoje > data_limite`) e o status `NAO_ENTREGUE` antes/no prazo (`hoje <= data_limite`), além de exigir `data_entrega` para `ENTREGUE`/`ATRASADO`.
+  - `PATCH /api/v1/atividades/{atividade_id}` executa reconciliação segura ao alterar `data_limite`, atualizando somente entregas pendentes/não entregues sem data efetivada (`data_entrega is None`) e preservando integralmente entregas já realizadas e seus históricos.
+  - `EntregaAtividadeResponse` inclui metadados de prazo e atraso (`data_limite`, `nota_maxima`, `em_atraso`, `dias_atraso`), mantendo `nota = None` (`NULL`) quando não atribuída.
+- **Indicadores e Histórico Individual (`GET /api/v1/indicadores/participacao`):**
+  - Denominador usa sempre todos os estudantes esperados da atividade (nunca apenas os que entregaram), tratando denominador zero sem erro (`None`) e preservando médias sobre notas realmente disponíveis.
+  - Suporta filtro por `estudante_id` (além de `turma_id`, `disciplina_id`, `periodo_letivo`, `ano_letivo` e `atividade_id`) para cálculo de histórico individual anonimizado e evolução por período.
+- **Tela de Participação no Frontend (`Frontend vertice/pages/participacao.py`):**
+  - Substitui integralmente os dados mockados pela integração real com a API: criação transacional de atividades, atualização de prazo, sincronização idempotente de entregas esperadas, registro/edição de entregas e notas com pré-validação coerente, indicadores em tempo real, histórico consolidado por turma/atividade, histórico individual anonimizado e registro/consulta de acompanhamentos pedagógicos (`origem="participacao"`).
 
 ---
 

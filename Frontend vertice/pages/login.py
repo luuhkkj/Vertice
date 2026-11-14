@@ -64,8 +64,12 @@ def render():
                         st.session_state["logado"] = True
                         st.rerun()
                     elif resp.indisponivel:
-                        st.session_state["logado"] = True
-                        st.rerun()
+                        st.session_state["logado"] = False
+                        st.error(
+                            resp.erro
+                            or "Servidor do Vértice indisponível. Não foi possível autenticar."
+                        )
                     else:
+                        st.session_state["logado"] = False
                         st.error(resp.erro or "Credenciais inválidas.")
 

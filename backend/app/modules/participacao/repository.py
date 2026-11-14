@@ -11,7 +11,11 @@ from sqlalchemy.orm import Session, selectinload
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.disciplinas.models import Disciplina
 from app.modules.escolas.models import Escola
-from app.modules.estudantes.models import BoletimPeriodo, Estudante
+from app.modules.estudantes.models import (
+    BoletimPeriodo,
+    Estudante,
+    SituacaoFinalPeriodo,
+)
 from app.modules.participacao.models import Atividade, EntregaAtividade
 from app.modules.turmas.models import Turma
 
@@ -227,26 +231,153 @@ class ParticipacaoRepository:
         db: Session,
         escola_id: uuid.UUID,
         turma_id: uuid.UUID,
+        periodo_letivo: Optional[str] = None,
+        ano_letivo: Optional[int] = None,
     ) -> list[Estudante]:
         """
-        Retorna todos os estudantes ativos já vinculados àquela escola e turma
-        por meio dos registros existentes em `boletins_periodo`.
-        Não cria estudantes.
+        Retorna os estudantes ativos elegíveis para entregas esperadas de uma turma.
+        Regras de integridade histórica:
+        - Quando houver registros em `boletins_periodo` para o `periodo_letivo` e
+          `ano_letivo` da atividade, utiliza estritamente esse vínculo de período,
+          evitando puxar retroativamente estudantes que só entraram em períodos futuros.
+        - Quando o período letivo ainda não tiver boletins lançados (atividade em andamento),
+          recorre aos estudantes da turma no mesmo `ano_letivo` (ou na turma em geral
+          se não houver distinção de ano), excluindo quem já foi marcado como
+          `Evadido` em período distinto ou já possui boletim no período alvo em outra turma.
+        - Limitação conhecida: `boletins_periodo` registra granularidade por ano/período
+          letivo e não data exata de matrícula/transferência no meio do bimestre.
+        - Nunca cria novos estudantes.
         """
-        subq_ids = (
-            select(Estudante.id)
-            .join(BoletimPeriodo, BoletimPeriodo.estudante_id == Estudante.id)
-            .where(
+        ano_ref = ano_letivo
+        if ano_ref is None:
+            ano_ref = db.execute(
+                select(Turma.ano_letivo).where(Turma.id == turma_id)
+            ).scalar_one_or_none()
+
+        periodo_limpo = periodo_letivo.strip() if periodo_letivo else None
+
+        if periodo_limpo:
+            filtros_periodo = [
                 Estudante.escola_id == escola_id,
                 Estudante.ativo.is_(True),
                 BoletimPeriodo.escola_id == escola_id,
                 BoletimPeriodo.turma_id == turma_id,
+                BoletimPeriodo.periodo_letivo == periodo_limpo,
+            ]
+            if ano_ref is not None:
+                filtros_periodo.append(BoletimPeriodo.ano_letivo == ano_ref)
+
+            ids_periodo = list(
+                db.execute(
+                    select(Estudante.id)
+                    .join(
+                        BoletimPeriodo,
+                        BoletimPeriodo.estudante_id == Estudante.id,
+                    )
+                    .where(*filtros_periodo)
+                    .distinct()
+                )
+                .scalars()
+                .all()
             )
-            .distinct()
-        )
+            if ids_periodo:
+                stmt_periodo = (
+                    select(Estudante)
+                    .where(Estudante.id.in_(ids_periodo))
+                    .order_by(Estudante.codigo_anonimo)
+                )
+                return list(db.execute(stmt_periodo).scalars().all())
+
+        # Fallback para turma quando o período específico ainda não possui boletins:
+        filtros_ano = [
+            Estudante.escola_id == escola_id,
+            Estudante.ativo.is_(True),
+            BoletimPeriodo.escola_id == escola_id,
+            BoletimPeriodo.turma_id == turma_id,
+        ]
+        if ano_ref is not None:
+            ids_ano = list(
+                db.execute(
+                    select(Estudante.id)
+                    .join(
+                        BoletimPeriodo,
+                        BoletimPeriodo.estudante_id == Estudante.id,
+                    )
+                    .where(*filtros_ano, BoletimPeriodo.ano_letivo == ano_ref)
+                    .distinct()
+                )
+                .scalars()
+                .all()
+            )
+        else:
+            ids_ano = []
+
+        if not ids_ano:
+            ids_ano = list(
+                db.execute(
+                    select(Estudante.id)
+                    .join(
+                        BoletimPeriodo,
+                        BoletimPeriodo.estudante_id == Estudante.id,
+                    )
+                    .where(*filtros_ano)
+                    .distinct()
+                )
+                .scalars()
+                .all()
+            )
+
+        if not ids_ano:
+            return []
+
+        ids_excluir: set[uuid.UUID] = set()
+        if periodo_limpo:
+            # Exclui estudantes que já aparecem em outra turma no mesmo período/ano
+            filtros_outra_turma = [
+                BoletimPeriodo.escola_id == escola_id,
+                BoletimPeriodo.turma_id != turma_id,
+                BoletimPeriodo.periodo_letivo == periodo_limpo,
+                BoletimPeriodo.estudante_id.in_(ids_ano),
+            ]
+            if ano_ref is not None:
+                filtros_outra_turma.append(BoletimPeriodo.ano_letivo == ano_ref)
+            ids_excluir.update(
+                db.execute(
+                    select(BoletimPeriodo.estudante_id)
+                    .where(*filtros_outra_turma)
+                    .distinct()
+                )
+                .scalars()
+                .all()
+            )
+
+            # Exclui estudantes já marcados como EVADIDO na turma/ano em período distinto
+            filtros_evadido = [
+                BoletimPeriodo.escola_id == escola_id,
+                BoletimPeriodo.turma_id == turma_id,
+                BoletimPeriodo.periodo_letivo != periodo_limpo,
+                BoletimPeriodo.situacao_final == SituacaoFinalPeriodo.EVADIDO,
+                BoletimPeriodo.estudante_id.in_(ids_ano),
+            ]
+            if ano_ref is not None:
+                filtros_evadido.append(BoletimPeriodo.ano_letivo == ano_ref)
+            ids_excluir.update(
+                db.execute(
+                    select(BoletimPeriodo.estudante_id)
+                    .where(*filtros_evadido)
+                    .distinct()
+                )
+                .scalars()
+                .all()
+            )
+
+        ids_finais = [eid for eid in ids_ano if eid not in ids_excluir]
+        if not ids_finais:
+            return []
+
         stmt = (
             select(Estudante)
-            .where(Estudante.id.in_(subq_ids))
+            .where(Estudante.id.in_(ids_finais))
             .order_by(Estudante.codigo_anonimo)
         )
         return list(db.execute(stmt).scalars().all())

@@ -314,21 +314,28 @@ def criar_avaliacao_api(
 
 def registrar_acompanhamento_pedagogico_api(
     *,
-    turma_id: str,
-    disciplina_id: Optional[str],
+    turma_id: Optional[str] = None,
+    disciplina_id: Optional[str] = None,
+    estudante_id: Optional[str] = None,
     tipo_acao: str,
     descricao: str,
-    origem: str = "avaliacao",
+    origem: str = "MAPA_ACERTOS",
 ) -> RespostaAPI:
-    """Registra uma ação pedagógica vinculada à avaliação/questão (`POST /api/v1/acompanhamentos`)."""
+    """Registra uma ação pedagógica vinculada à avaliação, participação ou estudante (`POST /api/v1/acompanhamentos`)."""
+    origem_limpa = str(origem).strip().upper()
+    if origem_limpa == "AVALIACAO":
+        origem_limpa = "MAPA_ACERTOS"
     payload: dict[str, Any] = {
-        "turma_id": turma_id,
-        "origem": origem,
+        "origem": origem_limpa,
         "tipo_acao": tipo_acao.strip(),
         "descricao": descricao.strip(),
     }
+    if turma_id:
+        payload["turma_id"] = turma_id
     if disciplina_id:
         payload["disciplina_id"] = disciplina_id
+    if estudante_id:
+        payload["estudante_id"] = estudante_id
     return requisitar_api("POST", "/acompanhamentos", json_body=payload)
 
 
@@ -362,4 +369,209 @@ def validar_e_confirmar_importacao_api(
         "POST",
         f"/importacoes/{lote_id}/confirmar",
     )
+
+
+def listar_atividades_api(
+    *,
+    turma_id: Optional[str] = None,
+    disciplina_id: Optional[str] = None,
+    periodo_letivo: Optional[str] = None,
+    status: Optional[str] = None,
+) -> RespostaAPI:
+    """Lista atividades no escopo do usuário autenticado (`GET /api/v1/atividades`)."""
+    return requisitar_api(
+        "GET",
+        "/atividades",
+        params={
+            "turma_id": turma_id,
+            "disciplina_id": disciplina_id,
+            "periodo_letivo": periodo_letivo,
+            "status": status,
+        },
+    )
+
+
+def criar_atividade_api(
+    *,
+    codigo: str,
+    titulo: str,
+    turma_id: str,
+    disciplina_id: str,
+    periodo_letivo: str,
+    data_limite: str,
+    nota_maxima: Optional[float] = None,
+    status: str = "ABERTA",
+    gerar_entregas_esperadas: bool = True,
+) -> RespostaAPI:
+    """Cria uma atividade (`POST /api/v1/atividades`)."""
+    payload: dict[str, Any] = {
+        "codigo": codigo.strip(),
+        "titulo": titulo.strip(),
+        "turma_id": turma_id,
+        "disciplina_id": disciplina_id,
+        "periodo_letivo": periodo_letivo.strip(),
+        "data_limite": data_limite,
+        "status": str(status).upper(),
+        "gerar_entregas_esperadas": gerar_entregas_esperadas,
+    }
+    if nota_maxima is not None:
+        payload["nota_maxima"] = float(nota_maxima)
+    return requisitar_api("POST", "/atividades", json_body=payload)
+
+
+def atualizar_atividade_api(
+    *,
+    atividade_id: str,
+    titulo: Optional[str] = None,
+    periodo_letivo: Optional[str] = None,
+    data_limite: Optional[str] = None,
+    nota_maxima: Optional[float] = None,
+    status: Optional[str] = None,
+    ativo: Optional[bool] = None,
+) -> RespostaAPI:
+    """Atualiza dados cadastrais ou data limite de uma atividade (`PATCH /api/v1/atividades/{id}`)."""
+    payload: dict[str, Any] = {}
+    if titulo is not None:
+        payload["titulo"] = titulo.strip()
+    if periodo_letivo is not None:
+        payload["periodo_letivo"] = periodo_letivo.strip()
+    if data_limite is not None:
+        payload["data_limite"] = data_limite
+    if nota_maxima is not None:
+        payload["nota_maxima"] = float(nota_maxima)
+    if status is not None:
+        payload["status"] = status
+    if ativo is not None:
+        payload["ativo"] = ativo
+    return requisitar_api(
+        "PATCH",
+        f"/atividades/{atividade_id}",
+        json_body=payload,
+    )
+
+
+def gerar_entregas_esperadas_api(
+    atividade_id: str,
+    *,
+    data_referencia: Optional[str] = None,
+) -> RespostaAPI:
+    """Gera de forma idempotente as entregas esperadas da atividade (`POST /api/v1/atividades/{id}/gerar-entregas-esperadas`)."""
+    return requisitar_api(
+        "POST",
+        f"/atividades/{atividade_id}/gerar-entregas-esperadas",
+        params={"data_referencia": data_referencia},
+    )
+
+
+def listar_entregas_atividade_api(
+    atividade_id: str,
+    *,
+    estudante_id: Optional[str] = None,
+) -> RespostaAPI:
+    """Lista entregas esperadas e realizadas de uma atividade (`GET /api/v1/atividades/{id}/entregas`)."""
+    return requisitar_api(
+        "GET",
+        f"/atividades/{atividade_id}/entregas",
+        params={"estudante_id": estudante_id},
+    )
+
+
+def registrar_entrega_atividade_api(
+    *,
+    atividade_id: str,
+    estudante_id: Optional[str] = None,
+    codigo_anonimo: Optional[str] = None,
+    data_entrega: Optional[str] = None,
+    nota: Optional[float] = None,
+    status_entrega: Optional[str] = None,
+    incluir_nota: bool = True,
+) -> RespostaAPI:
+    """Registra ou atualiza entrega por estudante (`POST /api/v1/atividades/{id}/entregas`)."""
+    payload: dict[str, Any] = {
+        "data_entrega": data_entrega,
+    }
+    if estudante_id:
+        payload["estudante_id"] = estudante_id
+    elif codigo_anonimo:
+        payload["codigo_anonimo"] = codigo_anonimo.strip()
+    if incluir_nota:
+        payload["nota"] = nota
+    if status_entrega:
+        payload["status_entrega"] = status_entrega
+    return requisitar_api(
+        "POST",
+        f"/atividades/{atividade_id}/entregas",
+        json_body=payload,
+    )
+
+
+def atualizar_entrega_por_id_api(
+    *,
+    entrega_id: str,
+    data_entrega: Optional[str] = None,
+    nota: Optional[float] = None,
+    status_entrega: Optional[str] = None,
+    incluir_data_entrega: bool = True,
+    incluir_nota: bool = True,
+) -> RespostaAPI:
+    """Atualiza entrega existente pelo ID (`PATCH /api/v1/entregas/{id}`)."""
+    payload: dict[str, Any] = {}
+    if incluir_data_entrega:
+        payload["data_entrega"] = data_entrega
+    if incluir_nota:
+        payload["nota"] = nota
+    if status_entrega:
+        payload["status_entrega"] = status_entrega
+    return requisitar_api(
+        "PATCH",
+        f"/entregas/{entrega_id}",
+        json_body=payload,
+    )
+
+
+def consultar_indicadores_participacao(
+    *,
+    turma_id: Optional[str] = None,
+    disciplina_id: Optional[str] = None,
+    periodo_letivo: Optional[str] = None,
+    atividade_id: Optional[str] = None,
+    estudante_id: Optional[str] = None,
+    ano_letivo: Optional[int] = None,
+    data_referencia: Optional[str] = None,
+) -> RespostaAPI:
+    """Consulta `GET /api/v1/indicadores/participacao` com os filtros selecionados."""
+    return requisitar_api(
+        "GET",
+        "/indicadores/participacao",
+        params={
+            "turma_id": turma_id,
+            "disciplina_id": disciplina_id,
+            "periodo_letivo": periodo_letivo,
+            "atividade_id": atividade_id,
+            "estudante_id": estudante_id,
+            "ano_letivo": ano_letivo,
+            "data_referencia": data_referencia,
+        },
+    )
+
+
+def listar_acompanhamentos_api(
+    *,
+    turma_id: Optional[str] = None,
+    disciplina_id: Optional[str] = None,
+    estudante_id: Optional[str] = None,
+    origem: Optional[str] = None,
+) -> RespostaAPI:
+    """Lista acompanhamentos pedagógicos (`GET /api/v1/acompanhamentos`)."""
+    return requisitar_api(
+        "GET",
+        "/acompanhamentos",
+        params={
+            "turma_id": turma_id,
+            "disciplina_id": disciplina_id,
+            "estudante_id": estudante_id,
+            "origem": origem,
+        },
+    )
+
 

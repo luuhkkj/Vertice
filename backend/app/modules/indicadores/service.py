@@ -22,6 +22,7 @@ from app.modules.avaliacoes.models import (
     TipoQuestao,
 )
 from app.modules.estudantes.models import BoletimPeriodo, Estudante
+from app.modules.estudantes.repository import EstudanteRepository
 from app.modules.indicadores.repository import IndicadoresRepository
 from app.modules.indicadores.schemas import (
     ComparacaoPeriodoAnteriorSchema,
@@ -39,7 +40,10 @@ from app.modules.indicadores.schemas import (
     TaxaEntregaAtividadeSchema,
     TaxaEntregaTurmaSchema,
 )
-from app.modules.participacao.models import StatusEntregaAtividade
+from app.modules.participacao.models import (
+    StatusAtividade,
+    StatusEntregaAtividade,
+)
 from app.modules.participacao.repository import ParticipacaoRepository
 from app.modules.usuarios.models import PapelUsuario, Usuario
 
@@ -759,6 +763,7 @@ class IndicadoresParticipacaoService:
         ano_letivo: Optional[int] = None,
         periodo_letivo: Optional[str] = None,
         atividade_id: Optional[uuid.UUID] = None,
+        estudante_id: Optional[uuid.UUID] = None,
         data_referencia: Optional[date] = None,
     ) -> IndicadoresParticipacaoResponse:
         hoje = data_referencia or date.today()
@@ -769,6 +774,22 @@ class IndicadoresParticipacaoService:
             turma_id=turma_id,
             disciplina_id=disciplina_id,
         )
+
+        if estudante_id is not None:
+            est_filtro = EstudanteRepository.get_by_id(db, estudante_id)
+            if est_filtro is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Estudante não encontrado.",
+                )
+            if (
+                escolas_aut is not None
+                and est_filtro.escola_id not in escolas_aut
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado ao estudante fora da escola autorizada.",
+                )
 
         atividades = IndicadoresRepository.listar_atividades_escopo(
             db=db,
@@ -805,28 +826,39 @@ class IndicadoresParticipacaoService:
         )
 
         for at in atividades:
-            estudantes_elegiveis = (
-                ParticipacaoRepository.list_estudantes_elegiveis_turma(
-                    db=db,
-                    escola_id=at.escola_id,
-                    turma_id=at.turma_id,
-                )
-            )
-            mapa_elegiveis: dict[uuid.UUID, Estudante] = {
-                e.id: e for e in estudantes_elegiveis
-            }
             entregas_at = list(at.entregas or [])
             mapa_entregas = {e.estudante_id: e for e in entregas_at}
+            mapa_elegiveis: dict[uuid.UUID, Estudante] = {}
+
+            if at.status == StatusAtividade.ABERTA or len(entregas_at) == 0:
+                ano_turma = at.turma.ano_letivo if at.turma else None
+                estudantes_elegiveis = (
+                    ParticipacaoRepository.list_estudantes_elegiveis_turma(
+                        db=db,
+                        escola_id=at.escola_id,
+                        turma_id=at.turma_id,
+                        periodo_letivo=at.periodo_letivo,
+                        ano_letivo=ano_turma,
+                    )
+                )
+                for e in estudantes_elegiveis:
+                    mapa_elegiveis[e.id] = e
+
             for e_reg in entregas_at:
                 if e_reg.estudante is not None:
                     mapa_elegiveis.setdefault(
                         e_reg.estudante_id, e_reg.estudante
                     )
 
-            ids_esperados_at = sorted(
-                mapa_elegiveis.keys(),
-                key=lambda eid: mapa_elegiveis[eid].codigo_anonimo,
-            )
+            if estudante_id is not None:
+                if estudante_id not in mapa_elegiveis:
+                    continue
+                ids_esperados_at = [estudante_id]
+            else:
+                ids_esperados_at = sorted(
+                    mapa_elegiveis.keys(),
+                    key=lambda eid: mapa_elegiveis[eid].codigo_anonimo,
+                )
 
             esp_at = len(ids_esperados_at)
             real_at = 0
@@ -850,6 +882,12 @@ class IndicadoresParticipacaoService:
                         and hoje > at.data_limite
                     ):
                         st = StatusEntregaAtividade.NAO_ENTREGUE
+                    elif (
+                        st == StatusEntregaAtividade.NAO_ENTREGUE
+                        and ent_obj.data_entrega is None
+                        and hoje <= at.data_limite
+                    ):
+                        st = StatusEntregaAtividade.PENDENTE
                     nota_val = (
                         float(ent_obj.nota)
                         if ent_obj.nota is not None
@@ -1046,7 +1084,7 @@ class IndicadoresParticipacaoService:
         )
 
         return IndicadoresParticipacaoResponse(
-            total_atividades=len(atividades),
+            total_atividades=len(taxa_por_atividade),
             total_entregas_esperadas=total_esperadas_global,
             entregas_realizadas=realizadas_global,
             entregas_no_prazo=no_prazo_global,

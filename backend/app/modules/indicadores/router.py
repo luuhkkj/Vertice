@@ -93,6 +93,7 @@ def obter_indicadores_participacao(
     ano_letivo: Optional[int] = Query(default=None, ge=2000, le=2100),
     periodo_letivo: Optional[str] = Query(default=None, max_length=30),
     atividade_id: Optional[uuid.UUID] = Query(default=None),
+    estudante_id: Optional[uuid.UUID] = Query(default=None),
     data_referencia: Optional[date] = Query(default=None),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_acesso_pedagogico),
@@ -106,5 +107,6 @@ def obter_indicadores_participacao(
         ano_letivo=ano_letivo,
         periodo_letivo=periodo_letivo,
         atividade_id=atividade_id,
+        estudante_id=estudante_id,
         data_referencia=data_referencia,
     )

@@ -911,18 +911,17 @@ def render():
                 st.session_state["logado"] = True
                 st.rerun()
                 return
-            if not resp.indisponivel:
-                st.error(resp.erro or "E-mail ou senha inválidos.")
-                return
-
-        # Modo de navegação local apenas quando o backend não estiver em execução:
-        professor = None
-        st.session_state["perfil"] = perfil
-        st.session_state["professor_atual"] = professor
-        st.session_state["email_atual"] = email
-        st.session_state["logado"] = True
-
-        st.rerun()
+            st.session_state["logado"] = False
+            st.error(
+                resp.erro
+                or (
+                    "Servidor do Vértice indisponível. "
+                    "Não foi possível autenticar suas credenciais."
+                    if resp.indisponivel
+                    else "E-mail ou senha inválidos."
+                )
+            )
+            return
 
     elif acao.get("tipo") == "cadastro":
         st.session_state["tela_auth"] = "login"
