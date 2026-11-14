@@ -484,9 +484,18 @@ uvicorn app.main:app --reload --port 8000
 
 ### Executar a Suíte de Testes Automatizados
 
-Os testes utilizam banco SQLite em memória isolado por função de teste, não exigindo PostgreSQL ativo para execução da suíte unitária:
+- **Suíte padrão (SQLite em memória isolado por teste):**
 
 ```powershell
 cd backend
-pytest -v
+pytest -m "not postgres" -v
 ```
+
+- **Suíte dedicada de PostgreSQL + ciclo completo do Alembic (`upgrade head` / `downgrade base` / `upgrade head` / `check`):**
+
+```powershell
+cd backend
+pytest tests/postgres/test_postgres_integracao.py -m postgres -v
+```
+
+> A referência completa dos endpoints HTTP v1 está documentada em [docs/API_ENDPOINTS.md](docs/API_ENDPOINTS.md).

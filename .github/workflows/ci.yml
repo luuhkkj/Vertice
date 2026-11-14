@@ -1,0 +1,126 @@
+name: CI - Vértice
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-sqlite-tests:
+    name: Backend — Compilação, OpenAPI e Testes Unitários/Integração (SQLite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Instalar dependências do backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verificar compilação Python do backend
+        run: python -m compileall -q app tests
+
+      - name: Validar inicialização FastAPI e geração do schema OpenAPI
+        env:
+          ENVIRONMENT: test
+          SECRET_KEY: ci-test-secret-key-min-32-chars-vertice-edu-2026
+          DATABASE_URL: sqlite:///:memory:
+        run: |
+          python -c "from app.main import app; spec = app.openapi(); assert len(spec['paths']) > 0; print('OpenAPI paths:', len(spec['paths']))"
+
+      - name: Executar suíte de testes sem dependência externa (SQLite)
+        run: pytest -m "not postgres" -v
+
+  backend-postgres-tests:
+    name: Backend — Migrações Alembic e Integração Real PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vertice_ci
+          POSTGRES_PASSWORD: CiStrongPass_Vertice_2026
+          POSTGRES_DB: vertice_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vertice_ci -d vertice_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Instalar dependências do backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Executar ciclo real Alembic e testes integrados em PostgreSQL
+        env:
+          ENVIRONMENT: test
+          SECRET_KEY: ci-pg-secret-key-min-32-chars-vertice-edu-2026
+          POSTGRES_SERVER: 127.0.0.1
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: vertice_ci
+          POSTGRES_PASSWORD: CiStrongPass_Vertice_2026
+          POSTGRES_DB: vertice_test
+          VERTICE_TEST_DATABASE_URL: postgresql+psycopg://vertice_ci:CiStrongPass_Vertice_2026@127.0.0.1:5432/vertice_test
+        run: pytest tests/postgres/test_postgres_integracao.py -m postgres -v
+
+  frontend-and-compose-check:
+    name: Frontend & Docker — Compilação, Dependências e Compose Config
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Frontend vertice/requirements.txt
+
+      - name: Instalar dependências do frontend Streamlit
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r "Frontend vertice/requirements.txt"
+
+      - name: Verificar compilação, imports essenciais e ausência de mock_data no frontend
+        working-directory: Frontend vertice
+        run: |
+          python -m compileall -q .
+          python -c "import streamlit, httpx, pandas, plotly, openpyxl, config; from data import api_client; print('Frontend deps & api_client OK:', streamlit.__version__)"
+          python -c "import pathlib; bad = [str(p) for p in pathlib.Path('pages').glob('*.py') if 'mock_data' in p.read_text(encoding='utf-8') or 'data.atribuicoes' in p.read_text(encoding='utf-8')]; assert not bad, f'Mock residual encontrado em: {bad}'"
+
+      - name: Validar sintaxe do docker-compose.yml
+        env:
+          POSTGRES_USER: vertice_ci
+          POSTGRES_PASSWORD: CiStrongPass_Vertice_2026
+          POSTGRES_DB: vertice_ci
+          SECRET_KEY: ci-compose-secret-key-min-32-chars-vertice-2026
+        run: docker compose config -q
