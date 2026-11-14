@@ -14,8 +14,9 @@ env/
 .env.local
 .env.*.local
 
-# Testing & coverage
+# Testing, lint & coverage
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 

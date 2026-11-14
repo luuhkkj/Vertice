@@ -1,0 +1,12 @@
+# ==============================================================================
+# Override opcional para depuração local do PostgreSQL no host.
+# Por segurança, o docker-compose.yml principal NÃO expõe a porta 5432 externamente.
+# Utilize este arquivo apenas quando precisar conectar ferramentas locais
+# (psql, DBeaver, pgAdmin), mantendo o vínculo estrito em 127.0.0.1:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.postgres-local.yml up -d
+# ==============================================================================
+services:
+  db:
+    ports:
+      - "127.0.0.1:${POSTGRES_EXTERNAL_PORT:-5432}:5432"

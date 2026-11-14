@@ -22,8 +22,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-vertice}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env da raiz ou no ambiente}
       POSTGRES_DB: ${POSTGRES_DB:-vertice}
-    ports:
-      - "${POSTGRES_EXTERNAL_PORT:-5432}:5432"
     volumes:
       - vertice_postgres_data:/var/lib/postgresql/data
     healthcheck:

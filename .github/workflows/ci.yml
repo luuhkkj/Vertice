@@ -7,6 +7,26 @@ on:
     branches: [main]
 
 jobs:
+  lint-static-checks:
+    name: Qualidade & Lint (Ruff — Backend e Frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar Ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install "ruff>=0.8.0,<1.0.0"
+
+      - name: Executar Ruff lint em backend e Frontend vertice
+        run: ruff check backend "Frontend vertice"
+
   backend-sqlite-tests:
     name: Backend — Compilação, OpenAPI e Testes Unitários/Integração (SQLite)
     runs-on: ubuntu-latest
@@ -22,12 +42,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: backend/requirements-dev.txt
 
-      - name: Instalar dependências do backend
+      - name: Instalar dependências do backend e desenvolvimento
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Verificar compilação Python do backend
         run: python -m compileall -q app tests
@@ -117,10 +137,100 @@ jobs:
           python -c "import streamlit, httpx, pandas, plotly, openpyxl, config; from data import api_client; print('Frontend deps & api_client OK:', streamlit.__version__)"
           python -c "import pathlib; bad = [str(p) for p in pathlib.Path('pages').glob('*.py') if 'mock_data' in p.read_text(encoding='utf-8') or 'data.atribuicoes' in p.read_text(encoding='utf-8')]; assert not bad, f'Mock residual encontrado em: {bad}'"
 
-      - name: Validar sintaxe do docker-compose.yml
+      - name: Validar sintaxe de docker-compose.yml e override local
         env:
           POSTGRES_USER: vertice_ci
           POSTGRES_PASSWORD: CiStrongPass_Vertice_2026
           POSTGRES_DB: vertice_ci
           SECRET_KEY: ci-compose-secret-key-min-32-chars-vertice-2026
-        run: docker compose config -q
+        run: |
+          docker compose config -q
+          docker compose -f docker-compose.yml -f docker-compose.postgres-local.yml config -q
+
+  docker-compose-runtime-e2e:
+    name: Containers — Build, Subida Compose, Migrações, Bootstrap Admin e Healthchecks
+    runs-on: ubuntu-latest
+    needs: [lint-static-checks, frontend-and-compose-check]
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Gerar arquivo .env efêmero para validação dos containers no CI
+        run: |
+          SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
+          PGPASS=$(python3 -c "import secrets; print(secrets.token_urlsafe(24))")
+          cat <<EOF > .env
+          POSTGRES_USER=vertice_ci
+          POSTGRES_PASSWORD=${PGPASS}
+          POSTGRES_DB=vertice_ci
+          PROJECT_NAME=Vértice Backend API
+          VERSION=0.2.1
+          ENVIRONMENT=production
+          DEBUG=False
+          API_V1_STR=/api/v1
+          BACKEND_PORT=8000
+          BACKEND_CORS_ORIGINS=http://localhost:8501,http://127.0.0.1:8501
+          SECRET_KEY=${SECRET}
+          ALGORITHM=HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES=60
+          FRONTEND_PORT=8501
+          VERTICE_API_URL=http://backend:8000/api/v1
+          EOF
+
+      - name: Build das imagens Docker (backend e frontend)
+        run: docker compose build
+
+      - name: Iniciar stack Docker Compose em background
+        run: docker compose up -d
+
+      - name: Aguardar conclusão de migrações e saúde de backend e frontend
+        run: |
+          for i in $(seq 1 45); do
+            BACKEND_STATUS=$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q backend)" 2>/dev/null || echo "starting")
+            FRONTEND_STATUS=$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q frontend)" 2>/dev/null || echo "starting")
+            echo "Tentativa ${i}: backend=${BACKEND_STATUS}, frontend=${FRONTEND_STATUS}"
+            if [ "${BACKEND_STATUS}" = "healthy" ] && [ "${FRONTEND_STATUS}" = "healthy" ]; then
+              break
+            fi
+            sleep 4
+          done
+          BACKEND_STATUS=$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q backend)")
+          FRONTEND_STATUS=$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q frontend)")
+          test "${BACKEND_STATUS}" = "healthy"
+          test "${FRONTEND_STATUS}" = "healthy"
+
+      - name: Verificar isolamento do PostgreSQL, saúde HTTP, schema Alembic e login administrativo
+        run: |
+          # Porta 5432 não deve estar exposta no host na configuração padrão
+          if docker compose port db 5432 >/dev/null 2>&1; then
+            echo "ERRO: porta 5432 não deveria estar publicada por padrão"
+            exit 1
+          fi
+
+          # Endpoints HTTP reais dos containers
+          curl -fsS http://127.0.0.1:8000/health | grep -q '"healthy"'
+          curl -fsS http://127.0.0.1:8000/api/v1/openapi.json | grep -q '"/api/v1/auth/login"'
+          curl -fsS http://127.0.0.1:8501/_stcore/health
+
+          # Checagem Alembic e criação/autenticação do primeiro administrador no container backend
+          docker compose exec -T backend alembic check
+          docker compose exec -T \
+            -e ADMIN_NOME="Admin CI Vertice" \
+            -e ADMIN_EMAIL="admin.ci@vertice.local" \
+            -e ADMIN_SENHA="CiAdminPass#2026" \
+            backend python -m app.scripts.create_admin
+
+          LOGIN_CODE=$(curl -sS -o /tmp/login_resp.json -w "%{http_code}" \
+            -X POST http://127.0.0.1:8000/api/v1/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"admin.ci@vertice.local","senha":"CiAdminPass#2026"}')
+          test "${LOGIN_CODE}" = "200"
+          grep -q '"access_token"' /tmp/login_resp.json
+
+      - name: Exibir logs dos containers em caso de falha
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Limpar containers, rede e volumes temporários do CI
+        if: always()
+        run: docker compose down -v --remove-orphans
