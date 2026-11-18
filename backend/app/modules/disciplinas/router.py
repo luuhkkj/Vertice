@@ -30,10 +30,10 @@ router = APIRouter()
 def criar_disciplina(
     dados: DisciplinaCreate,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_gestor_ou_admin),
+    current_user: Usuario = Depends(require_gestor_ou_admin),
 ) -> Disciplina:
     """Cadastra uma nova disciplina escolar."""
-    return DisciplinaService.criar_disciplina(db, dados)
+    return DisciplinaService.criar_disciplina(db, dados, usuario=current_user)
 
 
 @router.get(
@@ -74,8 +74,10 @@ def atualizar_disciplina(
     disciplina_id: uuid.UUID,
     dados: DisciplinaUpdate,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_gestor_ou_admin),
+    current_user: Usuario = Depends(require_gestor_ou_admin),
 ) -> Disciplina:
     """Atualiza informações de uma disciplina."""
-    return DisciplinaService.atualizar_disciplina(db, disciplina_id, dados)
+    return DisciplinaService.atualizar_disciplina(
+        db, disciplina_id, dados, usuario=current_user
+    )
 

@@ -38,6 +38,7 @@ from app.integrations.prediction.models import (
     PrevisaoRisco,
     TipoPrevisao,
 )
+from app.modules.admin.service import AdminAuditService
 from app.integrations.prediction.repository import PredictionRepository
 from app.integrations.prediction.schemas import (
     AVISO_METODOLOGICO_PADRAO,
@@ -183,7 +184,7 @@ class PredictionService:
         db.commit()
         db.refresh(cred)
 
-        return CredencialIntegracaoCriadaResponse(
+        resposta = CredencialIntegracaoCriadaResponse(
             id=cred.id,
             nome=cred.nome,
             prefixo_chave=cred.prefixo_chave,
@@ -197,6 +198,21 @@ class PredictionService:
             atualizado_em=cred.atualizado_em,
             chave_secreta=segredo_puro,
         )
+        AdminAuditService.registrar_evento(
+            db,
+            acao="CREDENCIAL_ML_EMITIDA",
+            entidade="credencial_integracao_predicao",
+            entidade_id=resposta.id,
+            usuario_ator=usuario_admin,
+            detalhes={
+                "nome": resposta.nome,
+                "prefixo_chave": resposta.prefixo_chave,
+                "escola_id": resposta.escola_id,
+                "modelos_permitidos": resposta.modelos_permitidos,
+                "ativo": resposta.ativo,
+            },
+        )
+        return resposta
 
     @staticmethod
     def listar_credenciais_integracao(
@@ -238,7 +254,21 @@ class PredictionService:
         db.add(cred)
         db.commit()
         db.refresh(cred)
-        return CredencialIntegracaoResponse.model_validate(cred)
+        resposta = CredencialIntegracaoResponse.model_validate(cred)
+        AdminAuditService.registrar_evento(
+            db,
+            acao="CREDENCIAL_ML_REVOGADA",
+            entidade="credencial_integracao_predicao",
+            entidade_id=resposta.id,
+            usuario_ator=usuario_admin,
+            detalhes={
+                "nome": resposta.nome,
+                "prefixo_chave": resposta.prefixo_chave,
+                "escola_id": resposta.escola_id,
+                "ativo": resposta.ativo,
+            },
+        )
+        return resposta
 
     @staticmethod
     def autenticar_credencial_servico(

@@ -15,6 +15,7 @@ from app.modules.acompanhamento.models import (
     AcompanhamentoPedagogico,
     OrigemAcompanhamento,
 )
+from app.modules.admin.models import AuditoriaOperacaoTecnica
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.avaliacoes.models import (
     Avaliacao,
@@ -93,6 +94,7 @@ __all__ = [
     "FaixaRisco",
     "TipoPrevisao",
     "AuditoriaConsultaIA",
+    "AuditoriaOperacaoTecnica",
     "ResultadoAutorizacaoIA",
     "TipoContextoAssistente",
 ]

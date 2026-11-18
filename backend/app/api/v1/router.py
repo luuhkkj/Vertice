@@ -12,6 +12,7 @@ from app.database.connection import check_database_connection, get_db
 from app.integrations.assistant.router import router as assistant_router
 from app.integrations.prediction.router import router as prediction_router
 from app.modules.acompanhamento.router import router as acompanhamento_router
+from app.modules.admin.router import router as admin_router
 from app.modules.atribuicoes.router import router as atribuicoes_router
 from app.modules.auth.router import router as auth_router
 from app.modules.avaliacoes.router import (
@@ -56,6 +57,9 @@ def api_v1_health(db: Session = Depends(get_db)) -> dict[str, Any]:
 # Inclusão dos roteadores dos módulos de negócio (Fases 2, 3 e 4)
 # ==============================================================================
 api_router.include_router(auth_router, prefix="/auth", tags=["Autenticação"])
+api_router.include_router(
+    admin_router, prefix="/admin", tags=["Administração Técnica"]
+)
 api_router.include_router(usuarios_router, prefix="/usuarios", tags=["Usuários"])
 api_router.include_router(escolas_router, prefix="/escolas", tags=["Escolas"])
 api_router.include_router(turmas_router, prefix="/turmas", tags=["Turmas"])

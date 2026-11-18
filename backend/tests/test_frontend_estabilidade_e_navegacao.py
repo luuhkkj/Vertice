@@ -289,7 +289,7 @@ def test_navegacao_ordem_renderizacao_e_menu_preservado_quando_pagina_falha(
 
     # Valida que para Administrador, Gestor e Professor header + sidebar são chamados ANTES da página
     for papel, esperado_default in [
-        ("administrador", "atribuir-turmas"),
+        ("administrador", "administracao-tecnica"),
         ("gestor", "visao-geral"),
         ("professor", "visao-geral"),
     ]:

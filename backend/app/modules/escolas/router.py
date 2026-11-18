@@ -30,10 +30,10 @@ router = APIRouter()
 def criar_escola(
     dados: EscolaCreate,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_gestor_ou_admin),
+    current_user: Usuario = Depends(require_gestor_ou_admin),
 ) -> Escola:
     """Cria uma nova escola no sistema."""
-    return EscolaService.criar_escola(db, dados)
+    return EscolaService.criar_escola(db, dados, usuario=current_user)
 
 
 @router.get(

@@ -266,6 +266,7 @@ def test_pg_alembic_upgrade_downgrade_upgrade_e_check(
         "credenciais_integracao_predicao",
         "previsoes_risco",
         "auditoria_consultas_ia",
+        "auditoria_operacoes_tecnicas",
         "alembic_version",
     }
     assert esperadas.issubset(tabelas)

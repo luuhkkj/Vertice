@@ -9,6 +9,7 @@ from components.estilos import carregar_estilos
 from components.layout import render_header, render_sidebar
 from config import NOME_APP
 from pages import (
+    administracao_tecnica,
     assistente_ia,
     atribuicao,
     entrada_dados,
@@ -70,13 +71,13 @@ def montar_paginas_internas():
     )
 
     if papel == "administrador":
-        pagina_atribuicao = st.Page(
-            atribuicao.render,
-            title="Atribuir turmas",
-            url_path="atribuir-turmas",
+        pagina_admin = st.Page(
+            administracao_tecnica.render,
+            title="Administração Técnica",
+            url_path="administracao-tecnica",
             default=True,
         )
-        paginas_menu = [pagina_atribuicao, pagina_perfil]
+        paginas_menu = [pagina_admin, pagina_perfil]
         return list(paginas_menu), list(paginas_menu)
 
     pagina_mapa = st.Page(

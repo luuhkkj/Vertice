@@ -285,24 +285,6 @@ def _formatar_linhas_atribuicoes(ctx: dict[str, Any]) -> list[dict[str, Any]]:
     return linhas
 
 
-def _render_painel_administrador(ctx: dict[str, Any]) -> None:
-    """Visão complementar de entidades estruturais acessíveis ao Administrador."""
-    with st.expander("Resumo estrutural da rede (Escolas, Turmas e Disciplinas)", expanded=False):
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Escolas ativas", len(ctx["escolas"]))
-        c2.metric("Turmas ativas", len(ctx["turmas"]))
-        c3.metric("Disciplinas ativas", len(ctx["disciplinas"]))
-        if ctx["escolas"]:
-            st.caption("Escolas cadastradas")
-            st.dataframe(
-                pd.DataFrame(
-                    [{"Nome": e.get("nome"), "Código": e.get("codigo")} for e in ctx["escolas"]]
-                ),
-                hide_index=True,
-                width="stretch",
-            )
-
-
 def _formulario(
     opcoes_prof: dict[str, str],
     opcoes_turma: dict[str, str],
@@ -433,9 +415,9 @@ def render():
         return
 
     papel = _papel_atual()
-    if papel not in ("administrador", "gestor"):
+    if papel != "gestor":
         st.error(
-            "Permissão insuficiente: apenas Administrador ou Gestor Escolar podem gerenciar atribuições."
+            "Permissão insuficiente: acesso exclusivo ao perfil Gestor/Coordenador Escolar."
         )
         return
 
@@ -462,9 +444,6 @@ def render():
     if not ctx["conectado"]:
         st.error(ctx["erro"] or "Não foi possível carregar os dados de atribuição do servidor.")
         return
-
-    if papel == "administrador":
-        _render_painel_administrador(ctx)
 
     escolas_por_id = {str(e["id"]): e.get("nome", "") for e in ctx["escolas"] if e.get("id")}
     opcoes_prof = {

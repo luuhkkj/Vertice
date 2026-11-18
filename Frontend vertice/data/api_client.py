@@ -1023,4 +1023,239 @@ def construir_contexto_assistente_api(
     return requisitar_api("POST", "/assistente/contexto", json_body=payload)
 
 
+# ==============================================================================
+# ADMINISTRAÇÃO TÉCNICA, CADASTROS ESTRUTURAIS E AUDITORIA OPERACIONAL
+# ==============================================================================
+def consultar_resumo_operacional_admin_api() -> RespostaAPI:
+    """Consulta inventário técnico da plataforma (`GET /api/v1/admin/resumo-operacional`)."""
+    return requisitar_api("GET", "/admin/resumo-operacional")
+
+
+def listar_auditoria_tecnica_api(
+    *,
+    acao: Optional[str] = None,
+    entidade: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+) -> RespostaAPI:
+    """Lista trilha de auditoria técnica (`GET /api/v1/admin/auditoria-tecnica`)."""
+    params: dict[str, Any] = {"skip": skip, "limit": limit}
+    if acao:
+        params["acao"] = acao
+    if entidade:
+        params["entidade"] = entidade
+    return requisitar_api("GET", "/admin/auditoria-tecnica", params=params)
+
+
+def listar_auditoria_ia_api(
+    *,
+    escola_id: Optional[str] = None,
+    resultado_autorizacao: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+) -> RespostaAPI:
+    """Lista eventos de auditoria do Assistente IA (`GET /api/v1/assistente/auditoria`)."""
+    params: dict[str, Any] = {"skip": skip, "limit": limit}
+    if escola_id:
+        params["escola_id"] = escola_id
+    if resultado_autorizacao:
+        params["resultado_autorizacao"] = resultado_autorizacao
+    return requisitar_api("GET", "/assistente/auditoria", params=params)
+
+
+def criar_usuario_api(
+    *,
+    nome: str,
+    email: str,
+    senha: str,
+    papel: str,
+    escola_id: Optional[str] = None,
+    ativo: bool = True,
+) -> RespostaAPI:
+    """Cria conta de usuário (`POST /api/v1/usuarios`)."""
+    payload: dict[str, Any] = {
+        "nome": nome.strip(),
+        "email": email.strip().lower(),
+        "senha": senha,
+        "papel": papel,
+        "ativo": ativo,
+    }
+    if escola_id:
+        payload["escola_id"] = escola_id
+    return requisitar_api("POST", "/usuarios", json_body=payload)
+
+
+def atualizar_usuario_api(
+    usuario_id: str,
+    *,
+    nome: Optional[str] = None,
+    email: Optional[str] = None,
+    senha: Optional[str] = None,
+    papel: Optional[str] = None,
+    escola_id: Optional[str] = None,
+    atualizar_escola: bool = False,
+    ativo: Optional[bool] = None,
+) -> RespostaAPI:
+    """Atualiza usuário existente (`PATCH /api/v1/usuarios/{id}`)."""
+    payload: dict[str, Any] = {}
+    if nome is not None:
+        payload["nome"] = nome.strip()
+    if email is not None:
+        payload["email"] = email.strip().lower()
+    if senha:
+        payload["senha"] = senha
+    if papel is not None:
+        payload["papel"] = papel
+    if atualizar_escola:
+        payload["escola_id"] = escola_id
+    if ativo is not None:
+        payload["ativo"] = ativo
+    return requisitar_api("PATCH", f"/usuarios/{usuario_id}", json_body=payload)
+
+
+def criar_escola_api(*, nome: str, codigo: str, ativo: bool = True) -> RespostaAPI:
+    """Cadastra nova unidade escolar (`POST /api/v1/escolas`)."""
+    return requisitar_api(
+        "POST",
+        "/escolas",
+        json_body={
+            "nome": nome.strip(),
+            "codigo": codigo.strip().upper(),
+            "ativo": ativo,
+        },
+    )
+
+
+def atualizar_escola_api(
+    escola_id: str,
+    *,
+    nome: Optional[str] = None,
+    codigo: Optional[str] = None,
+    ativo: Optional[bool] = None,
+) -> RespostaAPI:
+    """Atualiza unidade escolar (`PATCH /api/v1/escolas/{id}`)."""
+    payload: dict[str, Any] = {}
+    if nome is not None:
+        payload["nome"] = nome.strip()
+    if codigo is not None:
+        payload["codigo"] = codigo.strip().upper()
+    if ativo is not None:
+        payload["ativo"] = ativo
+    return requisitar_api("PATCH", f"/escolas/{escola_id}", json_body=payload)
+
+
+def criar_turma_api(
+    *,
+    nome: str,
+    serie: str,
+    turno: str,
+    ano_letivo: int,
+    escola_id: str,
+    ativo: bool = True,
+) -> RespostaAPI:
+    """Cadastra nova turma escolar (`POST /api/v1/turmas`)."""
+    return requisitar_api(
+        "POST",
+        "/turmas",
+        json_body={
+            "nome": nome.strip(),
+            "serie": serie.strip(),
+            "turno": turno.strip(),
+            "ano_letivo": int(ano_letivo),
+            "escola_id": escola_id,
+            "ativo": ativo,
+        },
+    )
+
+
+def atualizar_turma_api(
+    turma_id: str,
+    *,
+    nome: Optional[str] = None,
+    serie: Optional[str] = None,
+    turno: Optional[str] = None,
+    ano_letivo: Optional[int] = None,
+    ativo: Optional[bool] = None,
+) -> RespostaAPI:
+    """Atualiza turma existente (`PATCH /api/v1/turmas/{id}`)."""
+    payload: dict[str, Any] = {}
+    if nome is not None:
+        payload["nome"] = nome.strip()
+    if serie is not None:
+        payload["serie"] = serie.strip()
+    if turno is not None:
+        payload["turno"] = turno.strip()
+    if ano_letivo is not None:
+        payload["ano_letivo"] = int(ano_letivo)
+    if ativo is not None:
+        payload["ativo"] = ativo
+    return requisitar_api("PATCH", f"/turmas/{turma_id}", json_body=payload)
+
+
+def criar_disciplina_api(*, nome: str, codigo: str, ativo: bool = True) -> RespostaAPI:
+    """Cadastra nova disciplina (`POST /api/v1/disciplinas`)."""
+    return requisitar_api(
+        "POST",
+        "/disciplinas",
+        json_body={
+            "nome": nome.strip(),
+            "codigo": codigo.strip().upper(),
+            "ativo": ativo,
+        },
+    )
+
+
+def atualizar_disciplina_api(
+    disciplina_id: str,
+    *,
+    nome: Optional[str] = None,
+    codigo: Optional[str] = None,
+    ativo: Optional[bool] = None,
+) -> RespostaAPI:
+    """Atualiza disciplina (`PATCH /api/v1/disciplinas/{id}`)."""
+    payload: dict[str, Any] = {}
+    if nome is not None:
+        payload["nome"] = nome.strip()
+    if codigo is not None:
+        payload["codigo"] = codigo.strip().upper()
+    if ativo is not None:
+        payload["ativo"] = ativo
+    return requisitar_api("PATCH", f"/disciplinas/{disciplina_id}", json_body=payload)
+
+
+def listar_credenciais_ml_api(
+    *,
+    escola_id: Optional[str] = None,
+    apenas_ativas: Optional[bool] = None,
+) -> RespostaAPI:
+    """Lista credenciais de integração ML (`GET /api/v1/previsoes/credenciais`)."""
+    params: dict[str, Any] = {}
+    if escola_id:
+        params["escola_id"] = escola_id
+    if apenas_ativas is not None:
+        params["apenas_ativas"] = str(apenas_ativas).lower()
+    return requisitar_api("GET", "/previsoes/credenciais", params=params)
+
+
+def criar_credencial_ml_api(
+    *,
+    nome: str,
+    escola_id: Optional[str] = None,
+    modelos_permitidos: Optional[list[str]] = None,
+) -> RespostaAPI:
+    """Emite nova credencial técnica de ML (`POST /api/v1/previsoes/credenciais`)."""
+    payload: dict[str, Any] = {"nome": nome.strip()}
+    if escola_id:
+        payload["escola_id"] = escola_id
+    if modelos_permitidos:
+        payload["modelos_permitidos"] = modelos_permitidos
+    return requisitar_api("POST", "/previsoes/credenciais", json_body=payload)
+
+
+def revogar_credencial_ml_api(credencial_id: str) -> RespostaAPI:
+    """Revoga credencial técnica de ML (`PATCH /api/v1/previsoes/credenciais/{id}/revogar`)."""
+    return requisitar_api("PATCH", f"/previsoes/credenciais/{credencial_id}/revogar")
+
+
+
 

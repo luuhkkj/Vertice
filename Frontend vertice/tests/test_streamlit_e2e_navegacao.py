@@ -57,6 +57,60 @@ def _resposta_padrao_escola_vazia(
                     "ativo": True,
                 },
             )
+        if path.endswith("/admin/resumo-operacional"):
+            return httpx.Response(
+                200,
+                json={
+                    "total_usuarios": 3,
+                    "usuarios_ativos": 3,
+                    "usuarios_por_papel": {"administrador": 1, "gestor": 1, "professor": 1},
+                    "total_escolas": 1,
+                    "escolas_ativas": 1,
+                    "total_turmas": 1,
+                    "turmas_ativas": 1,
+                    "total_disciplinas": 1,
+                    "disciplinas_ativas": 1,
+                    "total_credenciais_ml": 0,
+                    "credenciais_ml_ativas": 0,
+                    "total_eventos_auditoria_tecnica": 1,
+                    "total_eventos_auditoria_ia": 0,
+                    "provedor_llm_configurado": False,
+                },
+            )
+        if path.endswith("/admin/auditoria-tecnica"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": "aud-1",
+                        "usuario_ator_id": uid,
+                        "papel_ator": "administrador",
+                        "acao": "USUARIO_CRIADO",
+                        "entidade": "usuario",
+                        "entidade_id": uid,
+                        "detalhes": {"papel": "gestor", "ativo": True},
+                        "criado_em": "2026-11-18T00:00:00Z",
+                    }
+                ],
+            )
+        if path.endswith("/usuarios"):
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "id": uid,
+                        "nome": "Admin Rede",
+                        "email": "admin@vertice.edu.br",
+                        "papel": "administrador",
+                        "escola_id": None,
+                        "ativo": True,
+                    }
+                ],
+            )
+        if path.endswith("/previsoes/credenciais"):
+            return httpx.Response(200, json=[])
+        if path.endswith("/assistente/auditoria"):
+            return httpx.Response(200, json=[])
         if "/escolas/" in path:
             return httpx.Response(
                 200,
@@ -242,10 +296,12 @@ with card("Atividade ATV-01", subtitulo="Turma 1A | MAT", chave="atividade_detal
         keys = _chaves_blocos(at)
         self.assertIn("cabecalho", keys)
         self.assertIn("vertice_menu_lateral", keys)
-        self.assertIn("menu_ativo_atribuir_turmas", keys)
+        self.assertIn("menu_ativo_administracao_tecnica", keys)
         self.assertIn("menu_meu_perfil", keys)
+        self.assertNotIn("menu_atribuir_turmas", keys)
         self.assertNotIn("menu_visao_geral", keys)
         self.assertNotIn("menu_entrada_de_dados", keys)
+        self.assertIn("Administração Técnica da Plataforma", [t.value for t in at.title])
 
         # Navega para Meu Perfil pelo botão do cabeçalho preservando navegação e sem erros
         at.button(key="botao_perfil_cabecalho").click().run()
@@ -477,6 +533,7 @@ pagina_atual.run()
         self.assertIn("cabecalho", keys)
         self.assertIn("vertice_menu_lateral", keys)
         self.assertIn("menu_ativo_visao_geral", keys)
+        self.assertNotIn("menu_administracao_tecnica", keys)
         self.assertNotIn("menu_atribuir_turmas", keys)
         self.assertIn("menu_meu_perfil", keys)
 
@@ -540,6 +597,39 @@ pagina_part.run()
             self.assertTrue(
                 any("RuntimeError" in c.value and "Falha simulada na página" in c.value for c in at.caption)
             )
+
+    def test_bloqueio_visual_por_papel_em_paginas_restritas(self) -> None:
+        transport_gestor = _resposta_padrao_escola_vazia(papel="gestor")
+        api_client.configurar_cliente_http_teste(transport_gestor)
+        snippet_admin_page = f"""
+import sys
+sys.path.insert(0, {str(FRONTEND_DIR)!r})
+import streamlit as st
+from pages import administracao_tecnica
+st.session_state["logado"] = True
+st.session_state["usuario_api"] = {{"id": "u1", "papel": "gestor", "escola_id": "e1"}}
+st.session_state["perfil"] = "gestor"
+administracao_tecnica.render()
+"""
+        at_g = AppTest.from_string(snippet_admin_page, default_timeout=10)
+        at_g.run()
+        self.assertFalse(at_g.exception, at_g.exception)
+        self.assertTrue(any("Permissão insuficiente" in e.value for e in at_g.error))
+
+        snippet_atrib_adm = f"""
+import sys
+sys.path.insert(0, {str(FRONTEND_DIR)!r})
+import streamlit as st
+from pages import atribuicao
+st.session_state["logado"] = True
+st.session_state["usuario_api"] = {{"id": "u0", "papel": "administrador", "escola_id": None}}
+st.session_state["perfil"] = "administrador"
+atribuicao.render()
+"""
+        at_a = AppTest.from_string(snippet_atrib_adm, default_timeout=10)
+        at_a.run()
+        self.assertFalse(at_a.exception, at_a.exception)
+        self.assertTrue(any("Permissão insuficiente" in e.value for e in at_a.error))
 
 
 if __name__ == "__main__":

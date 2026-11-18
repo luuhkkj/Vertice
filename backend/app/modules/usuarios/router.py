@@ -32,13 +32,13 @@ router = APIRouter()
 def criar_usuario(
     dados: UsuarioCreate,
     db: Session = Depends(get_db),
-    _current_admin: Usuario = Depends(require_admin),
+    current_admin: Usuario = Depends(require_admin),
 ) -> Usuario:
     """
     Cria um novo usuário no sistema.
     Restrito exclusivamente a usuários autenticados com papel `administrador`.
     """
-    return UsuarioService.criar_usuario(db, dados)
+    return UsuarioService.criar_usuario(db, dados, usuario_ator=current_admin)
 
 
 @router.get(
@@ -97,8 +97,10 @@ def atualizar_usuario(
     usuario_id: uuid.UUID,
     dados: UsuarioUpdate,
     db: Session = Depends(get_db),
-    _current_admin: Usuario = Depends(require_admin),
+    current_admin: Usuario = Depends(require_admin),
 ) -> Usuario:
     """Atualiza informações, papel ou status ativo/inativo de um usuário."""
-    return UsuarioService.atualizar_usuario(db, usuario_id, dados)
+    return UsuarioService.atualizar_usuario(
+        db, usuario_id, dados, usuario_ator=current_admin
+    )
 

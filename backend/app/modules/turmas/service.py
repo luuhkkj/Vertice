@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import garantir_acesso_escola, garantir_acesso_turma
+from app.modules.admin.service import AdminAuditService
 from app.modules.escolas.repository import EscolaRepository
 from app.modules.turmas.models import Turma
 from app.modules.turmas.repository import TurmaRepository
@@ -64,13 +65,30 @@ class TurmaService:
             ativo=dados.ativo,
         )
         try:
-            return TurmaRepository.create(db, nova_turma)
+            turma_criada = TurmaRepository.create(db, nova_turma)
         except IntegrityError as exc:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Conflito de integridade: turma duplicada para esta escola e ano letivo.",
             ) from exc
+
+        if usuario is not None:
+            AdminAuditService.registrar_evento(
+                db,
+                acao="TURMA_CRIADA",
+                entidade="turma",
+                entidade_id=turma_criada.id,
+                usuario_ator=usuario,
+                detalhes={
+                    "escola_id": turma_criada.escola_id,
+                    "nome": turma_criada.nome,
+                    "serie": turma_criada.serie,
+                    "ano_letivo": turma_criada.ano_letivo,
+                    "ativo": turma_criada.ativo,
+                },
+            )
+        return turma_criada
 
     @staticmethod
     def obter_turma_autorizada(
@@ -101,17 +119,20 @@ class TurmaService:
         """
         Retorna as turmas conforme o escopo do usuário:
         - Administrador: todas as turmas.
-        - Gestor vinculado a uma escola: apenas as turmas de sua escola (ou todas se não tiver escola restrita).
+        - Gestor vinculado a uma escola: apenas as turmas de sua escola (`403` se sem `escola_id`).
         - Professor: exclusivamente as turmas às quais está associado.
         """
         if usuario.papel == PapelUsuario.ADMINISTRADOR:
             return TurmaRepository.list_all(db, skip=skip, limit=limit)
         if usuario.papel == PapelUsuario.GESTOR:
-            if usuario.escola_id is not None:
-                return TurmaRepository.list_by_escola(
-                    db, escola_id=usuario.escola_id, skip=skip, limit=limit
+            if usuario.escola_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Gestor sem escola vinculada não possui permissão para listar turmas.",
                 )
-            return TurmaRepository.list_all(db, skip=skip, limit=limit)
+            return TurmaRepository.list_by_escola(
+                db, escola_id=usuario.escola_id, skip=skip, limit=limit
+            )
         return TurmaRepository.list_by_professor(
             db, professor_id=usuario.id, skip=skip, limit=limit
         )
@@ -173,10 +194,25 @@ class TurmaService:
             turma.ativo = dados.ativo
 
         try:
-            return TurmaRepository.update(db, turma)
+            turma_atualizada = TurmaRepository.update(db, turma)
         except IntegrityError as exc:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Conflito de integridade ao atualizar turma.",
             ) from exc
+
+        if usuario is not None:
+            AdminAuditService.registrar_evento(
+                db,
+                acao="TURMA_ATUALIZADA",
+                entidade="turma",
+                entidade_id=turma_atualizada.id,
+                usuario_ator=usuario,
+                detalhes={
+                    "escola_id": turma_atualizada.escola_id,
+                    "campos_alterados": sorted(campos),
+                    "ativo": turma_atualizada.ativo,
+                },
+            )
+        return turma_atualizada

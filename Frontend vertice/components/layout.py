@@ -93,6 +93,8 @@ def identificar_pagina(pagina):
         "atribuir-turmas": "atribuir-turmas",
         "atribuicao-de-turmas": "atribuir-turmas",
         "atribuicao-turmas": "atribuir-turmas",
+        "administracao-tecnica": "administracao-tecnica",
+        "administracao": "administracao-tecnica",
         "perfil": "meu-perfil",
         "meu-perfil": "meu-perfil",
     }
@@ -136,6 +138,28 @@ def _icone_perfil_base64():
     ).decode("utf-8")
 
 
+def _icone_admin_base64():
+    """Cria um ícone técnico administrativo para o menu lateral."""
+
+    svg = """
+    <svg xmlns="http://www.w3.org/2000/svg"
+         width="24" height="24"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="black"
+         stroke-width="1.8"
+         stroke-linecap="round"
+         stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>
+        <path d="m9 12 2 2 4-4"/>
+    </svg>
+    """
+
+    return base64.b64encode(
+        svg.encode("utf-8")
+    ).decode("utf-8")
+
+
 def _estilos_icones():
     """Mantém todos os ícones do menu lateral brancos."""
 
@@ -143,6 +167,10 @@ def _estilos_icones():
 
     icones = dict(ICONES_MENU)
 
+    icones["administracao-tecnica"] = (
+        None,
+        "image/svg+xml",
+    )
     icones["meu-perfil"] = (
         None,
         "image/svg+xml",
@@ -152,6 +180,8 @@ def _estilos_icones():
 
         if identificador == "meu-perfil":
             conteudo = _icone_perfil_base64()
+        elif identificador == "administracao-tecnica":
+            conteudo = _icone_admin_base64()
         else:
             conteudo = _icone_base64(arquivo)
 

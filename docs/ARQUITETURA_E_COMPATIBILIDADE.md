@@ -38,9 +38,11 @@ Os documentos PDF preservados em `docs/` refletem a concepção inicial do proje
 
 | Capacidade / Rota Principal | `administrador` | `gestor` | `professor` |
 | :--- | :--- | :--- | :--- |
-| **Criar / Editar Usuários** (`/api/v1/usuarios`) | Rede inteira | Apenas consulta usuários da sua `escola_id` e professores sem escola fixa (`GET`) | Bloqueado (`403`) |
-| **Emitir / Revogar Credenciais ML** (`/api/v1/previsoes/credenciais`) | Rede inteira | Bloqueado (`403`) | Bloqueado (`403`) |
-| **Escolas, Turmas, Disciplinas e Atribuições** | Rede inteira | Restrito à sua `escola_id` (exige `escola_id` vinculada; consulta/cria na própria escola) | Somente leitura do próprio escopo (`GET`; escrita retorna `403`) |
+| **Criar / Editar Usuários** (`/api/v1/usuarios`) | Rede inteira (auditado) | Apenas consulta usuários da sua `escola_id` e professores sem escola fixa (`GET`; `403` se sem `escola_id`) | Bloqueado (`403`) |
+| **Resumo Operacional e Auditoria Técnica** (`/api/v1/admin/*`) | Rede inteira (sem dados pedagógicos/PII) | Bloqueado (`403`) | Bloqueado (`403`) |
+| **Emitir / Revogar Credenciais ML** (`/api/v1/previsoes/credenciais`) | Rede inteira (auditado) | Bloqueado (`403`) | Bloqueado (`403`) |
+| **Escolas, Turmas e Disciplinas** (`/api/v1/escolas`, `/turmas`, `/disciplinas`) | Rede inteira (auditado) | Restrito à sua `escola_id` (`403` se sem escola vinculada ou para outra escola) | Somente leitura do próprio escopo (`GET`; escrita retorna `403`) |
+| **Atribuições Professor–Turma–Disciplina** (`/api/v1/atribuicoes`) | Bloqueado (`403` — função pedagógica da escola) | Cria, lista e remove vínculos exclusivamente na sua `escola_id` (`403` se sem escola) | Consulta apenas os próprios vínculos (`GET`); escrita/remoção retorna `403` |
 | **Importação em 2 Etapas e Modelos** (`/api/v1/importacoes/*`) | Bloqueado (`403` — segregação de funções) | Permitido exclusivamente para turmas da sua `escola_id` | Permitido exclusivamente para `(turma_id, disciplina_id)` ativos em `professor_turmas` |
 | **Estudantes Anonimizados e Boletins** (`/api/v1/estudantes/*`) | Bloqueado (`403`) | Todos os estudantes da sua `escola_id` | Apenas estudantes das suas turmas e disciplinas vinculadas (ou turma inteira se `disciplina_id = NULL`) |
 | **Avaliações, Atividades, Acompanhamentos e Indicadores** | Bloqueado (`403`) | Escopo completo da sua `escola_id` | Escopo estrito de `professor_turmas` (`turma` + `disciplina` ou regência polivalente) |

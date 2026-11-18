@@ -239,8 +239,9 @@ def test_fase8_autenticacao_papeis_canonicos_e_expiracao_sessao(
             titulos_por_papel[papel] = {p.title for p in paginas_menu}
 
         assert "Entrada de Dados" not in titulos_por_papel["administrador"]
-        assert "Visão Geral" not in titulos_por_papel["administrador"]
-        assert "Atribuir turmas" in titulos_por_papel["administrador"]
+        assert "Visão geral" not in titulos_por_papel["administrador"]
+        assert "Atribuir turmas" not in titulos_por_papel["administrador"]
+        assert "Administração Técnica" in titulos_por_papel["administrador"]
         assert "Entrada de Dados" in titulos_por_papel["gestor"]
         assert "Atribuir turmas" in titulos_por_papel["gestor"]
         assert "Entrada de Dados" in titulos_por_papel["professor"]
@@ -311,10 +312,11 @@ def test_fase8_matriz_rbac_usuarios_atribuicoes_escolas_e_operacional(
     headers_gestor_b = _login_headers(client, "gestor.b@vertice.edu.br", "SenhaForte@123")
     headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
 
-    # 1. Administrador: enxerga escolas/usuários/atribuições e NÃO entra em fluxos pedagógicos
+    # 1. Administrador: enxerga escolas/usuários/admin técnico e é bloqueado em atribuições e fluxos pedagógicos
     assert client.get("/api/v1/escolas", headers=headers_admin).status_code == 200
     assert client.get("/api/v1/usuarios", headers=headers_admin).status_code == 200
-    assert client.get("/api/v1/atribuicoes", headers=headers_admin).status_code == 200
+    assert client.get("/api/v1/admin/resumo-operacional", headers=headers_admin).status_code == 200
+    assert client.get("/api/v1/atribuicoes", headers=headers_admin).status_code == 403
     for rota_pedagogica in [
         "/api/v1/estudantes",
         "/api/v1/avaliacoes",
@@ -655,6 +657,7 @@ def test_fase8_frontend_integrado_sem_mocks_fluxo_completo(
     cenario = _criar_cenario_fase4(db_session)
     st = _preparar_frontend()
     import data.api_client as api_client
+    import pages.administracao_tecnica as pg_admin_tecnica
     import pages.assistente_ia as pg_assistente
     import pages.atribuicao as pg_atribuicao
     import pages.entrada_dados as pg_entrada
@@ -667,6 +670,7 @@ def test_fase8_frontend_integrado_sem_mocks_fluxo_completo(
 
     for mod in (
         api_client,
+        pg_admin_tecnica,
         pg_assistente,
         pg_atribuicao,
         pg_entrada,
@@ -692,8 +696,9 @@ def test_fase8_frontend_integrado_sem_mocks_fluxo_completo(
         api_client.registrar_usuario_sessao(api_client.obter_usuario_atual_api().dados)
         ctx_perfil_adm = pg_perfil.carregar_perfil_api()
         assert ctx_perfil_adm["usuario"]["papel"] == "administrador"
-        ctx_atrib_adm = pg_atribuicao.carregar_contexto_atribuicoes_api()
-        assert len(ctx_atrib_adm["escolas"]) >= 2
+        ctx_adm_tecnico = pg_admin_tecnica.carregar_contexto_admin_tecnico_api()
+        assert ctx_adm_tecnico["conectado"] is True
+        assert len(ctx_adm_tecnico["escolas"]) >= 2
 
         assert api_client.autenticar_usuario_api("prof1@vertice.edu.br", "SenhaForte@123").ok
         api_client.registrar_usuario_sessao(api_client.obter_usuario_atual_api().dados)

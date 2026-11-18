@@ -334,7 +334,7 @@ def test_fluxo_completo_escola_turma_disciplina_atribuicao_e_vinculo_professor(
         client, "prof.mat@vertice.edu.br", "ProfSenha123"
     )
 
-    # 1. Criar Escola
+    # 1. Criar Escola e vincular o Gestor a ela (regra multi-escola estrita)
     resp_escola = client.post(
         "/api/v1/escolas",
         json={"nome": "Colégio Estadual Central", "codigo": "CEC-2026"},
@@ -342,6 +342,10 @@ def test_fluxo_completo_escola_turma_disciplina_atribuicao_e_vinculo_professor(
     )
     assert resp_escola.status_code == 201
     escola_id = resp_escola.json()["id"]
+    import uuid as _uuid_link
+
+    gestor.escola_id = _uuid_link.UUID(escola_id)
+    db_session.commit()
 
     # 2. Criar duas Turmas (Turma A e Turma B)
     resp_turma_a = client.post(
@@ -486,8 +490,24 @@ def test_impedir_duplicidade_atribuicao_sem_disciplina(
     )
     turma_id = resp_turma.json()["id"]
 
-    # 1ª atribuição com disciplina_id = None -> 201 Created
-    resp_1 = client.post(
+    import uuid as _uuid_dup
+
+    UsuarioService.criar_usuario(
+        db_session,
+        UsuarioCreate(
+            nome="Gestor Duplicidade",
+            email="gestor.dup@vertice.edu.br",
+            senha="GestorSenha123",
+            papel=PapelUsuario.GESTOR,
+            escola_id=_uuid_dup.UUID(escola_id),
+        ),
+    )
+    headers_gestor = _obter_headers_auth(
+        client, "gestor.dup@vertice.edu.br", "GestorSenha123"
+    )
+
+    # Administrador não pode gerenciar atribuições (HTTP 403)
+    resp_admin_bloqueado = client.post(
         "/api/v1/atribuicoes",
         json={
             "professor_id": str(prof.id),
@@ -495,6 +515,18 @@ def test_impedir_duplicidade_atribuicao_sem_disciplina(
             "disciplina_id": None,
         },
         headers=headers_admin,
+    )
+    assert resp_admin_bloqueado.status_code == 403
+
+    # 1ª atribuição pelo Gestor da escola com disciplina_id = None -> 201 Created
+    resp_1 = client.post(
+        "/api/v1/atribuicoes",
+        json={
+            "professor_id": str(prof.id),
+            "turma_id": turma_id,
+            "disciplina_id": None,
+        },
+        headers=headers_gestor,
     )
     assert resp_1.status_code == 201
     assert resp_1.json()["disciplina_id"] is None
@@ -507,7 +539,7 @@ def test_impedir_duplicidade_atribuicao_sem_disciplina(
             "turma_id": turma_id,
             "disciplina_id": None,
         },
-        headers=headers_admin,
+        headers=headers_gestor,
     )
     assert resp_2.status_code == 409
 

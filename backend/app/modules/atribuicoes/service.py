@@ -30,12 +30,24 @@ class AtribuicaoService:
     ) -> ProfessorTurma:
         """
         Cria um vínculo entre professor, turma e disciplina após validar:
-        1. O usuário existe, está ativo e possui o papel `professor`.
-        2. A turma existe, está ativa e pertence ao escopo do gestor (se aplicável).
-        3. A disciplina (quando informada) existe e está ativa.
-        4. Não existe vínculo duplicado para a mesma combinação (inclusive quando disciplina_id é NULL),
-           protegendo contra concorrência com tratamento de IntegrityError.
+        1. Apenas `gestor` vinculado a escola pode gerenciar atribuições (admin e professor recebem 403).
+        2. O usuário associado existe, está ativo e possui o papel `professor`.
+        3. A turma existe, está ativa e pertence à escola do gestor.
+        4. A disciplina (quando informada) existe e está ativa.
+        5. Não existe vínculo duplicado para a mesma combinação (inclusive quando disciplina_id é NULL).
         """
+        if usuario is not None:
+            if usuario.papel != PapelUsuario.GESTOR:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: apenas gestores escolares podem gerenciar atribuições de turmas.",
+                )
+            if usuario.escola_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: gestor não possui uma unidade escolar vinculada.",
+                )
+
         professor = UsuarioRepository.get_by_id(db, dados.professor_id)
         if professor is None:
             raise HTTPException(
@@ -118,13 +130,19 @@ class AtribuicaoService:
         db: Session, usuario: Usuario, skip: int = 0, limit: int = 100
     ) -> list[ProfessorTurma]:
         if usuario.papel == PapelUsuario.ADMINISTRADOR:
-            return AtribuicaoRepository.list_all(db, skip=skip, limit=limit)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: perfil administrativo técnico não consulta atribuições pedagógicas.",
+            )
         if usuario.papel == PapelUsuario.GESTOR:
-            if usuario.escola_id is not None:
-                return AtribuicaoRepository.list_by_escola(
-                    db, escola_id=usuario.escola_id, skip=skip, limit=limit
+            if usuario.escola_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: gestor não possui uma unidade escolar vinculada.",
                 )
-            return AtribuicaoRepository.list_all(db, skip=skip, limit=limit)
+            return AtribuicaoRepository.list_by_escola(
+                db, escola_id=usuario.escola_id, skip=skip, limit=limit
+            )
         return AtribuicaoRepository.list_by_professor(
             db, professor_id=usuario.id, skip=skip, limit=limit
         )
@@ -135,15 +153,30 @@ class AtribuicaoService:
         atribuicao_id: uuid.UUID,
         usuario: Optional[Usuario] = None,
     ) -> None:
+        if usuario is not None:
+            if usuario.papel != PapelUsuario.GESTOR:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: apenas gestores escolares podem remover atribuições de turmas.",
+                )
+            if usuario.escola_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: gestor não possui uma unidade escolar vinculada.",
+                )
+
         atribuicao = AtribuicaoRepository.get_by_id(db, atribuicao_id)
         if atribuicao is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Atribuição não encontrada.",
             )
-        if usuario is not None and usuario.papel == PapelUsuario.GESTOR and usuario.escola_id is not None:
+        if usuario is not None:
             turma = TurmaRepository.get_by_id(db, atribuicao.turma_id)
-            if turma is not None:
-                garantir_acesso_escola(usuario, turma.escola_id)
+            if turma is None or turma.escola_id != usuario.escola_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: atribuição pertence a outra unidade escolar.",
+                )
 
         AtribuicaoRepository.delete(db, atribuicao)

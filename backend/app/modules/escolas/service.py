@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import garantir_acesso_escola
+from app.modules.admin.service import AdminAuditService
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.escolas.models import Escola
 from app.modules.escolas.repository import EscolaRepository
@@ -37,7 +38,23 @@ class EscolaService:
     """Regras de negócio para cadastro, atualização e consulta de escolas."""
 
     @staticmethod
-    def criar_escola(db: Session, dados: EscolaCreate) -> Escola:
+    def criar_escola(
+        db: Session,
+        dados: EscolaCreate,
+        usuario: Optional[Usuario] = None,
+    ) -> Escola:
+        if usuario is not None:
+            if usuario.papel == PapelUsuario.PROFESSOR:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: professores não podem cadastrar escolas.",
+                )
+            if usuario.papel == PapelUsuario.GESTOR and usuario.escola_id is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: gestor já vinculado a uma unidade escolar não pode cadastrar outra escola.",
+                )
+
         codigo_normalizado = dados.codigo.strip().upper()
         existente = EscolaRepository.get_by_codigo(db, codigo_normalizado)
         if existente is not None:
@@ -52,13 +69,27 @@ class EscolaService:
             ativo=dados.ativo,
         )
         try:
-            return EscolaRepository.create(db, nova_escola)
+            escola_criada = EscolaRepository.create(db, nova_escola)
         except IntegrityError as exc:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Conflito de integridade: já existe uma escola com este código.",
             ) from exc
+
+        if usuario is not None:
+            AdminAuditService.registrar_evento(
+                db,
+                acao="ESCOLA_CRIADA",
+                entidade="escola",
+                entidade_id=escola_criada.id,
+                usuario_ator=usuario,
+                detalhes={
+                    "codigo": escola_criada.codigo,
+                    "ativo": escola_criada.ativo,
+                },
+            )
+        return escola_criada
 
     @staticmethod
     def _garantir_leitura_escola(
@@ -103,7 +134,10 @@ class EscolaService:
 
         if usuario.papel == PapelUsuario.GESTOR:
             if usuario.escola_id is None:
-                return EscolaRepository.list_all(db, skip=skip, limit=limit)
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Gestor sem escola vinculada não possui permissão para listar escolas.",
+                )
             stmt = (
                 select(Escola)
                 .where(Escola.id == usuario.escola_id)
@@ -154,10 +188,25 @@ class EscolaService:
             escola.ativo = dados.ativo
 
         try:
-            return EscolaRepository.update(db, escola)
+            escola_atualizada = EscolaRepository.update(db, escola)
         except IntegrityError as exc:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Conflito de integridade ao atualizar escola.",
             ) from exc
+
+        if usuario is not None:
+            AdminAuditService.registrar_evento(
+                db,
+                acao="ESCOLA_ATUALIZADA",
+                entidade="escola",
+                entidade_id=escola_atualizada.id,
+                usuario_ator=usuario,
+                detalhes={
+                    "campos_alterados": sorted(campos),
+                    "codigo": escola_atualizada.codigo,
+                    "ativo": escola_atualizada.ativo,
+                },
+            )
+        return escola_atualizada

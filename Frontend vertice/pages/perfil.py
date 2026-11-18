@@ -18,7 +18,7 @@ from data.api_client import (
 
 _ROTULOS_PAPEL = {
     "administrador": "Administrador",
-    "gestor": "Gestor Escolar",
+    "gestor": "Gestor/Coordenador",
     "professor": "Professor",
 }
 
@@ -159,15 +159,18 @@ def render():
     st.subheader("Permissões e escopo de atuação")
 
     if papel == "administrador":
-        st.success("Perfil Administrador: gestão estrutural global (escolas, usuários, turmas, disciplinas e atribuições).")
+        st.success(
+            "Perfil Administrador: gestão técnica da plataforma "
+            "(contas de usuários, estrutura institucional, credenciais ML e auditoria técnica)."
+        )
         st.caption(
-            "Observação de segurança: o perfil Administrador não acessa diretamente os endpoints pedagógicos "
-            "de indicadores operacionais, datasets importados ou assistente."
+            "Observação de segurança: por segregação de funções, o perfil Administrador "
+            "não acessa módulos pedagógicos, dados de estudantes, indicadores nem atribuição de turmas."
         )
     elif papel == "gestor":
         st.info(
-            "Perfil Gestor Escolar: opera dados acadêmicos, importações, avaliações, participação, "
-            "atribuições e assistente pedagógico no escopo da sua escola vinculada."
+            "Perfil Gestor/Coordenador: opera dados acadêmicos, importações, avaliações, participação, "
+            "atribuições docentes e assistente pedagógico no escopo da sua escola vinculada."
         )
     else:
         st.info(

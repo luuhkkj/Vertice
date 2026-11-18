@@ -42,6 +42,7 @@ backend/
 │   │       └── router.py           # Roteador central /api/v1
 │   ├── modules/                    # Módulos de domínio de negócio
 │   │   ├── __init__.py
+│   │   ├── admin/                  # Resumo operacional técnico e trilha de auditoria administrativa
 │   │   ├── auth/                   # Login JWT, /me, /logout e /refresh
 │   │   ├── usuarios/               # Modelo Usuario, CRUD e controle de ativação/papel
 │   │   ├── escolas/                # Modelo Escola e gestão de unidades escolares
@@ -249,8 +250,8 @@ A validação de permissões ocorre integralmente no backend através das depend
 
 | Papel | Permissões no Sistema |
 | :--- | :--- |
-| **`administrador`** | Acesso administrativo de infraestrutura: cria e atualiza usuários (`POST /api/v1/usuarios`, `PATCH /api/v1/usuarios/{id}`), emite/revoga credenciais de ML e gerencia cadastros estruturais (escolas, turmas, disciplinas e atribuições). **Não** possui acesso a importações, indicadores pedagógicos nem construção de contexto IA (`HTTP 403`). |
-| **`gestor`** | Papel canônico que consolida gestão e coordenação escolar no sistema (não existe papel separado `coordenador` em `PapelUsuario`): consulta usuários, cria/edita turmas, disciplinas e atribuições de sua escola e realiza importação, acompanhamento e consulta de indicadores exclusivamente para a escola vinculada em `usuario.escola_id`. Gestores sem escola vinculada têm operações escolares bloqueadas (`HTTP 403`). |
+| **`administrador`** | Acesso técnico da plataforma: cria e atualiza usuários (`POST /api/v1/usuarios`, `PATCH /api/v1/usuarios/{id}`), emite/revoga credenciais ML, consulta auditorias técnicas/IA e resumo operacional (`/api/v1/admin/*`) e gerencia cadastros estruturais (escolas, turmas e disciplinas). **Não** possui acesso a atribuições de turmas (`/api/v1/atribuicoes/*`), importações, estudantes, indicadores pedagógicos nem construção de contexto IA (`HTTP 403`). |
+| **`gestor`** | Papel canônico rotulado como `Gestor/Coordenador` (não existe papel separado `coordenador` em `PapelUsuario`): consulta usuários, gerencia turmas e atribuições de professores exclusivamente em sua escola e realiza importação, acompanhamento, consultas preditivas e indicadores apenas para a `escola_id` vinculada. Gestores sem escola vinculada têm operações escolares e cadastrais bloqueadas (`HTTP 403`). |
 | **`professor`** | Acesso restrito ao seu escopo pedagógico: importa datasets e consulta estudantes/históricos **exclusivamente** para as combinações de turma e disciplina às quais está vinculado em `professor_turmas`. Tentativas de importar ou acessar turmas/disciplinas sem vínculo retornam erro de autorização. |
 
 ---

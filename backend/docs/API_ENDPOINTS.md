@@ -1,6 +1,6 @@
 # Referência Completa de Endpoints — API Vértice (`v1`)
 
-Documentação técnica dos endpoints expostos pelo backend FastAPI do **Vértice** (`app.main:app`), alinhada ao contrato OpenAPI gerado pela aplicação (`75` operações HTTP).
+Documentação técnica dos endpoints expostos pelo backend FastAPI do **Vértice** (`app.main:app`), alinhada ao contrato OpenAPI gerado pela aplicação (`77` operações HTTP).
 
 ---
 
@@ -30,8 +30,9 @@ Documentação técnica dos endpoints expostos pelo backend FastAPI do **Vértic
 | Pública (sem autenticação) | Todos | Apenas `/`, `/health`, `/api/v1/health`, `/api/v1/auth/login` |
 | `get_current_user` | Usuário ativo autenticado | Valida token JWT e status `ativo=True` |
 | `require_qualquer_papel` | `administrador`, `gestor`, `professor` | Regras de escopo aplicadas nos serviços |
-| `require_admin` | `administrador` | Gestão de usuários e emissão/revogação de credenciais ML |
-| `require_gestor_ou_admin` | `administrador`, `gestor` | Administração estrutural de rede/escola |
+| `require_admin` | `administrador` | Gestão técnica de usuários, resumo operacional, auditoria técnica e credenciais ML (`403` em fluxos pedagógicos e atribuições) |
+| `require_gestor` | `gestor` | Gestão operacional de atribuições na própria escola (`escola_id` obrigatória; `403` para `administrador`, `professor` e gestor sem escola) |
+| `require_gestor_ou_admin` | `administrador`, `gestor` | Cadastros estruturais (`escolas`, `turmas`, `disciplinas`; `gestor` restrito à sua `escola_id`) |
 | `require_importacao_datasets` | `gestor`, `professor` | Escopo escolar/turma/disciplina estrito (`administrador` recebe `403`) |
 | `require_acesso_pedagogico` | `gestor`, `professor` | Indicadores, avaliações, atividades, acompanhamentos e previsões (`administrador` recebe `403`) |
 | `get_credencial_integracao_predicao` | Pipeline ML (`X-Service-Token`) | Escopo opcional por `escola_id` e lista `modelos_permitidos` |
@@ -81,6 +82,15 @@ Documentação técnica dos endpoints expostos pelo backend FastAPI do **Vértic
 
 > **Escopo do `gestor`**: ao consultar `GET /api/v1/usuarios` ou `GET /api/v1/usuarios/{usuario_id}`, o gestor visualiza apenas usuários vinculados à sua própria `escola_id` (ou recebe `403` ao consultar usuário de outra escola ou se não possuir escola vinculada).
 
+### 4.1 Administração Técnica e Auditoria Operacional (`/api/v1/admin`)
+
+Todas as rotas exigem `require_admin` (`administrador`). Não expõem dados nominais ou indicadores pedagógicos individuais.
+
+| Método | Rota | RBAC | Parâmetros Query / Path | Payload (`JSON`) | Resposta |
+|---|---|---|---|---|---|
+| `GET` | `/api/v1/admin/resumo-operacional` | `require_admin` | — | — | `200 ResumoOperacionalAdminResponse` |
+| `GET` | `/api/v1/admin/auditoria-tecnica` | `require_admin` | `acao?`, `entidade?`, `skip=0`, `limit=100` (1..500) | — | `200 list[AuditoriaOperacaoTecnicaResponse]` |
+
 ---
 
 ## 5. Estrutura Escolar: Escolas, Turmas, Disciplinas e Atribuições
@@ -94,7 +104,7 @@ Documentação técnica dos endpoints expostos pelo backend FastAPI do **Vértic
 | `GET` | `/api/v1/escolas/{escola_id}` | `require_qualquer_papel` | Path: `escola_id` (UUID) | — | `200 EscolaResponse` |
 | `PATCH` | `/api/v1/escolas/{escola_id}` | `require_gestor_ou_admin` | Path: `escola_id` (UUID) | `EscolaUpdate`: `nome?`, `codigo?`, `ativo?` | `200 EscolaResponse` |
 
-> **Isolamento**: `administrador` lista/consulta todas; `gestor` acessa somente sua `escola_id` (`403` para outras unidades); `professor` acessa sua `escola_id` (se definida) e as escolas das turmas em que possui vínculo em `professor_turmas`.
+> **Isolamento**: `administrador` lista/consulta todas; `gestor` exige `escola_id` vinculada (`403` se ausente) e acessa somente sua `escola_id` (`403` para outras unidades e para cadastro de nova escola após vínculo); `professor` acessa sua `escola_id` (se definida) e as escolas das turmas em que possui vínculo em `professor_turmas`.
 
 ### 5.2 Turmas (`/api/v1/turmas`)
 
@@ -118,11 +128,11 @@ Documentação técnica dos endpoints expostos pelo backend FastAPI do **Vértic
 
 | Método | Rota | RBAC | Parâmetros | Payload (`JSON`) | Resposta |
 |---|---|---|---|---|---|
-| `POST` | `/api/v1/atribuicoes` | `require_gestor_ou_admin` | — | `AtribuicaoCreate`: `professor_id`*, `turma_id`*, `disciplina_id?` | `201 AtribuicaoResponse` |
-| `GET` | `/api/v1/atribuicoes` | `require_qualquer_papel` | `skip=0`, `limit=100` | — | `200 list[AtribuicaoResponse]` |
-| `DELETE` | `/api/v1/atribuicoes/{atribuicao_id}` | `require_gestor_ou_admin` | Path: `atribuicao_id` (UUID) | — | `204 No Content` |
+| `POST` | `/api/v1/atribuicoes` | `require_gestor` | — | `AtribuicaoCreate`: `professor_id`*, `turma_id`*, `disciplina_id?` | `201 AtribuicaoResponse` |
+| `GET` | `/api/v1/atribuicoes` | `require_acesso_pedagogico` | `skip=0`, `limit=100` | — | `200 list[AtribuicaoResponse]` |
+| `DELETE` | `/api/v1/atribuicoes/{atribuicao_id}` | `require_gestor` | Path: `atribuicao_id` (UUID) | — | `204 No Content` |
 
-> **Regras críticas**: `disciplina_id=None` representa professor polivalente/unidocente na turma e possui índice único parcial em PostgreSQL (`disciplina_id IS NULL`) impedindo duplicidade (`409`). Caso o professor possua `usuario.escola_id` preenchido e distinto de `turma.escola_id`, o vínculo é bloqueado com `403`.
+> **Regras críticas**: `administrador` recebe `403 Forbidden` em todas as rotas de `/api/v1/atribuicoes` (separação entre administração técnica e coordenação pedagógica). O `gestor` atua exclusivamente nas turmas da sua `escola_id` (`403` se sem escola vinculada ou para outra unidade). O `professor` consulta apenas os próprios vínculos em `GET /api/v1/atribuicoes` (`403` em `POST`/`DELETE`). `disciplina_id=None` representa professor polivalente/unidocente na turma e possui índice único parcial em PostgreSQL (`disciplina_id IS NULL`) impedindo duplicidade (`409`). Caso o professor possua `usuario.escola_id` preenchido e distinto de `turma.escola_id`, o vínculo é bloqueado com `403`.
 
 ---
 

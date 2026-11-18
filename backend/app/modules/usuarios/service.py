@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import get_password_hash
+from app.modules.admin.service import AdminAuditService
 from app.modules.escolas.repository import EscolaRepository
 from app.modules.usuarios.models import PapelUsuario, Usuario
 from app.modules.usuarios.repository import UsuarioRepository
@@ -20,11 +21,23 @@ class UsuarioService:
     """Regras de negócio de criação, consulta e atualização de usuários."""
 
     @staticmethod
-    def criar_usuario(db: Session, dados: UsuarioCreate) -> Usuario:
+    def criar_usuario(
+        db: Session,
+        dados: UsuarioCreate,
+        usuario_ator: Optional[Usuario] = None,
+    ) -> Usuario:
         """
         Cria um novo usuário garantindo unicidade de e-mail, validação de papel,
         existência da escola (se informada) e hash seguro de senha.
         """
+        if (
+            usuario_ator is not None
+            and usuario_ator.papel != PapelUsuario.ADMINISTRADOR
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: apenas administradores podem criar contas de usuário.",
+            )
         email_normalizado = dados.email.strip().lower()
         existente = UsuarioRepository.get_by_email(db, email_normalizado)
         if existente is not None:
@@ -61,13 +74,28 @@ class UsuarioService:
             ativo=dados.ativo,
         )
         try:
-            return UsuarioRepository.create(db, novo_usuario)
+            usuario_criado = UsuarioRepository.create(db, novo_usuario)
         except IntegrityError as exc:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Conflito de integridade ao criar usuário: e-mail já utilizado.",
             ) from exc
+
+        if usuario_ator is not None:
+            AdminAuditService.registrar_evento(
+                db,
+                acao="USUARIO_CRIADO",
+                entidade="usuario",
+                entidade_id=usuario_criado.id,
+                usuario_ator=usuario_ator,
+                detalhes={
+                    "papel": usuario_criado.papel.value,
+                    "escola_id": usuario_criado.escola_id,
+                    "ativo": usuario_criado.ativo,
+                },
+            )
+        return usuario_criado
 
     @staticmethod
     def _garantir_escopo_consulta_gestor(
@@ -136,11 +164,39 @@ class UsuarioService:
 
     @staticmethod
     def atualizar_usuario(
-        db: Session, usuario_id: uuid.UUID, dados: UsuarioUpdate
+        db: Session,
+        usuario_id: uuid.UUID,
+        dados: UsuarioUpdate,
+        usuario_ator: Optional[Usuario] = None,
     ) -> Usuario:
+        if (
+            usuario_ator is not None
+            and usuario_ator.papel != PapelUsuario.ADMINISTRADOR
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: apenas administradores podem atualizar contas de usuário.",
+            )
+
         usuario = UsuarioService.obter_por_id(db, usuario_id)
 
         campos_enviados = dados.model_fields_set
+
+        if usuario_ator is not None and usuario_ator.id == usuario.id:
+            if "ativo" in campos_enviados and dados.ativo is False:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Administrador autenticado não pode desativar a própria conta.",
+                )
+            if (
+                "papel" in campos_enviados
+                and dados.papel is not None
+                and dados.papel != PapelUsuario.ADMINISTRADOR
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Administrador autenticado não pode alterar o próprio papel administrativo.",
+                )
 
         if "email" in campos_enviados and dados.email is not None:
             email_norm = dados.email.strip().lower()
@@ -176,10 +232,27 @@ class UsuarioService:
             usuario.ativo = dados.ativo
 
         try:
-            return UsuarioRepository.update(db, usuario)
+            usuario_atualizado = UsuarioRepository.update(db, usuario)
         except IntegrityError as exc:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Conflito de integridade ao atualizar usuário.",
             ) from exc
+
+        if usuario_ator is not None:
+            AdminAuditService.registrar_evento(
+                db,
+                acao="USUARIO_ATUALIZADO",
+                entidade="usuario",
+                entidade_id=usuario_atualizado.id,
+                usuario_ator=usuario_ator,
+                detalhes={
+                    "campos_alterados": sorted([c for c in campos_enviados if c != "senha"]),
+                    "senha_alterada": bool("senha" in campos_enviados and dados.senha is not None),
+                    "papel": usuario_atualizado.papel.value,
+                    "escola_id": usuario_atualizado.escola_id,
+                    "ativo": usuario_atualizado.ativo,
+                },
+            )
+        return usuario_atualizado

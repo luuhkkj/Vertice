@@ -97,6 +97,7 @@ def require_roles(*allowed_roles: PapelUsuario) -> Callable[[Usuario], Usuario]:
 
 # Dependências reutilizáveis por papel
 require_admin = require_roles(PapelUsuario.ADMINISTRADOR)
+require_gestor = require_roles(PapelUsuario.GESTOR)
 require_gestor_ou_admin = require_roles(
     PapelUsuario.ADMINISTRADOR, PapelUsuario.GESTOR
 )
@@ -280,20 +281,30 @@ def garantir_acesso_escola(
 ) -> None:
     """
     Verifica se o usuário possui escopo autorizado sobre a escola informada.
-    - Administrador: acesso irrestrito a qualquer escola.
-    - Gestor vinculado a uma escola (`usuario.escola_id is not None`):
-      restrito exclusivamente à sua própria escola.
+    - Administrador: acesso administrativo estrutural a qualquer escola.
+    - Gestor: exige vínculo escolar (`usuario.escola_id is not None`) e acesso
+      restrito exclusivamente à própria escola.
     """
     if usuario.papel == PapelUsuario.ADMINISTRADOR:
         return
 
     if usuario.papel == PapelUsuario.GESTOR:
-        if usuario.escola_id is not None and usuario.escola_id != escola_id:
+        if usuario.escola_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: gestor não possui uma unidade escolar vinculada.",
+            )
+        if usuario.escola_id != escola_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Acesso negado: gestor vinculado a outra unidade escolar.",
             )
         return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Acesso negado: perfil sem permissão sobre esta unidade escolar.",
+    )
 
 
 def verificar_vinculo_professor_turma(
@@ -332,16 +343,20 @@ def garantir_acesso_turma(
         return
 
     if usuario.papel == PapelUsuario.GESTOR:
-        if usuario.escola_id is not None:
-            target_escola_id = escola_id
-            if target_escola_id is None:
-                stmt = select(Turma.escola_id).where(Turma.id == turma_id)
-                target_escola_id = db.execute(stmt).scalar_one_or_none()
-            if target_escola_id is not None and target_escola_id != usuario.escola_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Acesso negado: gestor não possui permissão para turmas de outra escola.",
-                )
+        if usuario.escola_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: gestor não possui uma unidade escolar vinculada.",
+            )
+        target_escola_id = escola_id
+        if target_escola_id is None:
+            stmt = select(Turma.escola_id).where(Turma.id == turma_id)
+            target_escola_id = db.execute(stmt).scalar_one_or_none()
+        if target_escola_id is not None and target_escola_id != usuario.escola_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: gestor não possui permissão para turmas de outra escola.",
+            )
         return
 
     if not verificar_vinculo_professor_turma(db, usuario.id, turma_id):

@@ -61,8 +61,8 @@ Vertice/
 
 1. **Papéis Canônicos (`PapelUsuario`)**: exclusivamente `administrador`, `gestor` e `professor`.
 2. **Isolamento Multi-escola e por Vínculo**:
-   - `administrador`: gerencia usuários, escolas, turmas, disciplinas, atribuições, credenciais de serviço ML e auditoria de rede, sem acesso direto a telas/rotas estritamente pedagógicas (`403` em `/api/v1/indicadores/*`, `/api/v1/importacoes/*`, `/api/v1/assistente/contexto`).
-   - `gestor`: restrito à sua `escola_id` em listagens, cadastros, indicadores, importações e auditoria.
+   - `administrador`: perfil técnico da plataforma; gerencia usuários, cadastros estruturais (escolas, turmas e disciplinas), credenciais de serviço ML e auditoria técnica/IA (`/api/v1/admin/*`), com bloqueio (`HTTP 403`) em atribuições docentes e rotas pedagógicas (`/api/v1/atribuicoes/*`, `/api/v1/estudantes/*`, `/api/v1/indicadores/*`, `/api/v1/importacoes/*`, `/api/v1/avaliacoes/*`, `/api/v1/atividades/*`, `/api/v1/previsoes/resumo`, `/api/v1/assistente/contexto`).
+   - `gestor`: rotulado na interface como `Gestor/Coordenador` e restrito à sua `escola_id` em atribuições de turmas, cadastros escolares, indicadores, importações, contexto IA e auditoria (`HTTP 403` se sem `escola_id` vinculada).
    - `professor`: restrito às escolas, turmas e disciplinas vinculadas em `professor_turmas` (suporta unidocência/polivalência com `disciplina_id = NULL`, protegido por índice único parcial no PostgreSQL).
 3. **LGPD e Anonimização**: estudantes são identificados exclusivamente por `id` (UUID) e `codigo_anonimo`. A importação bloqueia planilhas com colunas nominais ou dados pessoais identificáveis (nome, CPF, e-mail, telefone, etc.).
 4. **Importação em Duas Etapas**:
