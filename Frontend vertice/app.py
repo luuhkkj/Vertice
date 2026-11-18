@@ -1,5 +1,6 @@
-
 """Ponto de entrada do Vértice."""
+
+import logging
 
 import streamlit as st
 
@@ -17,6 +18,13 @@ from pages import (
     participacao,
     perfil,
     visao_geral,
+)
+
+logger = logging.getLogger(__name__)
+_EXCECOES_CONTROLE_STREAMLIT = (
+    "RerunException",
+    "StopException",
+    "ScriptControlException",
 )
 
 
@@ -130,8 +138,11 @@ def montar_paginas_internas():
     return paginas_navegacao, paginas_menu
 
 
-if st.session_state["logado"]:
-
+def executar_navegacao_autenticada() -> None:
+    """
+    Renderiza o cabeçalho e o menu lateral personalizado antes da execução da página
+    selecionada, garantindo que a navegação permaneça visível mesmo se ocorrer uma exceção.
+    """
     paginas_navegacao, paginas_menu = montar_paginas_internas()
 
     pagina_atual = st.navigation(
@@ -139,15 +150,30 @@ if st.session_state["logado"]:
         position="hidden",
     )
 
-    # A página vem primeiro no fluxo do Streamlit.
-    # Cabeçalho e menu são posicionados de forma fixa pelo CSS.
-    pagina_atual.run()
-
+    # Cabeçalho e menu lateral são posicionados de forma fixa pelo CSS;
+    # renderizá-los antes da página impede o desaparecimento da navegação em caso de erro.
     render_header(paginas_menu)
     render_sidebar(paginas_menu, pagina_atual)
 
-else:
+    try:
+        pagina_atual.run()
+    except Exception as exc:
+        if type(exc).__name__ in _EXCECOES_CONTROLE_STREAMLIT:
+            raise
+        logger.exception(
+            "Erro inesperado ao renderizar a página '%s'.",
+            getattr(pagina_atual, "title", ""),
+        )
+        st.error(
+            "Ocorreu um erro inesperado ao carregar esta página. "
+            "Use o menu lateral para navegar para outra seção ou tente novamente."
+        )
+        st.caption(f"Detalhe técnico ({type(exc).__name__}): {exc}")
 
+
+if st.session_state["logado"]:
+    executar_navegacao_autenticada()
+else:
     pagina_auth = st.Page(
         auth_animada.render,
         title=NOME_APP,

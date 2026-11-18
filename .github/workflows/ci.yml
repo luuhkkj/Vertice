@@ -130,12 +130,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r "Frontend vertice/requirements.txt"
 
-      - name: Verificar compilação, imports essenciais e ausência de mock_data no frontend
+      - name: Verificar compilação, imports essenciais, ausência de mock_data e testes E2E Streamlit
         working-directory: Frontend vertice
         run: |
           python -m compileall -q .
           python -c "import streamlit, httpx, pandas, plotly, openpyxl, config; from data import api_client; print('Frontend deps & api_client OK:', streamlit.__version__)"
           python -c "import pathlib; bad = [str(p) for p in pathlib.Path('pages').glob('*.py') if 'mock_data' in p.read_text(encoding='utf-8') or 'data.atribuicoes' in p.read_text(encoding='utf-8')]; assert not bad, f'Mock residual encontrado em: {bad}'"
+          python -m unittest discover -s tests -v
 
       - name: Validar sintaxe de docker-compose.yml e override local
         env:

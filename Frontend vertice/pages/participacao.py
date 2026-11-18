@@ -530,6 +530,7 @@ def _renderizar_aba_entregas_atividade(
                 f"Disciplina: {atividade_sel.get('disciplina_codigo') or '—'} | "
                 f"Período: {atividade_sel.get('periodo_letivo') or '—'}"
             ),
+            chave="atividade_detalhe",
         ):
             st.write(
                 f"**Data limite:** {_formatar_data_br(prazo_at)}  •  "
@@ -877,18 +878,23 @@ def _renderizar_aba_historico_individual(
 
     c1, c2, c3, c4, c5 = st.columns(5, gap="small")
     with c1:
-        card_kpi("Taxa individual", kpis_est["taxa_entrega"])
+        card_kpi(kpis_est["taxa_entrega"], "Taxa individual", chave="individual_taxa")
     with c2:
-        card_kpi("Entregues / Esperadas", kpis_est["realizadas_vs_esperadas"])
+        card_kpi(
+            kpis_est["realizadas_vs_esperadas"],
+            "Entregues / Esperadas",
+            chave="individual_entregues_esperadas",
+        )
     with c3:
-        card_kpi("Com atraso", kpis_est["atrasadas"])
+        card_kpi(kpis_est["atrasadas"], "Com atraso", chave="individual_atraso")
     with c4:
         card_kpi(
-            "Não entregues / Pendentes",
             f"{kpis_est['nao_entregues']} / {kpis_est['pendentes']}",
+            "Não entregues / Pendentes",
+            chave="individual_nao_entregues_pendentes",
         )
     with c5:
-        card_kpi("Média das notas", kpis_est["media_notas"])
+        card_kpi(kpis_est["media_notas"], "Média das notas", chave="individual_media_notas")
 
     ev_est = ind_est.get("evolucao_participacao") or []
     if ev_est:
@@ -1186,18 +1192,18 @@ def render() -> None:
     with st.container(key="participacao_indicadores"):
         k1, k2, k3, k4, k5 = st.columns(5, gap="small")
         with k1:
-            card_kpi("Taxa de entrega", kpis["taxa_entrega"])
+            card_kpi(kpis["taxa_entrega"], "Taxa de entrega")
         with k2:
-            card_kpi("Entregues / Esperadas", kpis["realizadas_vs_esperadas"])
+            card_kpi(kpis["realizadas_vs_esperadas"], "Entregues / Esperadas")
         with k3:
-            card_kpi("No prazo / Atrasadas", f"{kpis['no_prazo']} / {kpis['atrasadas']}")
+            card_kpi(f"{kpis['no_prazo']} / {kpis['atrasadas']}", "No prazo / Atrasadas")
         with k4:
             card_kpi(
-                "Não entregues / Pendentes",
                 f"{kpis['nao_entregues']} / {kpis['pendentes']}",
+                "Não entregues / Pendentes",
             )
         with k5:
-            card_kpi("Média notas disponíveis", kpis["media_notas"])
+            card_kpi(kpis["media_notas"], "Média notas disponíveis")
 
     atividade_para_entregas = (
         atividade_obj_sel

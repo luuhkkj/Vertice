@@ -40,10 +40,17 @@ def grafico_linha(dados, x, y, cor=None):
     return _estilizar(figura)
 
 
-def grafico_rosca(dados, nomes, valores):
+def grafico_rosca(dados, nomes, valores, cores=None):
     """Gráfico de rosca com a distribuição por categoria."""
-    figura = px.pie(dados, names=nomes, values=valores, hole=0.5,
-                    color=nomes, color_discrete_map=COR_POR_CATEGORIA)
+    mapa_cores = cores or COR_POR_CATEGORIA
+    figura = px.pie(
+        dados,
+        names=nomes,
+        values=valores,
+        hole=0.5,
+        color=nomes,
+        color_discrete_map=mapa_cores,
+    )
     return _estilizar(figura)
 
 

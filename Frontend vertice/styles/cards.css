@@ -113,7 +113,11 @@
 .st-key-card_frequencia_media,
 .st-key-card_distribuicao_de_risco,
 .st-key-card_risco_por_serie,
-.st-key-card_notas_x_frequencia {
+.st-key-card_notas_x_frequencia,
+.st-key-card_frequencia_observada_por_serie,
+.st-key-card_distribuicao_preditiva_de_risco,
+.st-key-card_media_observada_por_serie,
+.st-key-card_evolucao_longitudinal_observada {
     min-height: 13rem;
 }
 
@@ -121,12 +125,17 @@
 .st-key-card_frequencia_media [data-testid="stPlotlyChart"],
 .st-key-card_distribuicao_de_risco [data-testid="stPlotlyChart"],
 .st-key-card_risco_por_serie [data-testid="stPlotlyChart"],
-.st-key-card_notas_x_frequencia [data-testid="stPlotlyChart"] {
+.st-key-card_notas_x_frequencia [data-testid="stPlotlyChart"],
+.st-key-card_frequencia_observada_por_serie [data-testid="stPlotlyChart"],
+.st-key-card_distribuicao_preditiva_de_risco [data-testid="stPlotlyChart"],
+.st-key-card_media_observada_por_serie [data-testid="stPlotlyChart"],
+.st-key-card_evolucao_longitudinal_observada [data-testid="stPlotlyChart"] {
     margin-top: -0.25rem;
 }
 
 /* Tabela de estudantes */
-.st-key-card_estudantes_que_exigem_atencao {
+.st-key-card_estudantes_que_exigem_atencao,
+.st-key-card_estudantes_com_estimativa_preditiva_de_risco_elevado {
     margin-top: 0.15rem;
 }
 
@@ -135,7 +144,11 @@
 .st-key-card_frequencia_media,
 .st-key-card_distribuicao_de_risco,
 .st-key-card_risco_por_serie,
-.st-key-card_notas_x_frequencia {
+.st-key-card_notas_x_frequencia,
+.st-key-card_frequencia_observada_por_serie,
+.st-key-card_distribuicao_preditiva_de_risco,
+.st-key-card_media_observada_por_serie,
+.st-key-card_evolucao_longitudinal_observada {
     padding: 0.75rem 0.85rem;
 }
 
@@ -143,7 +156,11 @@
 .st-key-card_frequencia_media h3,
 .st-key-card_distribuicao_de_risco h3,
 .st-key-card_risco_por_serie h3,
-.st-key-card_notas_x_frequencia h3 {
+.st-key-card_notas_x_frequencia h3,
+.st-key-card_frequencia_observada_por_serie h3,
+.st-key-card_distribuicao_preditiva_de_risco h3,
+.st-key-card_media_observada_por_serie h3,
+.st-key-card_evolucao_longitudinal_observada h3 {
     margin-top: 0;
     margin-bottom: 0.35rem;
     font-size: 0.95rem;

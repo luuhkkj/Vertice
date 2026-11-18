@@ -452,9 +452,8 @@ def render_header(paginas=None):
 
     capelo = _icone_base64("capelo.svg")
 
-    _estilos_cabecalho()
-
     with st.container(key="cabecalho"):
+        _estilos_cabecalho()
 
         col_logo, col_escola = st.columns(
             [1, 2],
@@ -531,11 +530,10 @@ def render_header(paginas=None):
 def render_sidebar(paginas, pagina_atual):
     """Mantém a navegação azul fixa no desktop."""
 
-    _estilos_icones()
-
     atual = identificar_pagina(pagina_atual)
 
     with st.container(key="vertice_menu_lateral"):
+        _estilos_icones()
 
         for pagina in paginas:
             identificador = identificar_pagina(pagina)

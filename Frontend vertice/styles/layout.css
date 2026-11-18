@@ -56,6 +56,18 @@
     margin-bottom: 0.4rem;
 }
 
+/* Contêineres de navegação fixa não ocupam espaço no fluxo vertical da página */
+
+[data-testid="stLayoutWrapper"]:has(
+    > .st-key-cabecalho,
+    > .st-key-nav_mobile,
+    > .st-key-perfil_flutuante,
+    > .st-key-logout_flutuante,
+    > .st-key-vertice_menu_lateral
+) {
+    display: contents !important;
+}
+
 /* Cabeçalho fixo */
 
 .st-key-cabecalho {

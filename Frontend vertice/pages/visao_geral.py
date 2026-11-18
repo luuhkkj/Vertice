@@ -385,33 +385,44 @@ def render():
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
 
     possui_risco, df_risco, nota_risco = preparar_dados_risco_visao_geral(indicadores)
-    dist_serie = indicadores.get("distribuicao_por_serie") or []
-    evolucao = indicadores.get("evolucao_por_periodo") or []
+    dist_serie = [
+        item for item in (indicadores.get("distribuicao_por_serie") or [])
+        if isinstance(item, dict)
+    ]
+    evolucao = [
+        item for item in (indicadores.get("evolucao_por_periodo") or [])
+        if isinstance(item, dict)
+    ]
+    total_estudantes_recorte = int(indicadores.get("total_estudantes_distintos") or 0)
+
+    if total_estudantes_recorte == 0 and not dist_serie and not evolucao and not possui_risco:
+        st.info(
+            "Ainda não há dados escolares importados para esta escola ou recorte. "
+            "Os cartões e gráficos serão exibidos automaticamente após a importação de dados em Entrada de Dados."
+        )
 
     with st.container(key="vg_graficos_linha_1"):
         col1, col2 = st.columns(2)
 
         with col1:
-            with card():
-                st.subheader("Frequência observada por série")
-                if not dist_serie:
+            with card("Frequência observada por série"):
+                linhas_freq = [
+                    {
+                        "Série": str(item.get("chave") or "—"),
+                        "Frequência média (%)": float(item["frequencia_media"]),
+                    }
+                    for item in dist_serie
+                    if item.get("frequencia_media") is not None
+                ]
+                if not linhas_freq:
+                    st.info("Sem boletins com registros de frequência neste recorte.")
                     st.plotly_chart(
                         grafico_vazio("Sem boletins importados neste recorte"),
                         use_container_width=True,
                         config={"displayModeBar": False},
                     )
                 else:
-                    df_serie = pd.DataFrame(
-                        [
-                            {
-                                "Série": str(item.get("chave") or "—"),
-                                "Frequência média (%)": float(
-                                    item.get("frequencia_media") or 0.0
-                                ),
-                            }
-                            for item in dist_serie
-                        ]
-                    )
+                    df_serie = pd.DataFrame(linhas_freq)
                     st.plotly_chart(
                         grafico_barras_horizontais(
                             df_serie,
@@ -423,9 +434,8 @@ def render():
                     )
 
         with col2:
-            with card():
-                st.subheader("Distribuição preditiva de risco")
-                if not possui_risco:
+            with card("Distribuição preditiva de risco"):
+                if not possui_risco or df_risco.empty or float(df_risco["Estudantes"].sum()) <= 0:
                     st.info(nota_risco or "Aguardando previsões de risco.")
                     st.plotly_chart(
                         grafico_vazio("Nenhuma previsão preditiva disponível"),
@@ -457,24 +467,24 @@ def render():
         col3, col4 = st.columns(2)
 
         with col3:
-            with card():
-                st.subheader("Média observada por série")
-                if not dist_serie:
+            with card("Média observada por série"):
+                linhas_notas = [
+                    {
+                        "Série": str(item.get("chave") or "—"),
+                        "Média geral": float(item["media_geral"]),
+                    }
+                    for item in dist_serie
+                    if item.get("media_geral") is not None
+                ]
+                if not linhas_notas:
+                    st.info("Sem registros de médias por série neste recorte.")
                     st.plotly_chart(
                         grafico_vazio("Sem dados observados por série"),
                         use_container_width=True,
                         config={"displayModeBar": False},
                     )
                 else:
-                    df_notas_serie = pd.DataFrame(
-                        [
-                            {
-                                "Série": str(item.get("chave") or "—"),
-                                "Média geral": float(item.get("media_geral") or 0.0),
-                            }
-                            for item in dist_serie
-                        ]
-                    )
+                    df_notas_serie = pd.DataFrame(linhas_notas)
                     st.plotly_chart(
                         grafico_barras_horizontais(
                             df_notas_serie,
@@ -486,9 +496,9 @@ def render():
                     )
 
         with col4:
-            with card():
-                st.subheader("Evolução longitudinal observada")
+            with card("Evolução longitudinal observada"):
                 if not evolucao:
+                    st.info("Nenhum período letivo consolidado neste recorte.")
                     st.plotly_chart(
                         grafico_vazio("Sem períodos letivos consolidados"),
                         use_container_width=True,
@@ -524,8 +534,7 @@ def render():
                 if str(p.get("faixa_risco") or "").upper() in {"ALTO", "CRITICO"}
             ]
             st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
-            with card():
-                st.subheader("Estudantes com estimativa preditiva de risco elevado")
+            with card("Estudantes com estimativa preditiva de risco elevado"):
                 st.caption(
                     "Lista anonimizada de apoio preventivo. Não constitui diagnóstico definitivo."
                 )
