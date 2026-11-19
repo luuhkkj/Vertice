@@ -8,9 +8,8 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
-    require_acesso_pedagogico,
+    require_consulta_estrutural,
     require_gestor_ou_admin,
-    require_qualquer_papel,
 )
 from app.database.connection import get_db
 from app.modules.turmas.models import Turma
@@ -39,17 +38,17 @@ def criar_turma(
 @router.get(
     "",
     response_model=list[TurmaResponse],
-    summary="Listar turmas conforme escopo de acesso do usuário",
+    summary="Listar turmas conforme escopo estrutural do usuário",
 )
 def listar_turmas(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_qualquer_papel),
+    current_user: Usuario = Depends(require_consulta_estrutural),
 ) -> list[Turma]:
     """
-    Lista turmas:
-    - Administradores visualizam todas as turmas.
+    Lista apenas registros estruturais de turmas:
+    - Administradores visualizam registros estruturais de todas as turmas (sem conteúdo pedagógico).
     - Gestores com escola vinculada visualizam as turmas da sua escola.
     - Professores visualizam exclusivamente as turmas às quais estão associados.
     """
@@ -61,16 +60,17 @@ def listar_turmas(
 @router.get(
     "/{turma_id}",
     response_model=TurmaResponse,
-    summary="Obter detalhes de uma turma (Gestor da escola ou Professor vinculado)",
+    summary="Obter registro estrutural de uma turma",
 )
 def obter_turma(
     turma_id: uuid.UUID,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_acesso_pedagogico),
+    current_user: Usuario = Depends(require_consulta_estrutural),
 ) -> Turma:
     """
-    Retorna os detalhes de uma turma.
-    Exclusivo para Gestores (na própria escola) e Professores vinculados (`HTTP 403` para Administrador).
+    Retorna apenas os campos cadastrais/estruturais de uma turma (sem estudantes, notas ou avaliações).
+    Administrador consulta estruturalmente qualquer turma; Gestor restringe-se à própria escola e
+    Professor às turmas com vínculo ativo (`HTTP 403` fora do escopo).
     """
     return TurmaService.obter_turma_autorizada(
         db, turma_id=turma_id, usuario=current_user

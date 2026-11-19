@@ -7,7 +7,10 @@ import uuid
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import require_gestor_ou_admin, require_qualquer_papel
+from app.core.dependencies import (
+    require_consulta_estrutural,
+    require_gestor_ou_admin,
+)
 from app.database.connection import get_db
 from app.modules.disciplinas.models import Disciplina
 from app.modules.disciplinas.schemas import (
@@ -39,15 +42,15 @@ def criar_disciplina(
 @router.get(
     "",
     response_model=list[DisciplinaResponse],
-    summary="Listar disciplinas",
+    summary="Listar disciplinas (consulta estrutural)",
 )
 def listar_disciplinas(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_qualquer_papel),
+    current_user: Usuario = Depends(require_consulta_estrutural),
 ) -> list[Disciplina]:
-    """Lista todas as disciplinas cadastradas."""
+    """Lista apenas campos estruturais das disciplinas cadastradas."""
     return DisciplinaService.listar_disciplinas(
         db, skip=skip, limit=limit, usuario=current_user
     )
@@ -56,14 +59,14 @@ def listar_disciplinas(
 @router.get(
     "/{disciplina_id}",
     response_model=DisciplinaResponse,
-    summary="Obter detalhes de uma disciplina",
+    summary="Obter detalhes estruturais de uma disciplina",
 )
 def obter_disciplina(
     disciplina_id: uuid.UUID,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_qualquer_papel),
+    current_user: Usuario = Depends(require_consulta_estrutural),
 ) -> Disciplina:
-    """Retorna os detalhes de uma disciplina específica."""
+    """Retorna apenas os campos estruturais de uma disciplina específica."""
     return DisciplinaService.obter_por_id(db, disciplina_id, usuario=current_user)
 
 

@@ -58,8 +58,27 @@ def _obter_bytes_modelo(modelo: dict, formato: str) -> bytes:
     return _arquivo_modelo(modelo["tipo_entrada"], "CSV" if formato.upper() == "CSV" else "Excel")
 
 
+def _papel_atual_modelos() -> str:
+    usuario_api = st.session_state.get("usuario_api")
+    if isinstance(usuario_api, dict) and usuario_api.get("papel"):
+        return str(usuario_api["papel"]).strip().lower()
+    return str(
+        st.session_state.get("papel_api")
+        or st.session_state.get("perfil")
+        or ""
+    ).strip().lower()
+
+
 def render():
     """Exibe e disponibiliza para download os 3 modelos oficiais alinhados ao validador do backend."""
+    if _papel_atual_modelos() == "administrador":
+        titulo_pagina("Modelos Oficiais de Planilhas")
+        st.error(
+            "Permissão insuficiente: perfis administrativos não possuem acesso "
+            "a modelos e importações de planilhas pedagógicas."
+        )
+        return
+
     if st.button(
         "Voltar para Mapa de Acertos",
         icon=":material/arrow_back:",

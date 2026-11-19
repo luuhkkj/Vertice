@@ -1257,10 +1257,29 @@ def _renderizar_modo_api(contexto_api: dict[str, Any]):
     )
 
 
+def _papel_atual_mapa() -> str:
+    usuario_api = st.session_state.get("usuario_api")
+    if isinstance(usuario_api, dict) and usuario_api.get("papel"):
+        return str(usuario_api["papel"]).strip().lower()
+    return str(
+        st.session_state.get("papel_api")
+        or st.session_state.get("perfil")
+        or ""
+    ).strip().lower()
+
+
 def render():
     """Renderiza o Mapa de Acertos conforme o perfil e os dados reais do backend."""
 
     aplicar_responsividade()
+
+    if _papel_atual_mapa() == "administrador":
+        titulo_pagina("Mapa de Acertos")
+        st.error(
+            "Permissão insuficiente: perfis administrativos não possuem acesso "
+            "ao módulo pedagógico de avaliações e Mapa de Acertos."
+        )
+        return
 
     st.session_state.setdefault(
         "ma_questao_selecionada",

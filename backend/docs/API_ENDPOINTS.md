@@ -29,8 +29,8 @@ Documentação técnica dos endpoints expostos pelo backend FastAPI do **Vértic
 |---|---|---|
 | Pública (sem autenticação) | Todos | Apenas `/`, `/health`, `/api/v1/health`, `/api/v1/auth/login` |
 | `get_current_user` | Usuário ativo autenticado | Valida token JWT e status `ativo=True` |
-| `require_qualquer_papel` | `administrador`, `gestor`, `professor` | Regras de escopo aplicadas nos serviços |
-| `require_admin` | `administrador` | Gestão técnica de usuários, resumo operacional, auditoria técnica e credenciais ML (`403` em fluxos pedagógicos e atribuições) |
+| `require_consulta_estrutural` | `administrador`, `gestor`, `professor` | Leitura estritamente cadastral/estrutural de escolas, turmas e disciplinas (`administrador` nunca recebe dados pedagógicos) |
+| `require_administracao_tecnica` / `require_admin` | `administrador` | Gestão técnica de usuários, estado operacional, auditoria técnica e credenciais ML (`403` em fluxos pedagógicos e atribuições) |
 | `require_gestor` | `gestor` | Gestão operacional de atribuições na própria escola (`escola_id` obrigatória; `403` para `administrador`, `professor` e gestor sem escola) |
 | `require_gestor_ou_admin` | `administrador`, `gestor` | Cadastros estruturais (`escolas`, `turmas`, `disciplinas`; `gestor` restrito à sua `escola_id`) |
 | `require_importacao_datasets` | `gestor`, `professor` | Escopo escolar/turma/disciplina estrito (`administrador` recebe `403`) |
@@ -100,8 +100,8 @@ Todas as rotas exigem `require_admin` (`administrador`). Não expõem dados nomi
 | Método | Rota | RBAC | Parâmetros | Payload (`JSON`) | Resposta |
 |---|---|---|---|---|---|
 | `POST` | `/api/v1/escolas` | `require_gestor_ou_admin` | — | `EscolaCreate`: `nome`*, `codigo`*, `ativo` | `201 EscolaResponse` |
-| `GET` | `/api/v1/escolas` | `require_qualquer_papel` | `skip=0`, `limit=100` | — | `200 list[EscolaResponse]` |
-| `GET` | `/api/v1/escolas/{escola_id}` | `require_qualquer_papel` | Path: `escola_id` (UUID) | — | `200 EscolaResponse` |
+| `GET` | `/api/v1/escolas` | `require_consulta_estrutural` | `skip=0`, `limit=100` | — | `200 list[EscolaResponse]` |
+| `GET` | `/api/v1/escolas/{escola_id}` | `require_consulta_estrutural` | Path: `escola_id` (UUID) | — | `200 EscolaResponse` |
 | `PATCH` | `/api/v1/escolas/{escola_id}` | `require_gestor_ou_admin` | Path: `escola_id` (UUID) | `EscolaUpdate`: `nome?`, `codigo?`, `ativo?` | `200 EscolaResponse` |
 
 > **Isolamento**: `administrador` lista/consulta todas; `gestor` exige `escola_id` vinculada (`403` se ausente) e acessa somente sua `escola_id` (`403` para outras unidades e para cadastro de nova escola após vínculo); `professor` acessa sua `escola_id` (se definida) e as escolas das turmas em que possui vínculo em `professor_turmas`.
@@ -111,8 +111,8 @@ Todas as rotas exigem `require_admin` (`administrador`). Não expõem dados nomi
 | Método | Rota | RBAC | Parâmetros | Payload (`JSON`) | Resposta |
 |---|---|---|---|---|---|
 | `POST` | `/api/v1/turmas` | `require_gestor_ou_admin` | — | `TurmaCreate`: `nome`*, `serie`*, `turno`*, `ano_letivo`*, `escola_id`*, `ativo` | `201 TurmaResponse` |
-| `GET` | `/api/v1/turmas` | `require_qualquer_papel` | `skip=0`, `limit=100` | — | `200 list[TurmaResponse]` |
-| `GET` | `/api/v1/turmas/{turma_id}` | `require_acesso_pedagogico` | Path: `turma_id` (UUID) | — | `200 TurmaResponse` |
+| `GET` | `/api/v1/turmas` | `require_consulta_estrutural` | `skip=0`, `limit=100` | — | `200 list[TurmaResponse]` |
+| `GET` | `/api/v1/turmas/{turma_id}` | `require_consulta_estrutural` | Path: `turma_id` (UUID) | — | `200 TurmaResponse` |
 | `PATCH` | `/api/v1/turmas/{turma_id}` | `require_gestor_ou_admin` | Path: `turma_id` (UUID) | `TurmaUpdate`: `nome?`, `serie?`, `turno?`, `ano_letivo?`, `ativo?` | `200 TurmaResponse` |
 
 ### 5.3 Disciplinas (`/api/v1/disciplinas`)
@@ -120,8 +120,8 @@ Todas as rotas exigem `require_admin` (`administrador`). Não expõem dados nomi
 | Método | Rota | RBAC | Parâmetros | Payload (`JSON`) | Resposta |
 |---|---|---|---|---|---|
 | `POST` | `/api/v1/disciplinas` | `require_gestor_ou_admin` | — | `DisciplinaCreate`: `nome`*, `codigo`*, `ativo` | `201 DisciplinaResponse` |
-| `GET` | `/api/v1/disciplinas` | `require_qualquer_papel` | `skip=0`, `limit=100` | — | `200 list[DisciplinaResponse]` |
-| `GET` | `/api/v1/disciplinas/{disciplina_id}` | `require_qualquer_papel` | Path: `disciplina_id` (UUID) | — | `200 DisciplinaResponse` |
+| `GET` | `/api/v1/disciplinas` | `require_consulta_estrutural` | `skip=0`, `limit=100` | — | `200 list[DisciplinaResponse]` |
+| `GET` | `/api/v1/disciplinas/{disciplina_id}` | `require_consulta_estrutural` | Path: `disciplina_id` (UUID) | — | `200 DisciplinaResponse` |
 | `PATCH` | `/api/v1/disciplinas/{disciplina_id}` | `require_gestor_ou_admin` | Path: `disciplina_id` (UUID) | `DisciplinaUpdate`: `nome?`, `codigo?`, `ativo?` | `200 DisciplinaResponse` |
 
 ### 5.4 Atribuições Professor–Turma–Disciplina (`/api/v1/atribuicoes`)

@@ -26,8 +26,8 @@ class AuditoriaOperacaoTecnicaResponse(BaseModel):
 
 class ResumoOperacionalAdminResponse(BaseModel):
     """
-    Contadores estritamente técnicos e estruturais da plataforma.
-    Não contém informações pedagógicas de estudantes, notas, avaliações ou previsões.
+    Contadores estritamente técnicos e estruturais da plataforma e estado operacional não sensível.
+    Não contém informações pedagógicas de estudantes, notas, avaliações ou previsões nem segredos.
     """
 
     total_usuarios: int
@@ -44,3 +44,8 @@ class ResumoOperacionalAdminResponse(BaseModel):
     total_eventos_auditoria_tecnica: int
     total_eventos_auditoria_ia: int
     provedor_llm_configurado: bool
+    ambiente: str
+    versao_aplicacao: str
+    debug_ativo: bool
+    algoritmo_jwt: str
+    expiracao_token_minutos: int

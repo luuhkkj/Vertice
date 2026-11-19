@@ -655,4 +655,26 @@ class AssistenteContextoService:
             skip=skip,
             limit=limit,
         )
-        return [AuditoriaConsultaIAResponse.model_validate(r) for r in regs]
+        respostas = [AuditoriaConsultaIAResponse.model_validate(r) for r in regs]
+        if usuario.papel == PapelUsuario.ADMINISTRADOR:
+            respostas_redigidas: list[AuditoriaConsultaIAResponse] = []
+            for resp in respostas:
+                filtros_limpos = (
+                    {
+                        k: v
+                        for k, v in resp.filtros_utilizados.items()
+                        if k not in {"estudante_id", "codigo_anonimo"}
+                    }
+                    if isinstance(resp.filtros_utilizados, dict)
+                    else resp.filtros_utilizados
+                )
+                respostas_redigidas.append(
+                    resp.model_copy(
+                        update={
+                            "estudante_id_solicitado": None,
+                            "filtros_utilizados": filtros_limpos,
+                        }
+                    )
+                )
+            return respostas_redigidas
+        return respostas

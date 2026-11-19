@@ -95,17 +95,19 @@ def require_roles(*allowed_roles: PapelUsuario) -> Callable[[Usuario], Usuario]:
     return role_checker
 
 
-# Dependências reutilizáveis por papel
+# Dependências reutilizáveis por papel e finalidade
 require_admin = require_roles(PapelUsuario.ADMINISTRADOR)
+require_administracao_tecnica = require_admin
 require_gestor = require_roles(PapelUsuario.GESTOR)
 require_gestor_ou_admin = require_roles(
     PapelUsuario.ADMINISTRADOR, PapelUsuario.GESTOR
 )
-require_qualquer_papel = require_roles(
+require_consulta_estrutural = require_roles(
     PapelUsuario.ADMINISTRADOR,
     PapelUsuario.GESTOR,
     PapelUsuario.PROFESSOR,
 )
+require_qualquer_papel = require_consulta_estrutural
 
 # Política explícita para importação de datasets escolares (Fase 3) e acesso pedagógico (Fase 4):
 # O perfil 'gestor' representa a coordenação escolar e os professores importam e gerenciam
@@ -378,6 +380,29 @@ def verificar_vinculo_professor_turma(
         .limit(1)
     )
     return db.execute(stmt).scalar_one_or_none() is not None
+
+
+def garantir_consulta_estrutural_turma(
+    db: Session,
+    usuario: Usuario,
+    turma_id: uuid.UUID,
+    escola_id: Optional[uuid.UUID] = None,
+) -> None:
+    """
+    Valida autorização para consulta estrutural (cadastral) de uma turma, sem expor dados pedagógicos:
+    - Administrador: consulta cadastral global autorizada apenas para campos estruturais da turma.
+    - Gestor: restrito às turmas de sua `escola_id` vinculada (`403` se sem escola ou outra unidade).
+    - Professor: restrito às turmas às quais possui vínculo em `professor_turmas`.
+    """
+    if usuario.papel == PapelUsuario.ADMINISTRADOR:
+        return
+
+    garantir_acesso_turma(
+        db=db,
+        usuario=usuario,
+        turma_id=turma_id,
+        escola_id=escola_id,
+    )
 
 
 def garantir_acesso_turma(

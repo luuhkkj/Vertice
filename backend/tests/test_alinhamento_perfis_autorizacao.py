@@ -21,9 +21,13 @@ from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import garantir_acesso_turma
+from app.core.dependencies import (
+    garantir_acesso_turma,
+    garantir_consulta_estrutural_turma,
+)
 from app.core.security import get_password_hash
 from app.modules.admin.models import AuditoriaOperacaoTecnica
+from app.modules.admin.service import AdminAuditService
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.avaliacoes.models import Avaliacao, QuestaoAvaliacao, StatusAvaliacao, TipoQuestao
 from app.modules.participacao.models import Atividade, EntregaAtividade, StatusAtividade
@@ -116,14 +120,18 @@ def test_administrador_acesso_tecnico_permitido_e_bloqueio_total_pedagogico_e_at
     )
     assert atrib_a is not None
 
-    # 1. Rotas técnicas permitidas ao Administrador
+    # 1. Rotas técnicas e consultas estritamente estruturais permitidas ao Administrador
     for metodo, rota in [
         ("GET", "/api/v1/admin/resumo-operacional"),
         ("GET", "/api/v1/admin/auditoria-tecnica"),
         ("GET", "/api/v1/usuarios"),
+        ("GET", f"/api/v1/usuarios/{cenario['prof1'].id}"),
         ("GET", "/api/v1/escolas"),
+        ("GET", f"/api/v1/escolas/{cenario['escola_a'].id}"),
         ("GET", "/api/v1/turmas"),
+        ("GET", f"/api/v1/turmas/{cenario['turma_1a'].id}"),
         ("GET", "/api/v1/disciplinas"),
+        ("GET", f"/api/v1/disciplinas/{cenario['disc_mat'].id}"),
         ("GET", "/api/v1/previsoes/credenciais"),
         ("GET", "/api/v1/assistente/auditoria"),
     ]:
@@ -133,12 +141,94 @@ def test_administrador_acesso_tecnico_permitido_e_bloqueio_total_pedagogico_e_at
     resumo = client.get("/api/v1/admin/resumo-operacional", headers=headers_admin).json()
     assert resumo["total_escolas"] >= 2
     assert set(resumo["usuarios_por_papel"].keys()) == {"administrador", "gestor", "professor"}
-    assert "estudantes" not in resumo
+    for chave_tec in (
+        "ambiente",
+        "versao_aplicacao",
+        "debug_ativo",
+        "algoritmo_jwt",
+        "expiracao_token_minutos",
+    ):
+        assert chave_tec in resumo
+    for campo_proibido in ("estudantes", "notas", "secret_key", "database_url", "postgres_password"):
+        assert campo_proibido not in resumo
+
+    # Consulta estrutural pelo Administrador retorna apenas campos cadastrais, nunca dados pedagógicos
+    escola_adm = client.get(f"/api/v1/escolas/{cenario['escola_a'].id}", headers=headers_admin).json()
+    assert set(escola_adm.keys()) == {"id", "nome", "codigo", "ativo", "criado_em", "atualizado_em"}
+    turma_adm = client.get(f"/api/v1/turmas/{cenario['turma_1a'].id}", headers=headers_admin).json()
+    assert set(turma_adm.keys()) == {
+        "id",
+        "nome",
+        "serie",
+        "turno",
+        "ano_letivo",
+        "escola_id",
+        "ativo",
+        "criado_em",
+        "atualizado_em",
+    }
+    disc_adm = client.get(f"/api/v1/disciplinas/{cenario['disc_mat'].id}", headers=headers_admin).json()
+    assert set(disc_adm.keys()) == {"id", "nome", "codigo", "ativo", "criado_em", "atualizado_em"}
+
+    # Gerenciamento estrutural autorizado para Administrador (cria e atualiza escola, turma e disciplina)
+    r_adm_esc = client.post(
+        "/api/v1/escolas",
+        json={"nome": "Escola Técnica Admin", "codigo": "ETA-01", "ativo": True},
+        headers=headers_admin,
+    )
+    assert r_adm_esc.status_code == 201, r_adm_esc.text
+    esc_adm_id = r_adm_esc.json()["id"]
+    assert (
+        client.patch(
+            f"/api/v1/escolas/{esc_adm_id}",
+            json={"nome": "Escola Técnica Admin Atualizada"},
+            headers=headers_admin,
+        ).status_code
+        == 200
+    )
+
+    r_adm_tur = client.post(
+        "/api/v1/turmas",
+        json={
+            "nome": "Turma Estrutural 1",
+            "serie": "1ª Série",
+            "turno": "Matutino",
+            "ano_letivo": 2026,
+            "escola_id": esc_adm_id,
+            "ativo": True,
+        },
+        headers=headers_admin,
+    )
+    assert r_adm_tur.status_code == 201, r_adm_tur.text
+    tur_adm_id = r_adm_tur.json()["id"]
+    assert (
+        client.patch(
+            f"/api/v1/turmas/{tur_adm_id}",
+            json={"turno": "Vespertino"},
+            headers=headers_admin,
+        ).status_code
+        == 200
+    )
+
+    r_adm_dis = client.post(
+        "/api/v1/disciplinas",
+        json={"nome": "Biologia Estrutural", "codigo": "BIO", "ativo": True},
+        headers=headers_admin,
+    )
+    assert r_adm_dis.status_code == 201, r_adm_dis.text
+    dis_adm_id = r_adm_dis.json()["id"]
+    assert (
+        client.patch(
+            f"/api/v1/disciplinas/{dis_adm_id}",
+            json={"nome": "Biologia Geral"},
+            headers=headers_admin,
+        ).status_code
+        == 200
+    )
 
     # 2. Administrador recebe HTTP 403 em TODAS as rotas de atribuições e dados pedagógicos
     lote_exemplo = uuid.uuid4()
     rotas_proibidas_admin = [
-        ("GET", f"/api/v1/turmas/{cenario['turma_1a'].id}", None),
         ("GET", "/api/v1/atribuicoes", None),
         (
             "POST",
@@ -151,6 +241,7 @@ def test_administrador_acesso_tecnico_permitido_e_bloqueio_total_pedagogico_e_at
         ),
         ("DELETE", f"/api/v1/atribuicoes/{atrib_a.id}", None),
         ("GET", "/api/v1/estudantes", None),
+        ("GET", f"/api/v1/estudantes?turma_id={cenario['turma_1a'].id}", None),
         ("GET", f"/api/v1/estudantes/{cenario['est1'].id}", None),
         ("GET", "/api/v1/importacoes", None),
         ("GET", "/api/v1/importacoes/modelos/dados-escolares", None),
@@ -161,7 +252,14 @@ def test_administrador_acesso_tecnico_permitido_e_bloqueio_total_pedagogico_e_at
         ("POST", f"/api/v1/importacoes/{lote_exemplo}/confirmar", None),
         ("POST", f"/api/v1/importacoes/{lote_exemplo}/descartar", None),
         ("GET", "/api/v1/avaliacoes", None),
+        ("GET", f"/api/v1/avaliacoes?turma_id={cenario['turma_1a'].id}&disciplina_id={cenario['disc_mat'].id}", None),
         ("GET", f"/api/v1/avaliacoes/{recursos['avaliacao'].id}", None),
+        ("PATCH", f"/api/v1/avaliacoes/{recursos['avaliacao'].id}", {"titulo": "Alteração Admin"}),
+        (
+            "POST",
+            f"/api/v1/avaliacoes/{recursos['avaliacao'].id}/questoes",
+            {"codigo_questao": "Q99", "tipo_questao": "FECHADA", "alternativa_correta": "B", "valor_questao": 1.0},
+        ),
         ("GET", f"/api/v1/avaliacoes/{recursos['avaliacao'].id}/questoes", None),
         ("GET", f"/api/v1/avaliacoes/{recursos['avaliacao'].id}/respostas", None),
         (
@@ -186,8 +284,16 @@ def test_administrador_acesso_tecnico_permitido_e_bloqueio_total_pedagogico_e_at
             {"estudante_id": str(cenario["est1"].id), "alternativa_marcada": "A"},
         ),
         ("GET", "/api/v1/atividades", None),
+        ("GET", f"/api/v1/atividades?turma_id={cenario['turma_1a'].id}", None),
         ("GET", f"/api/v1/atividades/{recursos['atividade'].id}", None),
+        ("PATCH", f"/api/v1/atividades/{recursos['atividade'].id}", {"titulo": "Alteração Admin"}),
+        ("POST", f"/api/v1/atividades/{recursos['atividade'].id}/gerar-entregas-esperadas", None),
         ("GET", f"/api/v1/atividades/{recursos['atividade'].id}/entregas", None),
+        (
+            "POST",
+            f"/api/v1/atividades/{recursos['atividade'].id}/entregas",
+            {"estudante_id": str(cenario["est1"].id), "status_entrega": "ENTREGUE"},
+        ),
         (
             "POST",
             "/api/v1/atividades",
@@ -215,16 +321,55 @@ def test_administrador_acesso_tecnico_permitido_e_bloqueio_total_pedagogico_e_at
                 "descricao": "Tentativa indevida de administrador",
             },
         ),
+        ("GET", f"/api/v1/indicadores/gerais?escola_id={cenario['escola_a'].id}&turma_id={cenario['turma_1a'].id}", None),
         ("GET", "/api/v1/indicadores/gerais", None),
         ("GET", "/api/v1/indicadores/avaliacoes", None),
         ("GET", "/api/v1/indicadores/participacao", None),
         ("GET", "/api/v1/previsoes", None),
+        ("GET", f"/api/v1/previsoes?escola_id={cenario['escola_a'].id}&turma_id={cenario['turma_1a'].id}", None),
         ("GET", "/api/v1/previsoes/resumo", None),
         ("GET", f"/api/v1/previsoes/estudantes/{cenario['est1'].id}", None),
         (
             "POST",
+            "/api/v1/previsoes",
+            {
+                "estudante_id": str(cenario["est1"].id),
+                "ano_letivo": 2026,
+                "periodo_letivo": "1º Bimestre",
+                "pontuacao_risco": 0.5,
+                "faixa_risco": "MODERADO",
+                "modelo_nome": "xgb_teste",
+                "modelo_versao": "1.0.0",
+                "gerado_em": "2026-06-01T10:00:00Z",
+            },
+        ),
+        (
+            "POST",
+            "/api/v1/previsoes/lote",
+            {
+                "itens": [
+                    {
+                        "estudante_id": str(cenario["est1"].id),
+                        "ano_letivo": 2026,
+                        "periodo_letivo": "1º Bimestre",
+                        "pontuacao_risco": 0.5,
+                        "faixa_risco": "MODERADO",
+                        "modelo_nome": "xgb_teste",
+                        "modelo_versao": "1.0.0",
+                        "gerado_em": "2026-06-01T10:00:00Z",
+                    }
+                ]
+            },
+        ),
+        (
+            "POST",
             "/api/v1/assistente/contexto",
             {"tipo_contexto": "ESCOLA", "escola_id": str(cenario["escola_a"].id)},
+        ),
+        (
+            "POST",
+            "/api/v1/assistente/contexto",
+            {"tipo_contexto": "INDIVIDUAL", "estudante_id": str(cenario["est1"].id)},
         ),
         (
             "POST",
@@ -241,10 +386,15 @@ def test_administrador_acesso_tecnico_permitido_e_bloqueio_total_pedagogico_e_at
         resp = client.request(metodo, rota, json=body, headers=headers_admin)
         assert resp.status_code == 403, f"Admin deveria receber 403 em {metodo} {rota}, recebeu {resp.status_code}: {resp.text}"
 
-    # Proteção direta no helper genérico `garantir_acesso_turma`
+    # Proteção direta nos helpers: `garantir_acesso_turma` (pedagógico) bloqueia Admin,
+    # enquanto `garantir_consulta_estrutural_turma` autoriza Admin e segue bloqueando outros fora de escopo
     with pytest.raises(HTTPException) as exc_turma_admin:
         garantir_acesso_turma(db_session, cenario["admin"], cenario["turma_1a"].id)
     assert exc_turma_admin.value.status_code == 403
+    garantir_consulta_estrutural_turma(db_session, cenario["admin"], cenario["turma_1a"].id)
+    with pytest.raises(HTTPException) as exc_est_prof:
+        garantir_consulta_estrutural_turma(db_session, cenario["prof1"], cenario["turma_3a"].id)
+    assert exc_est_prof.value.status_code == 403
 
     # Verifica que gestor da escola continua conseguindo criar e remover atribuições normalmente
     r_atrib = client.post(
@@ -561,9 +711,10 @@ def test_auditoria_tecnica_persistente_sem_vazamento_segredos(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    """Cenário 10: Ações administrativas sensíveis ficam gravadas em auditoria sem senhas, hashes ou tokens."""
+    """Cenário 10: Ações administrativas sensíveis ficam gravadas em auditoria sem segredos ou conteúdo pedagógico."""
     cenario = _criar_cenario_fase4(db_session)
     headers_admin = _login_headers(client, "admin@vertice.edu.br", "SenhaForte@123")
+    headers_ga = _login_headers(client, "gestor.a@vertice.edu.br", "SenhaForte@123")
 
     senha_secreta = "SegredoUltra@987"
     r_user = client.post(
@@ -583,7 +734,66 @@ def test_auditoria_tecnica_persistente_sem_vazamento_segredos(
     assert (
         client.patch(
             f"/api/v1/usuarios/{uid}",
-            json={"nome": "Docente Auditado Editado", "senha": "OutroSegredo@777", "ativo": False},
+            json={
+                "nome": "Docente Auditado Editado",
+                "senha": "OutroSegredo@777",
+                "papel": "gestor",
+                "ativo": False,
+            },
+            headers=headers_admin,
+        ).status_code
+        == 200
+    )
+
+    r_esc = client.post(
+        "/api/v1/escolas",
+        json={"nome": "Escola Auditada", "codigo": "EA-99"},
+        headers=headers_admin,
+    )
+    assert r_esc.status_code == 201
+    esc_id = r_esc.json()["id"]
+    assert (
+        client.patch(
+            f"/api/v1/escolas/{esc_id}",
+            json={"ativo": False},
+            headers=headers_admin,
+        ).status_code
+        == 200
+    )
+
+    r_tur = client.post(
+        "/api/v1/turmas",
+        json={
+            "nome": "Turma Auditada",
+            "serie": "2ª Série",
+            "turno": "Noturno",
+            "ano_letivo": 2026,
+            "escola_id": str(cenario["escola_a"].id),
+        },
+        headers=headers_admin,
+    )
+    assert r_tur.status_code == 201
+    tur_id = r_tur.json()["id"]
+    assert (
+        client.patch(
+            f"/api/v1/turmas/{tur_id}",
+            json={"ativo": False},
+            headers=headers_admin,
+        ).status_code
+        == 200
+    )
+
+    r_dis = client.post(
+        "/api/v1/disciplinas",
+        json={"nome": "História Auditada", "codigo": "HIS"},
+        headers=headers_admin,
+    )
+    assert r_dis.status_code == 201
+    dis_id = r_dis.json()["id"]
+    assert (
+        client.patch(
+            f"/api/v1/disciplinas/{dis_id}",
+            json={"ativo": False},
             headers=headers_admin,
         ).status_code
         == 200
@@ -606,6 +816,22 @@ def test_auditoria_tecnica_persistente_sem_vazamento_segredos(
         == 200
     )
 
+    # Sanitização direta impede gravação de hashes, JWT, segredos ou chaves pedagógicas em detalhes
+    AdminAuditService.registrar_evento(
+        db_session,
+        acao="TESTE_SANITIZACAO",
+        entidade="configuracao",
+        usuario_ator=cenario["admin"],
+        detalhes={
+            "senha_hash": "$argon2id$v=19$m=65536$hash",
+            "jwt_token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.assinatura",
+            "estudante_id": str(cenario["est1"].id),
+            "codigo_anonimo": "EST-001",
+            "observacao": "Bearer eyJhbGciOiJIUzI1NiJ9.payload.assinatura",
+            "chave_permitida": "valor_seguro",
+        },
+    )
+
     resp_aud = client.get("/api/v1/admin/auditoria-tecnica", headers=headers_admin)
     assert resp_aud.status_code == 200
     eventos = resp_aud.json()
@@ -613,15 +839,65 @@ def test_auditoria_tecnica_persistente_sem_vazamento_segredos(
     assert {
         "USUARIO_CRIADO",
         "USUARIO_ATUALIZADO",
+        "ESCOLA_CRIADA",
+        "ESCOLA_ATUALIZADA",
+        "TURMA_CRIADA",
+        "TURMA_ATUALIZADA",
+        "DISCIPLINA_CRIADA",
+        "DISCIPLINA_ATUALIZADA",
         "CREDENCIAL_ML_EMITIDA",
         "CREDENCIAL_ML_REVOGADA",
+        "TESTE_SANITIZACAO",
     }.issubset(acoes)
+
+    ev_upd_user = next(
+        ev
+        for ev in eventos
+        if ev["acao"] == "USUARIO_ATUALIZADO" and ev["entidade_id"] == uid
+    )
+    assert ev_upd_user["detalhes"]["papel_anterior"] == "professor"
+    assert ev_upd_user["detalhes"]["papel"] == "gestor"
+    assert ev_upd_user["detalhes"]["papel_alterado"] is True
+    assert ev_upd_user["detalhes"]["ativo_anterior"] is True
+    assert ev_upd_user["detalhes"]["ativo"] is False
+    assert ev_upd_user["detalhes"]["status_ativo_alterado"] is True
+
+    ev_san = next(ev for ev in eventos if ev["acao"] == "TESTE_SANITIZACAO")
+    assert "senha_hash" not in ev_san["detalhes"]
+    assert "jwt_token" not in ev_san["detalhes"]
+    assert "estudante_id" not in ev_san["detalhes"]
+    assert "codigo_anonimo" not in ev_san["detalhes"]
+    assert ev_san["detalhes"]["observacao"] == "[REDIGIDO]"
+    assert ev_san["detalhes"]["chave_permitida"] == "valor_seguro"
 
     serializado = str(eventos)
     assert senha_secreta not in serializado
     assert "OutroSegredo@777" not in serializado
     assert segredo_ml not in serializado
-    assert db_session.query(AuditoriaOperacaoTecnica).count() >= 4
+    assert "$argon2id$" not in serializado
+    assert "eyJhbGciOiJIUzI1NiJ9" not in serializado
+    assert db_session.query(AuditoriaOperacaoTecnica).count() >= 11
+
+    # Administrador consultando auditoria de IA nunca recebe estudante_id ou codigo_anonimo
+    r_ctx_ga = client.post(
+        "/api/v1/assistente/contexto",
+        json={"tipo_contexto": "INDIVIDUAL", "estudante_id": str(cenario["est1"].id)},
+        headers=headers_ga,
+    )
+    assert r_ctx_ga.status_code == 200
+    aud_ia_adm = client.get("/api/v1/assistente/auditoria", headers=headers_admin).json()
+    assert aud_ia_adm
+    assert all(item["estudante_id_solicitado"] is None for item in aud_ia_adm)
+    assert all(
+        "estudante_id" not in (item.get("filtros_utilizados") or {})
+        for item in aud_ia_adm
+    )
+    # Gestor continua visualizando o identificador no escopo da própria escola
+    aud_ia_ga = client.get("/api/v1/assistente/auditoria", headers=headers_ga).json()
+    assert any(
+        item["estudante_id_solicitado"] == str(cenario["est1"].id)
+        for item in aud_ia_ga
+    )
 
 
 def test_streamlit_menus_e_permissoes_alinhados_por_papel() -> None:
@@ -630,9 +906,11 @@ def test_streamlit_menus_e_permissoes_alinhados_por_papel() -> None:
     st = _preparar_frontend()
     import pages.administracao_tecnica as pg_admin
     import pages.atribuicao as pg_atrib
+    import pages.mapa_acertos as pg_mapa
+    import pages.modelos_prova as pg_modelos
     import pages.perfil as pg_perfil
 
-    for mod in (pg_admin, pg_atrib, pg_perfil):
+    for mod in (pg_admin, pg_atrib, pg_mapa, pg_modelos, pg_perfil):
         importlib.reload(mod)
 
     try:
@@ -662,9 +940,11 @@ def test_streamlit_menus_e_permissoes_alinhados_por_papel() -> None:
         assert "Atribuir turmas" not in titulos_prof
         assert "Administração Técnica" not in titulos_prof
 
-        # Guards diretos nas páginas
+        # Guards diretos nas páginas (inclusive Mapa de Acertos e Modelos de Planilhas para Admin)
         erros_registrados: list[str] = []
         st.error = lambda msg, **_kw: erros_registrados.append(str(msg))
+        st.button = lambda *_a, **_kw: False
+        st.download_button = lambda *_a, **_kw: False
         st.session_state["logado"] = True
 
         st.session_state["usuario_api"] = {"papel": "gestor"}
@@ -674,11 +954,48 @@ def test_streamlit_menus_e_permissoes_alinhados_por_papel() -> None:
         st.session_state["usuario_api"] = {"papel": "administrador"}
         st.session_state["perfil"] = "administrador"
         pg_atrib.render()
+        pg_mapa.render()
+        pg_modelos.render()
 
-        assert len(erros_registrados) == 2
+        assert len(erros_registrados) == 4
         assert all("Permissão insuficiente" in msg for msg in erros_registrados)
     finally:
         st.session_state.clear()
+
+
+def test_usuario_inativo_bloqueado_imediatamente_mesmo_com_token_valido(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """Requisito 10: Usuário desativado pelo Administrador não continua utilizando a API nem com JWT pré-existente."""
+    cenario = _criar_cenario_fase4(db_session)
+    headers_admin = _login_headers(client, "admin@vertice.edu.br", "SenhaForte@123")
+    headers_prof1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+
+    assert client.get("/api/v1/auth/me", headers=headers_prof1).status_code == 200
+    assert (
+        client.patch(
+            f"/api/v1/usuarios/{cenario['prof1'].id}",
+            json={"ativo": False},
+            headers=headers_admin,
+        ).status_code
+        == 200
+    )
+
+    for rota in (
+        "/api/v1/auth/me",
+        "/api/v1/turmas",
+        "/api/v1/escolas",
+        "/api/v1/avaliacoes",
+        "/api/v1/estudantes",
+    ):
+        assert client.get(rota, headers=headers_prof1).status_code == 403
+
+    r_novo_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "prof1@vertice.edu.br", "senha": "SenhaForte@123"},
+    )
+    assert r_novo_login.status_code == 403
 
 
 def test_autenticacao_ausente_invalida_e_importacao_fora_escopo(

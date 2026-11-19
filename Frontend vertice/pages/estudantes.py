@@ -153,7 +153,13 @@ def render():
         return
 
     usuario_api = st.session_state.get("usuario_api") or {}
-    if usuario_api.get("papel") == "administrador":
+    papel_atual = str(
+        (usuario_api.get("papel") if isinstance(usuario_api, dict) else None)
+        or st.session_state.get("papel_api")
+        or st.session_state.get("perfil")
+        or ""
+    ).strip().lower()
+    if papel_atual == "administrador":
         st.info(
             "Perfis administrativos não possuem acesso pedagógico aos dados individuais de estudantes."
         )

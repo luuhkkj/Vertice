@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import require_admin
+from app.core.dependencies import require_administracao_tecnica
 from app.database.connection import get_db
 from app.modules.admin.schemas import (
     AuditoriaOperacaoTecnicaResponse,
@@ -26,9 +26,9 @@ router = APIRouter()
 )
 def obter_resumo_operacional(
     db: Session = Depends(get_db),
-    current_admin: Usuario = Depends(require_admin),
+    current_admin: Usuario = Depends(require_administracao_tecnica),
 ) -> ResumoOperacionalAdminResponse:
-    """Retorna apenas contadores técnicos e estruturais, sem dados pedagógicos ou PII."""
+    """Retorna apenas contadores técnicos, estado operacional e configurações não sensíveis, sem dados pedagógicos ou PII."""
     return AdminAuditService.obter_resumo_operacional(db, usuario=current_admin)
 
 
@@ -43,7 +43,7 @@ def listar_auditoria_tecnica(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
-    current_admin: Usuario = Depends(require_admin),
+    current_admin: Usuario = Depends(require_administracao_tecnica),
 ) -> list[AuditoriaOperacaoTecnicaResponse]:
     """Lista operações administrativas auditadas (contas, estrutura e credenciais ML)."""
     return AdminAuditService.listar_auditoria_tecnica(

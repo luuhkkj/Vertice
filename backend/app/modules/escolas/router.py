@@ -7,7 +7,10 @@ import uuid
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import require_gestor_ou_admin, require_qualquer_papel
+from app.core.dependencies import (
+    require_consulta_estrutural,
+    require_gestor_ou_admin,
+)
 from app.database.connection import get_db
 from app.modules.escolas.models import Escola
 from app.modules.escolas.schemas import (
@@ -39,29 +42,29 @@ def criar_escola(
 @router.get(
     "",
     response_model=list[EscolaResponse],
-    summary="Listar escolas",
+    summary="Listar escolas (consulta estrutural)",
 )
 def listar_escolas(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_qualquer_papel),
+    current_user: Usuario = Depends(require_consulta_estrutural),
 ) -> list[Escola]:
-    """Lista as escolas acessíveis ao usuário autenticado."""
+    """Lista apenas campos estruturais das escolas acessíveis ao usuário autenticado."""
     return EscolaService.listar_escolas(db, skip=skip, limit=limit, usuario=current_user)
 
 
 @router.get(
     "/{escola_id}",
     response_model=EscolaResponse,
-    summary="Obter detalhes de uma escola",
+    summary="Obter detalhes estruturais de uma escola",
 )
 def obter_escola(
     escola_id: uuid.UUID,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_qualquer_papel),
+    current_user: Usuario = Depends(require_consulta_estrutural),
 ) -> Escola:
-    """Retorna os dados de uma escola acessível ao usuário autenticado."""
+    """Retorna apenas os campos estruturais de uma escola acessível ao usuário autenticado."""
     return EscolaService.obter_por_id(db, escola_id, usuario=current_user)
 
 

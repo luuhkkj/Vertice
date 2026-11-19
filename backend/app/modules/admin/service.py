@@ -2,6 +2,7 @@
 Camada de serviço para Administração Técnica e Auditoria de Operações Sensíveis.
 """
 
+import re
 from typing import Any, Optional
 import uuid
 
@@ -9,6 +10,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.integrations.assistant.models import AuditoriaConsultaIA
 from app.integrations.prediction.models import CredencialIntegracaoPredicao
 from app.modules.admin.models import AuditoriaOperacaoTecnica
@@ -22,32 +24,83 @@ from app.modules.escolas.models import Escola
 from app.modules.turmas.models import Turma
 from app.modules.usuarios.models import PapelUsuario, Usuario
 
+_CHAVES_PERMITIDAS_AUDITORIA = {
+    "prefixo_chave",
+    "senha_alterada",
+}
 _CHAVES_SENSIVEIS_AUDITORIA = {
     "senha",
     "senha_hash",
-    "chave_secreta",
+    "password",
+    "hash",
     "hash_chave",
+    "chave_secreta",
     "access_token",
     "token",
     "secret",
     "secret_key",
+    "api_key",
+    "credencial",
+    "estudante_id",
+    "codigo_anonimo",
+    "nota",
+    "media_geral",
+    "frequencia_percentual",
+    "faltas",
+    "boletins",
+    "respostas",
+    "alternativa_marcada",
+    "alternativa_correta",
+    "pontuacao_risco",
+    "faixa_risco",
 }
+_TERMOS_CHAVE_SEGREDO = (
+    "senha",
+    "password",
+    "secret",
+    "token",
+    "hash",
+    "chave_secreta",
+    "api_key",
+    "credencial",
+)
+_PADROES_VALOR_SENSIVEL = (
+    re.compile(r"Bearer\s+\S+", re.IGNORECASE),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
+    re.compile(r"\$(?:argon2[a-z]*|2[aby])\$", re.IGNORECASE),
+    re.compile(r"\bvtx_ml_[A-Za-z0-9_-]{14,}", re.IGNORECASE),
+)
+
+
+def _valor_texto_sensivel(valor: str) -> bool:
+    return any(p.search(valor) for p in _PADROES_VALOR_SENSIVEL)
+
+
+def _sanitizar_valor(valor: Any) -> Any:
+    if isinstance(valor, dict):
+        return _sanitizar_detalhes(valor)
+    if isinstance(valor, list):
+        return [_sanitizar_valor(item) for item in valor]
+    if isinstance(valor, uuid.UUID):
+        return str(valor)
+    if isinstance(valor, str) and _valor_texto_sensivel(valor):
+        return "[REDIGIDO]"
+    return valor
 
 
 def _sanitizar_detalhes(detalhes: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
-    """Remove recursivamente qualquer chave de segredo ou credencial antes de persistir auditoria."""
+    """Remove recursivamente segredos, tokens e chaves pedagógicas antes de persistir auditoria."""
     if not isinstance(detalhes, dict):
         return None
     limpo: dict[str, Any] = {}
     for chave, valor in detalhes.items():
-        if str(chave).strip().lower() in _CHAVES_SENSIVEIS_AUDITORIA:
+        chave_norm = str(chave).strip().lower()
+        if chave_norm not in _CHAVES_PERMITIDAS_AUDITORIA and (
+            chave_norm in _CHAVES_SENSIVEIS_AUDITORIA
+            or any(termo in chave_norm for termo in _TERMOS_CHAVE_SEGREDO)
+        ):
             continue
-        if isinstance(valor, dict):
-            limpo[chave] = _sanitizar_detalhes(valor)
-        elif isinstance(valor, uuid.UUID):
-            limpo[chave] = str(valor)
-        else:
-            limpo[chave] = valor
+        limpo[chave] = _sanitizar_valor(valor)
     return limpo
 
 
@@ -177,4 +230,9 @@ class AdminAuditService:
             total_eventos_auditoria_tecnica=total_aud_tec,
             total_eventos_auditoria_ia=total_aud_ia,
             provedor_llm_configurado=ProvedorLLMNaoConfigurado().esta_configurado(),
+            ambiente=settings.ENVIRONMENT,
+            versao_aplicacao=settings.VERSION,
+            debug_ativo=bool(settings.DEBUG),
+            algoritmo_jwt=settings.ALGORITHM,
+            expiracao_token_minutos=int(settings.ACCESS_TOKEN_EXPIRE_MINUTES),
         )

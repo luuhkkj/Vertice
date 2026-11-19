@@ -9,7 +9,10 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import garantir_acesso_escola, garantir_acesso_turma
+from app.core.dependencies import (
+    garantir_acesso_escola,
+    garantir_consulta_estrutural_turma,
+)
 from app.modules.admin.service import AdminAuditService
 from app.modules.escolas.repository import EscolaRepository
 from app.modules.turmas.models import Turma
@@ -95,13 +98,9 @@ class TurmaService:
         db: Session, turma_id: uuid.UUID, usuario: Usuario
     ) -> Turma:
         """
-        Obtém uma turma verificando primeiro o papel/escopo do usuário antes de revelar existência.
+        Obtém o registro estrutural de uma turma verificando primeiro o papel/escopo
+        antes de revelar existência para gestores sem escola.
         """
-        if usuario.papel == PapelUsuario.ADMINISTRADOR:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Acesso negado: administrador não possui acesso pedagógico a turmas.",
-            )
         if usuario.papel == PapelUsuario.GESTOR and usuario.escola_id is None:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -115,7 +114,7 @@ class TurmaService:
                 detail="Turma não encontrada.",
             )
 
-        garantir_acesso_turma(
+        garantir_consulta_estrutural_turma(
             db=db,
             usuario=usuario,
             turma_id=turma.id,

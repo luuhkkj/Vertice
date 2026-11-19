@@ -180,6 +180,8 @@ class UsuarioService:
             )
 
         usuario = UsuarioService.obter_por_id(db, usuario_id)
+        papel_anterior = usuario.papel
+        ativo_anterior = usuario.ativo
 
         campos_enviados = dados.model_fields_set
 
@@ -251,9 +253,13 @@ class UsuarioService:
                 detalhes={
                     "campos_alterados": sorted([c for c in campos_enviados if c != "senha"]),
                     "senha_alterada": bool("senha" in campos_enviados and dados.senha is not None),
+                    "papel_anterior": papel_anterior.value,
                     "papel": usuario_atualizado.papel.value,
-                    "escola_id": usuario_atualizado.escola_id,
+                    "papel_alterado": usuario_atualizado.papel != papel_anterior,
+                    "ativo_anterior": ativo_anterior,
                     "ativo": usuario_atualizado.ativo,
+                    "status_ativo_alterado": usuario_atualizado.ativo != ativo_anterior,
+                    "escola_id": usuario_atualizado.escola_id,
                 },
             )
         return usuario_atualizado
