@@ -860,6 +860,34 @@ def test_fase8_frontend_integrado_sem_mocks_fluxo_completo(
         st.session_state.clear()
 
 
+def test_consultar_assistente_aguarda_timeout_configurado_com_margem(
+    monkeypatch,
+) -> None:
+    st = _preparar_frontend()
+    import data.api_client as api_client
+
+    importlib.reload(api_client)
+    chamada: dict[str, Any] = {}
+
+    def requisitar_fake(*_args: Any, **kwargs: Any) -> api_client.RespostaAPI:
+        chamada.update(kwargs)
+        return api_client.RespostaAPI(ok=True)
+
+    monkeypatch.setenv("ASSISTENTE_OLLAMA_TIMEOUT_SEGUNDOS", "180")
+    monkeypatch.setattr(api_client, "requisitar_api", requisitar_fake)
+
+    try:
+        resposta = api_client.consultar_assistente_ia_api(
+            pergunta_usuario="Visão geral",
+            tipo_contexto="ESCOLA",
+        )
+
+        assert resposta.ok is True
+        assert chamada["timeout"] == 210.0
+    finally:
+        st.session_state.clear()
+
+
 # ==============================================================================
 # 9.7. TRATAMENTO DE FALHAS HTTP / REDE / JSON MALFORMADO E SANITIZAÇÃO
 # ==============================================================================
@@ -902,13 +930,16 @@ def test_fase8_falhas_http_timeout_json_invalido_e_sanitizacao_segredos() -> Non
         )
         r_conn = api_client.listar_turmas_api()
         assert r_conn.ok is False and r_conn.indisponivel is True
+        assert r_conn.status_code == 503
 
-        # 2) ReadTimeout -> indisponivel=True com mensagem sanitizada amigável
+        # 2) ReadTimeout -> mensagem específica, sem expor detalhes técnicos
         api_client.configurar_cliente_http_teste(
             lambda *_a, **_kw: (_ for _ in ()).throw(httpx.ReadTimeout("timeout"))
         )
         r_to = api_client.listar_turmas_api()
         assert r_to.ok is False and r_to.indisponivel is True
+        assert r_to.status_code == 504
+        assert "tempo de espera" in (r_to.erro or "")
         assert r_to.erro and "ReadTimeout" not in r_to.erro
 
         # 3) 403 / 422 / 500 / 503 com vazamento simulado de token -> nunca expõe segredo e mascara tokens

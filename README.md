@@ -70,7 +70,7 @@ Vertice/
    - Etapa 2 (`POST /api/v1/importacoes/{lote_id}/confirmar`): efetiva inserções/atualizações em transação atômica única com rollback integral em falhas.
 5. **Anti-Data Leakage e Auditoria IA**:
    - Variáveis usadas em modelos externos passam por contrato fechado (`situacao_final` reservada exclusivamente como futuro alvo supervisionado; campos pós-desfecho, PII e variáveis desconhecidas sem contrato são rejeitados com `HTTP 422`).
-   - Solicitações de contexto IA (`POST /api/v1/assistente/contexto`) registram auditoria em `auditoria_consultas_ia` com `request_id` gerado no backend. Enquanto não houver LLM externo conectado, `/api/v1/assistente/consultar` retorna `HTTP 503` de forma controlada.
+   - Solicitações de contexto IA e respostas do assistente usam indicadores reais com escopo autorizado e auditoria. O chat generativo usa Ollama local gratuito; não envia dados pedagógicos a provedores externos.
 
 ---
 

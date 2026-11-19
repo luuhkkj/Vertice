@@ -16,6 +16,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.integrations.assistant.interfaces import (
     ProvedorLLMBase,
     ProvedorLLMNaoConfigurado,
@@ -25,11 +26,14 @@ from app.integrations.assistant.models import (
     ResultadoAutorizacaoIA,
     TipoContextoAssistente,
 )
+from app.integrations.assistant.ollama import ProvedorLLMOllama
 from app.integrations.assistant.repository import AssistantAuditRepository
 from app.integrations.assistant.schemas import (
     AuditoriaConsultaIAResponse,
     ContextoAssistenteEstruturado,
+    DocumentoAssistenteLLM,
     MetadadosContextoAssistente,
+    MensagemConversaLLM,
     RequisicaoAssistenteLLM,
     RespostaAssistenteLLM,
     SolicitacaoContextoAssistente,
@@ -64,6 +68,16 @@ DIRETRIZES_INTERPRETACAO_PADRAO: list[str] = [
 ]
 
 
+def _criar_provedor_llm_padrao() -> ProvedorLLMBase:
+    if settings.ASSISTENTE_LLM_PROVEDOR == "ollama":
+        return ProvedorLLMOllama(
+            base_url=settings.ASSISTENTE_OLLAMA_BASE_URL,
+            modelo=settings.ASSISTENTE_OLLAMA_MODELO,
+            timeout_segundos=settings.ASSISTENTE_OLLAMA_TIMEOUT_SEGUNDOS,
+        )
+    return ProvedorLLMNaoConfigurado()
+
+
 def _filtros_estruturais(solicitacao: SolicitacaoContextoAssistente) -> dict[str, Any]:
     """Extrai apenas filtros estruturais não sensíveis para trilha de auditoria."""
     return {
@@ -96,25 +110,24 @@ class AssistenteContextoService:
     def obter_status(
         provedor: Optional[ProvedorLLMBase] = None,
     ) -> StatusAssistenteResponse:
-        prov = provedor or ProvedorLLMNaoConfigurado()
+        prov = provedor or _criar_provedor_llm_padrao()
         configurado = prov.esta_configurado()
         return StatusAssistenteResponse(
             provedor_llm_configurado=configurado,
             provedor_nome=prov.nome_provedor,
             modo_operacao=(
-                "provedor_externo_ativo"
+                "ollama_local_configurado"
                 if configurado
                 else "somente_contexto_auditado_sem_llm"
             ),
             niveis_contexto_suportados=[t.value for t in TipoContextoAssistente],
             auditoria_ativa=True,
             mensagem=(
-                "Provedor LLM externo conectado e ativo."
+                "Modelo Ollama local configurado; as consultas permanecem no ambiente local."
                 if configurado
                 else (
-                    "Camada de contexto autorizado e auditoria ativa. "
-                    "Nenhum provedor LLM externo está conectado nesta fase (Fase 7); "
-                    "respostas generativas não são simuladas."
+                    "Contexto autorizado e auditoria ativos. Configure o Ollama local "
+                    "e um modelo gratuito para habilitar respostas generativas."
                 )
             ),
         )
@@ -589,20 +602,24 @@ class AssistenteContextoService:
         pergunta_usuario: str,
         usuario: Usuario,
         provedor: Optional[ProvedorLLMBase] = None,
+        historico_mensagens: Optional[list[MensagemConversaLLM]] = None,
+        documentos_anexados: Optional[list[DocumentoAssistenteLLM]] = None,
     ) -> RespostaAssistenteLLM:
         """
         Prepara contexto auditado e delega para `ProvedorLLMBase`.
-        Na Fase 7 usa `ProvedorLLMNaoConfigurado`, falhando de forma explícita e controlada (503).
+        O provedor padrão usa Ollama local quando configurado; sem ele, falha explicitamente (503).
         """
         contexto = AssistenteContextoService.construir_contexto_autorizado(
             db=db,
             solicitacao=solicitacao,
             usuario=usuario,
         )
-        prov = provedor or ProvedorLLMNaoConfigurado()
+        prov = provedor or _criar_provedor_llm_padrao()
         req = RequisicaoAssistenteLLM(
             pergunta_usuario=pergunta_usuario,
             contexto=contexto,
+            historico_mensagens=historico_mensagens or [],
+            documentos_anexados=documentos_anexados or [],
         )
         return prov.gerar_resposta(req)
 

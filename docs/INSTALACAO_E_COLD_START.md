@@ -260,7 +260,7 @@ Com o sistema no ar e o administrador criado, siga esta ordem exata para deixar 
 4. **Explorar Avaliações, Participação e Indicadores Reais:**
    - Importe planilhas de **Avaliações (16 colunas)** para alimentar o **Mapa de Acertos**.
    - Crie atividades em **Participação** (ou importe planilhas de **Atividades — 12 colunas**), gere entregas esperadas para estudantes elegíveis no período e registre entregas/notas e acompanhamentos pedagógicos.
-   - Consulte **Visão geral**, **Estudantes** e **Assistente IA** (lembrando que `POST /api/v1/assistente/contexto` prepara o contexto auditado com dados reais, enquanto `POST /api/v1/assistente/consultar` retorna `HTTP 503` até que um provedor LLM externo implemente `ProvedorLLMBase`).
+   - Consulte **Visão geral**, **Estudantes** e **Assistente IA**. Para habilitar respostas gratuitas e locais, defina `ASSISTENTE_LLM_PROVEDOR=ollama` no `.env`, reconstrua e inicie os serviços com `docker compose --profile assistente-local up -d --build` e baixe o modelo com `docker compose exec ollama ollama pull qwen2.5:3b`. Cada pergunta continua passando pela autorização e auditoria do backend.
 
 ---
 
@@ -345,4 +345,4 @@ export VERTICE_API_URL="http://127.0.0.1:8000/api/v1"
 streamlit run app.py
 ```
 
-Acesse `http://localhost:8501` no navegador.
+Acesse `http://localhost:8501` no navegador. 

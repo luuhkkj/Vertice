@@ -24,6 +24,7 @@ os.environ["ENVIRONMENT"] = "test"
 os.environ["DEBUG"] = "True"
 os.environ["SECRET_KEY"] = "chave-secreta-isolada-para-suite-de-testes-automatizados-vertice-2026"
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["ASSISTENTE_LLM_PROVEDOR"] = "desativado"
 
 import app.database  # noqa: F401 - garante carregamento de todos os modelos ORM
 from app.database.base import Base

@@ -128,18 +128,32 @@ class StatusAssistenteResponse(BaseModel):
 
 
 class MensagemConversaLLM(BaseModel):
-    """Contrato de mensagem para futura integração com provedores LLM."""
+    """Mensagem anterior da conversa enviada ao modelo local."""
 
-    papel: str = Field(..., pattern="^(system|user|assistant)$")
+    papel: str = Field(..., pattern="^(user|assistant)$")
     conteudo: str = Field(..., min_length=1, max_length=8000)
 
 
+class DocumentoAssistenteLLM(BaseModel):
+    """Texto extraído temporariamente de um anexo enviado pelo usuário."""
+
+    nome_arquivo: str = Field(..., min_length=1, max_length=255)
+    conteudo: str = Field(..., min_length=1, max_length=12_000)
+
+
 class RequisicaoAssistenteLLM(BaseModel):
-    """Contrato abstrato de entrada para futura invocação de provedor LLM."""
+    """Entrada validada para invocação do provedor LLM local."""
 
     pergunta_usuario: str = Field(..., min_length=2, max_length=2000)
     contexto: ContextoAssistenteEstruturado
-    historico_mensagens: list[MensagemConversaLLM] = []
+    historico_mensagens: list[MensagemConversaLLM] = Field(
+        default_factory=list,
+        max_length=12,
+    )
+    documentos_anexados: list[DocumentoAssistenteLLM] = Field(
+        default_factory=list,
+        max_length=5,
+    )
 
 
 class RespostaAssistenteLLM(BaseModel):

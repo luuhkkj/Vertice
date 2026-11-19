@@ -13,6 +13,10 @@ x-backend-env: &backend-env
   SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY segura (>=32 chars) no arquivo .env da raiz ou no ambiente}
   ALGORITHM: ${ALGORITHM:-HS256}
   ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+  ASSISTENTE_LLM_PROVEDOR: ${ASSISTENTE_LLM_PROVEDOR:-desativado}
+  ASSISTENTE_OLLAMA_BASE_URL: ${ASSISTENTE_OLLAMA_BASE_URL:-http://ollama:11434}
+  ASSISTENTE_OLLAMA_MODELO: ${ASSISTENTE_OLLAMA_MODELO:-qwen2.5:3b}
+  ASSISTENTE_OLLAMA_TIMEOUT_SEGUNDOS: ${ASSISTENTE_OLLAMA_TIMEOUT_SEGUNDOS:-180}
 
 services:
   db:
@@ -74,6 +78,13 @@ services:
       retries: 5
       start_period: 15s
 
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["assistente-local"]
+    restart: unless-stopped
+    volumes:
+      - vertice_ollama_data:/root/.ollama
+
   frontend:
     build:
       context: "./Frontend vertice"
@@ -81,6 +92,7 @@ services:
     restart: unless-stopped
     environment:
       VERTICE_API_URL: ${VERTICE_API_URL:-http://backend:8000/api/v1}
+      ASSISTENTE_OLLAMA_TIMEOUT_SEGUNDOS: ${ASSISTENTE_OLLAMA_TIMEOUT_SEGUNDOS:-180}
     ports:
       - "${FRONTEND_PORT:-8501}:8501"
     depends_on:
@@ -101,3 +113,4 @@ services:
 
 volumes:
   vertice_postgres_data:
+  vertice_ollama_data:

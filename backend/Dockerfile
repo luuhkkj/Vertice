@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY --chown=vertice:vertice alembic.ini ./alembic.ini
 COPY --chown=vertice:vertice alembic ./alembic
 COPY --chown=vertice:vertice app ./app
+COPY --chown=vertice:vertice artifacts ./artifacts
 
 USER vertice
 

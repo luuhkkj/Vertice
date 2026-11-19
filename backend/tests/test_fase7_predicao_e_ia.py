@@ -8,7 +8,7 @@ Cobre integralmente:
    integração com `/indicadores/gerais`, comportamento sem previsões e isolamento rigoroso de escopo.
 4. Prevenção estrita de Data Leakage (`situacao_final`, pós-desfecho, PII, catálogo oficial e regras extensíveis).
 5. Camada de contexto estruturado do Assistente IA (`ESCOLA`, `TURMA`, `INDIVIDUAL`), reutilização de
-   serviços reais, interface LLM desacoplada sem simulação (`503`), isolamento RBAC e auditoria persistente
+   serviços reais, provedor Ollama local, isolamento RBAC e auditoria persistente
    de tentativas autorizadas e negadas.
 6. Integração real do frontend (`api_client.py`, `visao_geral.py`, `estudantes.py`, `assistente_ia.py`)
    acoplado ao `TestClient`, incluindo estado sem previsões e indisponibilidade.
@@ -27,6 +27,7 @@ from app.integrations.assistant.models import (
     AuditoriaConsultaIA,
     ResultadoAutorizacaoIA,
 )
+from app.integrations.assistant.schemas import RespostaAssistenteLLM
 from app.integrations.prediction.leakage import validar_variaveis_contra_leakage
 from app.integrations.prediction.models import PrevisaoRisco
 from tests.test_fase4_modulos_pedagogicos import (
@@ -608,6 +609,7 @@ def test_fase7_disponibilizacao_escopo_versao_unica_e_indicadores_gerais(
 def test_fase7_assistente_contexto_autorizacao_reuso_e_auditoria(
     client: TestClient,
     db_session: Session,
+    monkeypatch,
 ) -> None:
     cenario = _criar_cenario_fase4(db_session)
     headers_admin = _login_headers(client, "admin@vertice.edu.br", "SenhaForte@123")
@@ -657,6 +659,49 @@ def test_fase7_assistente_contexto_autorizacao_reuso_e_auditoria(
         },
     )
     assert resp_503.status_code == 503
+
+    from app.integrations.assistant import service as assistant_service
+
+    class ProvedorTeste:
+        nome_provedor = "teste"
+
+        def esta_configurado(self) -> bool:
+            return True
+
+        def gerar_resposta(self, requisicao) -> RespostaAssistenteLLM:
+            assert requisicao.historico_mensagens[0].conteudo == "Mostre a taxa."
+            return RespostaAssistenteLLM(
+                provedor=self.nome_provedor,
+                modelo="modelo-teste",
+                resposta_texto="A taxa observada está nos indicadores.",
+                auditoria_id=requisicao.contexto.metadados.auditoria_id,
+                request_id=requisicao.contexto.metadados.request_id,
+                conversation_id=requisicao.contexto.metadados.conversation_id,
+                citacoes_fontes=requisicao.contexto.metadados.fontes_utilizadas,
+                aviso_responsavel="Resposta informativa.",
+            )
+
+    monkeypatch.setattr(
+        assistant_service,
+        "_criar_provedor_llm_padrao",
+        lambda: ProvedorTeste(),
+    )
+    conversation_id = str(uuid.uuid4())
+    resp_chat = client.post(
+        "/api/v1/assistente/consultar",
+        headers=headers_gestor_a,
+        json={
+            "tipo_contexto": "ESCOLA",
+            "pergunta_usuario": "E como posso interpretar isso?",
+            "conversation_id": conversation_id,
+            "historico_mensagens": [
+                {"papel": "user", "conteudo": "Mostre a taxa."},
+            ],
+        },
+    )
+    assert resp_chat.status_code == 200, resp_chat.text
+    assert resp_chat.json()["resposta_texto"] == "A taxa observada está nos indicadores."
+    assert resp_chat.json()["conversation_id"] == conversation_id
 
     # 2) Níveis ESCOLA, TURMA e INDIVIDUAL reutilizando os mesmos valores dos endpoints reais
     ind_direto = client.get("/api/v1/indicadores/gerais", headers=headers_gestor_a).json()
@@ -764,6 +809,7 @@ def test_fase7_assistente_contexto_autorizacao_reuso_e_auditoria(
 def test_fase7_integracao_frontend_com_backend_e_estado_sem_previsoes(
     client: TestClient,
     db_session: Session,
+    monkeypatch,
 ) -> None:
     cenario = _criar_cenario_fase4(db_session)
     headers_admin = _login_headers(client, "admin@vertice.edu.br", "SenhaForte@123")
@@ -867,6 +913,69 @@ def test_fase7_integracao_frontend_com_backend_e_estado_sem_previsoes(
         assert resumo_ui["codigo_anonimo"] == "EST-002"
         assert resumo_ui["possui_previsoes_risco"] is True
         assert resumo_ui["auditoria_id"] is not None
+
+        from app.integrations.assistant import service as assistant_service
+
+        class ProvedorFrontendTeste:
+            nome_provedor = "teste_frontend"
+
+            def esta_configurado(self) -> bool:
+                return True
+
+            def gerar_resposta(self, requisicao) -> RespostaAssistenteLLM:
+                assert requisicao.historico_mensagens[0].conteudo == "Mostre o histórico."
+                if requisicao.documentos_anexados:
+                    assert requisicao.documentos_anexados[0].nome_arquivo == "taxas.csv"
+                    assert "A | 72" in requisicao.documentos_anexados[0].conteudo
+                return RespostaAssistenteLLM(
+                    provedor=self.nome_provedor,
+                    modelo="modelo-teste",
+                    resposta_texto="Há previsão de risco registrada para este estudante.",
+                    auditoria_id=requisicao.contexto.metadados.auditoria_id,
+                    request_id=requisicao.contexto.metadados.request_id,
+                    conversation_id=requisicao.contexto.metadados.conversation_id,
+                    citacoes_fontes=requisicao.contexto.metadados.fontes_utilizadas,
+                    aviso_responsavel="Interpretação sujeita à revisão humana.",
+                )
+
+        monkeypatch.setattr(
+            assistant_service,
+            "_criar_provedor_llm_padrao",
+            lambda: ProvedorFrontendTeste(),
+        )
+        conversation_id = str(uuid.uuid4())
+        resp_chat = api_client.consultar_assistente_ia_api(
+            pergunta_usuario="O que significa esse registro?",
+            tipo_contexto="INDIVIDUAL",
+            estudante_id=str(cenario["est2"].id),
+            conversation_id=conversation_id,
+            historico_mensagens=[
+                {"papel": "user", "conteudo": "Mostre o histórico."},
+            ],
+        )
+        assert resp_chat.ok, resp_chat.erro
+        assert (
+            resp_chat.dados["resposta_texto"]
+            == "Há previsão de risco registrada para este estudante."
+        )
+        assert resp_chat.dados["conversation_id"] == conversation_id
+
+        resp_arquivo = api_client.consultar_assistente_ia_api(
+            pergunta_usuario="Qual taxa está no arquivo?",
+            tipo_contexto="INDIVIDUAL",
+            estudante_id=str(cenario["est2"].id),
+            conversation_id=conversation_id,
+            historico_mensagens=[
+                {"papel": "user", "conteudo": "Mostre o histórico."},
+            ],
+            arquivos=[
+                ("taxas.csv", b"Turma,Taxa\nA,72", "text/csv"),
+            ],
+        )
+        assert resp_arquivo.ok, resp_arquivo.erro
+        assert resp_arquivo.dados["resposta_texto"] == (
+            "Há previsão de risco registrada para este estudante."
+        )
     finally:
         api_client.configurar_cliente_http_teste(None)
         st.session_state.clear()

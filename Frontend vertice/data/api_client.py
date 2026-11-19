@@ -9,15 +9,20 @@ Garante:
   * Falha de rede / servidor indisponível: retorna status `indisponivel` sem produzir dados fictícios.
 """
 
+import json
+import logging
+import os
+import re
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
-import re
 
 import httpx
 import streamlit as st
 
 from config import API_BASE_URL
 
+
+logger = logging.getLogger(__name__)
 
 _PADRAO_TOKEN_SENSIVEL = re.compile(
     r"(Bearer\s+[A-Za-z0-9\-_\.]+|eyJ[A-Za-z0-9\-_\.]+|vtx_ml_[A-Za-z0-9\-_]+)",
@@ -69,6 +74,12 @@ def obter_token_sessao() -> Optional[str]:
 def possui_sessao_api_ativa() -> bool:
     """Indica se o usuário possui um token de autenticação ativo para chamadas à API."""
     return obter_token_sessao() is not None
+
+
+def _timeout_resposta_assistente() -> float:
+    """Espera o limite configurado no Ollama e uma margem para o backend responder."""
+    timeout_modelo = float(os.environ.get("ASSISTENTE_OLLAMA_TIMEOUT_SEGUNDOS", "180"))
+    return timeout_modelo + 30.0
 
 
 def registrar_usuario_sessao(
@@ -153,7 +164,7 @@ def requisitar_api(
     *,
     params: Optional[dict[str, Any]] = None,
     json_body: Optional[dict[str, Any]] = None,
-    files: Optional[dict[str, Any]] = None,
+    files: Optional[dict[str, Any] | list[tuple[str, Any]]] = None,
     exigir_auth: bool = True,
     timeout: float = 10.0,
 ) -> RespostaAPI:
@@ -200,13 +211,39 @@ def requisitar_api(
                     files=files,
                     headers=headers,
                 )
-    except Exception:
+    except httpx.TimeoutException:
+        logger.warning("Timeout ao consultar a API do Vértice")
         return RespostaAPI(
             ok=False,
-            status_code=None,
+            status_code=504,
             erro=(
-                "Não foi possível conectar ao servidor do Vértice no momento. "
+                "O backend excedeu o tempo de espera para responder. "
+                "O modelo local pode ainda estar processando; tente novamente em instantes."
+            ),
+            indisponivel=True,
+        )
+    except httpx.ConnectError:
+        logger.warning("Não foi possível conectar à API do Vértice")
+        return RespostaAPI(
+            ok=False,
+            status_code=503,
+            erro=(
+                "Não foi possível conectar ao servidor do Vértice. "
                 "Verifique se o backend está em execução e tente novamente."
+            ),
+            indisponivel=True,
+        )
+    except httpx.RequestError as exc:
+        logger.warning(
+            "Falha de comunicação com a API do Vértice (%s)",
+            type(exc).__name__,
+        )
+        return RespostaAPI(
+            ok=False,
+            status_code=503,
+            erro=(
+                "A comunicação com o servidor do Vértice foi interrompida. "
+                "Tente novamente em instantes."
             ),
             indisponivel=True,
         )
@@ -221,7 +258,7 @@ def requisitar_api(
     if getattr(resp, "content", b""):
         try:
             payload = resp.json()
-        except Exception:
+        except ValueError:
             payload = None
             json_invalido = True
 
@@ -1021,6 +1058,71 @@ def construir_contexto_assistente_api(
     if modelo_versao:
         payload["modelo_versao"] = modelo_versao
     return requisitar_api("POST", "/assistente/contexto", json_body=payload)
+
+
+def consultar_assistente_ia_api(
+    *,
+    pergunta_usuario: str,
+    tipo_contexto: str,
+    escola_id: Optional[str] = None,
+    turma_id: Optional[str] = None,
+    disciplina_id: Optional[str] = None,
+    estudante_id: Optional[str] = None,
+    ano_letivo: Optional[int] = None,
+    periodo_letivo: Optional[str] = None,
+    modelo_nome: Optional[str] = None,
+    modelo_versao: Optional[str] = None,
+    incluir_acompanhamentos: bool = True,
+    conversation_id: Optional[str] = None,
+    historico_mensagens: Optional[list[dict[str, str]]] = None,
+    arquivos: Optional[list[tuple[str, bytes, str]]] = None,
+) -> RespostaAPI:
+    """Envia uma pergunta ao assistente com contexto autorizado e histórico recente."""
+    payload: dict[str, Any] = {
+        "pergunta_usuario": pergunta_usuario.strip(),
+        "tipo_contexto": tipo_contexto,
+        "incluir_acompanhamentos": incluir_acompanhamentos,
+        "historico_mensagens": historico_mensagens or [],
+    }
+    if conversation_id:
+        payload["conversation_id"] = conversation_id
+    if escola_id:
+        payload["escola_id"] = escola_id
+    if turma_id:
+        payload["turma_id"] = turma_id
+    if disciplina_id:
+        payload["disciplina_id"] = disciplina_id
+    if estudante_id:
+        payload["estudante_id"] = estudante_id
+    if ano_letivo is not None:
+        payload["ano_letivo"] = ano_letivo
+    if periodo_letivo:
+        payload["periodo_letivo"] = periodo_letivo
+    if modelo_nome:
+        payload["modelo_nome"] = modelo_nome
+    if modelo_versao:
+        payload["modelo_versao"] = modelo_versao
+    timeout = _timeout_resposta_assistente()
+    if arquivos:
+        arquivos_multipart: list[tuple[str, Any]] = [
+            ("dados_json", (None, json.dumps(payload, ensure_ascii=False))),
+            *[
+                ("arquivos", (nome, conteudo, mime_type))
+                for nome, conteudo, mime_type in arquivos
+            ],
+        ]
+        return requisitar_api(
+            "POST",
+            "/assistente/consultar-arquivos",
+            files=arquivos_multipart,
+            timeout=timeout,
+        )
+    return requisitar_api(
+        "POST",
+        "/assistente/consultar",
+        json_body=payload,
+        timeout=timeout,
+    )
 
 
 # ==============================================================================

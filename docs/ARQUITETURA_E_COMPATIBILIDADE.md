@@ -27,7 +27,7 @@ Os documentos PDF preservados em `docs/` refletem a concepção inicial do proje
 | **Estudantes e LGPD** | Fluxos simples de listagem escolar e referências pontuais a dados discentes | Anonimização estrita: estudantes possuem apenas `id` (UUID) e `codigo_anonimo`. Não há CRUD manual de estudante nem dados nominais (LGPD). O validador inspeciona cabeçalhos e células contra CPF, e-mail, telefone e padrões nominais | Nenhuma coluna nominal/PII pode ser persistida ou retornada pela API |
 | **Planilhas de Importação** | Versão preliminar previa carga simples de avaliações com coluna binária `Acertou` (6 colunas) | Adotou-se importação transacional em **2 etapas (`validar` -> `confirmar`)** com detecção e geração de 3 modelos: **Dados Escolares (14 colunas)**, **Avaliações (16 colunas)** e **Atividades (12 colunas)**. Avaliações exigem `alternativa_marcada` (`A`-`E` ou `BRANCO`) e bloqueiam planilhas legadas apenas com `Acertou` | O backend gera modelos oficiais atualizados em `/api/v1/importacoes/modelos/*`; planilhas obsoletas recebem orientação clara na prévia |
 | **Escopo do Módulo `participacao`** | Descrição ampla que por vezes associava participação diretamente à frequência de aulas | **`participacao` controla Atividades e Entregas** (`Atividade`, `EntregaAtividade`: no prazo, atrasado, pendente, não entregue — calculando sobre quem *deveria* entregar). Frequência percentual e faltas ficam no boletim periódico (`BoletimPeriodo`) via `DADOS_ESCOLARES` | Não duplicar controle de frequência escolar dentro de `participacao` |
-| **Predição de Risco e Assistente IA** | Previsão de integração futura com ML e assistente sem contrato formal | Contrato completo: credenciais técnicas `vtx_ml_*` (hash SHA-256) via `X-Service-Token`, tabela append-only `previsoes_risco`, anti-data-leakage fechado (`CATALOGO_VARIAVEIS_PREDITIVAS`, rejeição de desconhecidas `HTTP 422`), `situacao_final` reservada como alvo supervisionado, auditoria IA (`request_id`) e interface `ProvedorLLMBase` retornando `503` até plugar LLM | Nunca aceitar JWT de usuário comum na ingestão preditiva nem variáveis sem contrato; nunca simular respostas de IA |
+| **Predição de Risco e Assistente IA** | Previsão de integração futura com ML e assistente sem contrato formal | Contrato preditivo completo, auditoria IA (`request_id`) e Ollama local para respostas fundamentadas em indicadores autorizados | Nunca aceitar JWT de usuário comum na ingestão preditiva nem variáveis sem contrato; nunca apresentar previsão como certeza ou atribuir causas sem dados |
 | **Frontend Web (Streamlit)** | Protótipo inicial alimentado por dados locais simulados (`mock_data.py`) | Todas as telas ativas consomem exclusivamente a API FastAPI via `Frontend vertice/data/api_client.py` (sem login offline nem dados fictícios) | `mock_data.py` permanece com estruturas vazias apenas para não quebrar teste regressivo legado da Fase 5, e é bloqueado nas telas ativas pelo CI |
 
 ---
@@ -82,7 +82,7 @@ flowchart TD
     MLIn["POST /api/v1/previsoes (/lote)"] -->|"Anti-Data-Leakage (Catálogo Fechado)"| PredDB[("PostgreSQL: previsoes_risco append-only")]
     PredDB -->|"Política de versão única"| Ind
     Ind -->|"POST /api/v1/assistente/contexto (JWT gestor/professor)"| Ctx["AssistenteContextoService + Auditoria IA (request_id)"]
-    Ctx -->|"Aguardando provedor LLM concreto"| LLM["ProvedorLLMNaoConfigurado -> HTTP 503"]
+    Ctx -->|"Contexto autorizado e anonimizado"| LLM["ProvedorLLMOllama (local)"]
 ```
 
 ---

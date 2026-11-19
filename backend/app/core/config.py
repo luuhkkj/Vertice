@@ -5,10 +5,10 @@ Não possui chaves JWT ou credenciais de banco de dados padrão fixas no código
 """
 
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from urllib.parse import quote_plus
 
-from pydantic import BeforeValidator, computed_field, model_validator
+from pydantic import BeforeValidator, Field, computed_field, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -95,6 +95,12 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+    # Assistente IA (modelo local, sem envio de dados a provedores externos)
+    ASSISTENTE_LLM_PROVEDOR: Literal["desativado", "ollama"] = "desativado"
+    ASSISTENTE_OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
+    ASSISTENTE_OLLAMA_MODELO: str = ""
+    ASSISTENTE_OLLAMA_TIMEOUT_SEGUNDOS: int = Field(default=120, ge=1, le=600)
 
     @model_validator(mode="after")
     def validar_seguranca_configuracoes(self) -> "Settings":

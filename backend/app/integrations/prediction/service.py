@@ -57,6 +57,7 @@ from app.integrations.prediction.schemas import (
     ValidarVariaveisRequest,
     VersaoModeloDisponivelSchema,
 )
+from app.integrations.prediction.modelo_schemas import PrevisaoRiscoModeloResponse
 from app.modules.escolas.models import Escola
 from app.modules.estudantes.models import Estudante
 from app.modules.estudantes.repository import EstudanteRepository
@@ -118,6 +119,13 @@ class PredictionService:
     # ------------------------------------------------------------------
     # Contrato de variáveis e validação anti-leakage
     # ------------------------------------------------------------------
+    @staticmethod
+    def prever_risco(dados_estudantes: Any) -> list[PrevisaoRiscoModeloResponse]:
+        """Executa a inferência local para dados no corte do primeiro período."""
+        from app.integrations.prediction.modelo_risco import prever_risco
+
+        return prever_risco(dados_estudantes)
+
     @staticmethod
     def obter_catalogo_variaveis() -> CatalogoVariaveisResponse:
         return CatalogoVariaveisResponse(

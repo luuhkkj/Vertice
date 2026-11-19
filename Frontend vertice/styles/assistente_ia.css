@@ -187,7 +187,7 @@
 
 /* O raio fica no wrapper do BaseWeb para continuar redondo durante o foco. */
 .st-key-assistente_rodape
-[data-testid="stTextInput"] div[data-baseweb="input"] {
+[data-testid="stTextInputRootElement"] {
     width: 100% !important;
     height: 2.7rem !important;
     min-height: 2.7rem !important;
@@ -203,11 +203,11 @@
 }
 
 .st-key-assistente_rodape
-[data-testid="stTextInput"] div[data-baseweb="input"]:focus,
+[data-testid="stTextInputRootElement"]:focus,
 .st-key-assistente_rodape
-[data-testid="stTextInput"] div[data-baseweb="input"]:focus-within,
+[data-testid="stTextInputRootElement"]:focus-within,
 .st-key-assistente_rodape
-[data-testid="stTextInput"] div[data-baseweb="input"][data-focus="true"] {
+[data-testid="stTextInputRootElement"][data-focus="true"] {
     background: #fff !important;
     border: 1px solid #4e67ca !important;
     border-radius: 999px !important;
@@ -231,6 +231,8 @@
     color: #232020 !important;
     font-size: 0.75rem !important;
     line-height: normal !important;
+    -webkit-text-fill-color: #232020 !important;
+    caret-color: #232020 !important;
 }
 
 .st-key-assistente_rodape
@@ -255,6 +257,22 @@
 [data-testid="stTextInput"] input::placeholder {
     color: #7b8491 !important;
     opacity: 1;
+}
+
+.st-key-assistente_rodape
+[data-testid="stTextInput"] input:disabled {
+    -webkit-text-fill-color: #5f5b57 !important;
+    opacity: 1 !important;
+}
+
+.st-key-assistente_rodape [data-testid="stPopoverButton"] {
+    width: 100% !important;
+    min-height: 2.7rem !important;
+    color: #232020 !important;
+    background: #ffffff !important;
+    border: 1px solid #d5d9e1 !important;
+    border-radius: 12px !important;
+    box-shadow: none !important;
 }
 
 .st-key-assistente_rodape

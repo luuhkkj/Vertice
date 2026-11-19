@@ -12,6 +12,7 @@ Backend RESTful do sistema **Vértice** para gestão e análise de dados educaci
 - **Banco de Dados & ORM:** PostgreSQL, [SQLAlchemy 2](https://docs.sqlalchemy.org/) e `psycopg 3`
 - **Migrações:** [Alembic](https://alembic.sqlalchemy.org/)
 - **Segurança & Tokens:** [PyJWT](https://pyjwt.readthedocs.io/) e [pwdlib](https://frankie567.github.io/pwdlib/) (Argon2)
+- **Modelagem preditiva:** `scikit-learn` e `joblib` (pipelines reprodutíveis e inferência versionada)
 - **Testes Automatizados:** [pytest](https://docs.pytest.org/) e [HTTPX](https://www.python-httpx.org/)
 
 ---
@@ -480,10 +481,12 @@ EST-2026-003,Turma 2A,MAT,2026,1º Bimestre,92.0,3,9.0,9.0,9.5,8.5,0,Nao,Aprovad
   - Persistência histórica **append-only** em `previsoes_risco`, com pontuação `[0.0, 1.0]`, faixa controlada (`BAIXO`, `MODERADO`, `ALTO`, `CRITICO`), modelo/versão obrigatórios e assinatura de idempotência (`HTTP 409` em duplicidade).
   - Prevenção estrita de Data Leakage (`leakage.py`): catálogo formal de variáveis elegíveis (`GET /api/v1/previsoes/contrato-variaveis`), inspeção preventiva (`POST /api/v1/previsoes/validar-variaveis`) e bloqueio automático (`HTTP 422`) de `situacao_final`, campos derivados pós-desfecho e PII.
   - Política explícita de versão única no resumo (`GET /api/v1/previsoes/resumo`) e na integração com `GET /api/v1/indicadores/gerais`: quando não há previsões no escopo, `possui_previsoes_risco` permanece `False`; quando existem, contabiliza a última previsão por estudante na versão selecionada ou mais recente, sem misturar versões.
+  - Protótipo comparativo executável: `python -m app.integrations.prediction.treinar_modelo_risco` gera `docs/RELATORIO_MODELO_RISCO.md` e `artifacts/modelo_risco_academico_v1.joblib`; `prever_risco(dados_estudantes)` fornece inferência local sem persistir automaticamente.
+  - **Atenção:** o rótulo do notebook é derivado por regra e não confirma evasão observada. O modelo e as faixas são prova de conceito e não devem ser usados para decisões operacionais sem validação com desfechos reais do Vértice.
 - **Módulo Assistente IA (`app/integrations/assistant/`):**
   - `AssistenteContextoService` (`POST /api/v1/assistente/contexto`) constrói pacotes estruturados e anonimizados nos níveis `ESCOLA`, `TURMA` e `INDIVIDUAL` reutilizando exclusivamente os serviços reais do Vértice (`IndicadoresGeraisService`, `IndicadoresAvaliacoesService`, `IndicadoresParticipacaoService`, `PredictionService`, `EstudanteService`, `AcompanhamentoService`).
   - Auditoria persistente (`auditoria_consultas_ia` / `GET /api/v1/assistente/auditoria`) registra tanto consultas autorizadas (`AUTORIZADO`) quanto negadas (`NEGADO`), sem armazenar PII ou tokens.
-  - Abstração `ProvedorLLMBase` e `ProvedorLLMNaoConfigurado` (`GET /api/v1/assistente/status`, `POST /api/v1/assistente/consultar` retornando `503`), sem simulação de respostas generativas.
+  - `POST /api/v1/assistente/consultar` usa Ollama local e contexto autorizado; configure `ASSISTENTE_LLM_PROVEDOR=ollama` e `ASSISTENTE_OLLAMA_MODELO` após instalar e baixar um modelo gratuito. Sem provedor configurado, o endpoint retorna `503`.
 - **Documentação Detalhada:** ver `docs/FASE7_INTEGRACAO_PREDITIVA_E_IA.md`.
 
 ---
