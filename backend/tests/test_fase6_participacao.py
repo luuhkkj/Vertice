@@ -20,6 +20,7 @@ Cobre integralmente os requisitos da seção 11 (Bloco J):
 
 from datetime import date, timedelta
 import importlib
+from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -622,16 +623,14 @@ def test_fase6_frontend_login_bloqueado_offline_e_participacao_integrada(
     assert not api_client.possui_sessao_api_ativa()
 
     # Garante no código fonte de login.py e auth_animada.py que offline não força logado=True
-    conteudo_login = (
-        part_page.__file__.replace("pages\\participacao.py", "pages\\login.py")
-    )
+    assert part_page.__file__ is not None
+    frontend_root = Path(part_page.__file__).resolve().parents[1]
+    conteudo_login = frontend_root / "pages" / "login.py"
     with open(conteudo_login, encoding="utf-8") as fp:
         src_login = fp.read()
     assert 'elif resp.indisponivel:\n                        st.session_state["logado"] = False' in src_login
 
-    conteudo_anim = part_page.__file__.replace(
-        "pages\\participacao.py", "components\\auth_animada.py"
-    )
+    conteudo_anim = frontend_root / "components" / "auth_animada.py"
     with open(conteudo_anim, encoding="utf-8") as fp:
         src_anim = fp.read()
     assert "Modo de navegação local" not in src_anim

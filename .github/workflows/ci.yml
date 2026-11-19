@@ -203,8 +203,10 @@ jobs:
       - name: Verificar isolamento do PostgreSQL, saúde HTTP, schema Alembic e login administrativo
         run: |
           # Porta 5432 não deve estar exposta no host na configuração padrão
-          if docker compose port db 5432 >/dev/null 2>&1; then
-            echo "ERRO: porta 5432 não deveria estar publicada por padrão"
+          DB_HOST_PORTS=$(docker inspect -f '{{json .NetworkSettings.Ports}}' "$(docker compose ps -q db)")
+          echo "Mapeamento de portas do container db: ${DB_HOST_PORTS}"
+          if echo "${DB_HOST_PORTS}" | grep -q '"HostPort"'; then
+            echo "ERRO: porta 5432 não deveria estar publicada no host por padrão: ${DB_HOST_PORTS}"
             exit 1
           fi
 

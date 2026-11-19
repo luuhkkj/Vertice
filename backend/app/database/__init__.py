@@ -11,6 +11,11 @@ from app.database.connection import (
 )
 
 # Importa todos os modelos ORM para registro nos metadados do SQLAlchemy / Alembic
+# Modelos estruturais base primeiro para evitar dependências circulares em tempo de importação
+from app.modules.usuarios.models import PapelUsuario, Usuario
+from app.modules.escolas.models import Escola
+from app.modules.turmas.models import Turma
+from app.modules.disciplinas.models import Disciplina
 from app.modules.acompanhamento.models import (
     AcompanhamentoPedagogico,
     OrigemAcompanhamento,
@@ -25,8 +30,6 @@ from app.modules.avaliacoes.models import (
     StatusAvaliacao,
     TipoQuestao,
 )
-from app.modules.disciplinas.models import Disciplina
-from app.modules.escolas.models import Escola
 from app.modules.estudantes.models import (
     BoletimPeriodo,
     Estudante,
@@ -55,8 +58,6 @@ from app.modules.participacao.models import (
     StatusAtividade,
     StatusEntregaAtividade,
 )
-from app.modules.turmas.models import Turma
-from app.modules.usuarios.models import PapelUsuario, Usuario
 
 __all__ = [
     "Base",
