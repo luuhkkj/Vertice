@@ -34,6 +34,16 @@ def _validar_escrita_disciplina(usuario: Optional[Usuario]) -> None:
     )
 
 
+def _validar_leitura_disciplina(usuario: Optional[Usuario]) -> None:
+    if usuario is None:
+        return
+    if usuario.papel == PapelUsuario.GESTOR and usuario.escola_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Gestor sem escola vinculada não possui permissão para consultar disciplinas.",
+        )
+
+
 class DisciplinaService:
     """Regras de negócio para cadastro, atualização e consulta de disciplinas."""
 
@@ -81,7 +91,12 @@ class DisciplinaService:
         return disciplina_criada
 
     @staticmethod
-    def obter_por_id(db: Session, disciplina_id: uuid.UUID) -> Disciplina:
+    def obter_por_id(
+        db: Session,
+        disciplina_id: uuid.UUID,
+        usuario: Optional[Usuario] = None,
+    ) -> Disciplina:
+        _validar_leitura_disciplina(usuario)
         disciplina = DisciplinaRepository.get_by_id(db, disciplina_id)
         if disciplina is None:
             raise HTTPException(
@@ -92,8 +107,12 @@ class DisciplinaService:
 
     @staticmethod
     def listar_disciplinas(
-        db: Session, skip: int = 0, limit: int = 100
+        db: Session,
+        skip: int = 0,
+        limit: int = 100,
+        usuario: Optional[Usuario] = None,
     ) -> list[Disciplina]:
+        _validar_leitura_disciplina(usuario)
         return DisciplinaRepository.list_all(db, skip=skip, limit=limit)
 
     @staticmethod

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
     garantir_escopo_importacao_usuario,
+    garantir_escopo_pedagogico_filtro_opcional,
     garantir_escopo_pedagogico_turma_disciplina,
 )
 from app.modules.estudantes.models import Estudante
@@ -475,15 +476,12 @@ class ParticipacaoService:
         skip: int = 0,
         limit: int = 100,
     ) -> list[AtividadeResponse]:
-        garantir_escopo_importacao_usuario(usuario_autenticado)
-
-        if turma_id is not None:
-            garantir_escopo_pedagogico_turma_disciplina(
-                db=db,
-                usuario=usuario_autenticado,
-                turma_id=turma_id,
-                disciplina_id=disciplina_id,
-            )
+        garantir_escopo_pedagogico_filtro_opcional(
+            db=db,
+            usuario=usuario_autenticado,
+            turma_id=turma_id,
+            disciplina_id=disciplina_id,
+        )
 
         if usuario_autenticado.papel == PapelUsuario.GESTOR:
             assert usuario_autenticado.escola_id is not None
@@ -685,6 +683,7 @@ class ParticipacaoService:
         dados: EntregaAtividadeUpdate,
         usuario_autenticado: Usuario,
     ) -> EntregaAtividadeResponse:
+        garantir_escopo_importacao_usuario(usuario_autenticado)
         entrega = ParticipacaoRepository.get_entrega_by_id(db, entrega_id)
         if entrega is None:
             raise HTTPException(

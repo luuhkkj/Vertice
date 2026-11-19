@@ -16,14 +16,19 @@ from datetime import date
 import importlib
 import uuid
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+import pytest
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import garantir_acesso_turma
 from app.core.security import get_password_hash
 from app.modules.admin.models import AuditoriaOperacaoTecnica
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.avaliacoes.models import Avaliacao, QuestaoAvaliacao, StatusAvaliacao, TipoQuestao
 from app.modules.participacao.models import Atividade, EntregaAtividade, StatusAtividade
+from app.modules.turmas.schemas import TurmaUpdate
+from app.modules.turmas.service import TurmaService
 from app.modules.usuarios.models import PapelUsuario, Usuario
 from tests.test_fase4_modulos_pedagogicos import _criar_cenario_fase4
 from tests.test_fase8_integracao_final import _carregar_frontend_app, _preparar_frontend
@@ -133,6 +138,7 @@ def test_administrador_acesso_tecnico_permitido_e_bloqueio_total_pedagogico_e_at
     # 2. Administrador recebe HTTP 403 em TODAS as rotas de atribuições e dados pedagógicos
     lote_exemplo = uuid.uuid4()
     rotas_proibidas_admin = [
+        ("GET", f"/api/v1/turmas/{cenario['turma_1a'].id}", None),
         ("GET", "/api/v1/atribuicoes", None),
         (
             "POST",
@@ -234,6 +240,11 @@ def test_administrador_acesso_tecnico_permitido_e_bloqueio_total_pedagogico_e_at
     for metodo, rota, body in rotas_proibidas_admin:
         resp = client.request(metodo, rota, json=body, headers=headers_admin)
         assert resp.status_code == 403, f"Admin deveria receber 403 em {metodo} {rota}, recebeu {resp.status_code}: {resp.text}"
+
+    # Proteção direta no helper genérico `garantir_acesso_turma`
+    with pytest.raises(HTTPException) as exc_turma_admin:
+        garantir_acesso_turma(db_session, cenario["admin"], cenario["turma_1a"].id)
+    assert exc_turma_admin.value.status_code == 403
 
     # Verifica que gestor da escola continua conseguindo criar e remover atribuições normalmente
     r_atrib = client.post(
@@ -351,6 +362,8 @@ def test_gestor_escopo_estrito_e_bloqueio_sem_escola_vinculada(
         ("PATCH", f"/api/v1/turmas/{cenario['turma_1a'].id}", {"nome": "Hack"}),
         ("POST", "/api/v1/disciplinas", {"nome": "Artes", "codigo": "ART"}),
         ("PATCH", f"/api/v1/disciplinas/{cenario['disc_mat'].id}", {"nome": "Hack"}),
+        ("GET", "/api/v1/disciplinas", None),
+        ("GET", f"/api/v1/disciplinas/{cenario['disc_mat'].id}", None),
         ("GET", "/api/v1/atribuicoes", None),
         (
             "POST",
@@ -363,7 +376,10 @@ def test_gestor_escopo_estrito_e_bloqueio_sem_escola_vinculada(
         ),
         ("DELETE", f"/api/v1/atribuicoes/{atrib_a.id}", None),
         ("GET", "/api/v1/usuarios", None),
+        ("GET", f"/api/v1/usuarios/{cenario['prof1'].id}", None),
         ("GET", "/api/v1/estudantes", None),
+        ("GET", f"/api/v1/estudantes/{cenario['est1'].id}", None),
+        ("GET", f"/api/v1/previsoes/estudantes/{cenario['est1'].id}", None),
         ("GET", "/api/v1/indicadores/gerais", None),
         ("GET", "/api/v1/avaliacoes", None),
         ("GET", "/api/v1/atividades", None),
@@ -372,6 +388,13 @@ def test_gestor_escopo_estrito_e_bloqueio_sem_escola_vinculada(
     for metodo, rota, body in rotas_bloqueadas_gestor_sem_escola:
         resp = client.request(metodo, rota, json=body, headers=headers_g_sem)
         assert resp.status_code == 403, f"Gestor sem escola deveria receber 403 em {metodo} {rota}, recebeu {resp.status_code}"
+
+    # Acesso cruzado por IDs conhecidos de outra escola/usuário
+    assert client.get(f"/api/v1/usuarios/{cenario['gestor_b'].id}", headers=headers_ga).status_code == 403
+    assert client.get(f"/api/v1/turmas/{cenario['turma_escola_b'].id}", headers=headers_ga).status_code == 403
+    assert client.patch(f"/api/v1/turmas/{cenario['turma_escola_b'].id}", json={"nome": "Invasão"}, headers=headers_ga).status_code == 403
+    assert client.get(f"/api/v1/previsoes/estudantes/{cenario['est_b1'].id}", headers=headers_ga).status_code == 403
+    assert client.get(f"/api/v1/estudantes/{cenario['est_b1'].id}", headers=headers_ga).status_code == 404
 
 
 def test_professor_escopo_turma_disciplina_e_bloqueios(
@@ -393,6 +416,36 @@ def test_professor_escopo_turma_disciplina_e_bloqueios(
     assert client.get(f"/api/v1/turmas/{cenario['turma_1a'].id}", headers=headers_p1).status_code == 200
     assert client.get(f"/api/v1/turmas/{cenario['turma_3a'].id}", headers=headers_p1).status_code == 403
     assert client.get(f"/api/v1/turmas/{cenario['turma_escola_b'].id}", headers=headers_p1).status_code == 403
+
+    # Professor tentando atualizar turma diretamente via serviço -> 403
+    with pytest.raises(HTTPException) as exc_turma_upd:
+        TurmaService.atualizar_turma(
+            db_session,
+            cenario["turma_1a"].id,
+            TurmaUpdate(nome="Tentativa"),
+            usuario=cenario["prof1"],
+        )
+    assert exc_turma_upd.value.status_code == 403
+
+    # Acesso a disciplina não vinculada (disc_qui) via filtro de consulta -> 403
+    disc_qui_id = str(cenario["disc_qui"].id)
+    for rota_disc_nao_vinc in [
+        f"/api/v1/avaliacoes?disciplina_id={disc_qui_id}",
+        f"/api/v1/atividades?disciplina_id={disc_qui_id}",
+        f"/api/v1/estudantes?disciplina_id={disc_qui_id}",
+        f"/api/v1/indicadores/gerais?disciplina_id={disc_qui_id}",
+    ]:
+        resp_disc = client.get(rota_disc_nao_vinc, headers=headers_p1)
+        assert resp_disc.status_code == 403, f"Professor sem vínculo com disc_qui deveria receber 403 em {rota_disc_nao_vinc}"
+
+    # Consulta auditoria IA filtrando escola fora do vínculo do professor -> 403
+    assert (
+        client.get(
+            f"/api/v1/assistente/auditoria?escola_id={cenario['escola_b'].id}",
+            headers=headers_p1,
+        ).status_code
+        == 403
+    )
 
     # Bloqueado de criar/excluir atribuições, listar usuários e operar cadastros administrativos/técnicos
     atrib_id = atribs[0]["id"]
@@ -626,3 +679,101 @@ def test_streamlit_menus_e_permissoes_alinhados_por_papel() -> None:
         assert all("Permissão insuficiente" in msg for msg in erros_registrados)
     finally:
         st.session_state.clear()
+
+
+def test_autenticacao_ausente_invalida_e_importacao_fora_escopo(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    """Valida HTTP 401 sem token/token inválido e bloqueios de importação fora do escopo."""
+    cenario = _criar_cenario_fase4(db_session)
+    headers_invalid = {"Authorization": "Bearer token-invalido-vertice"}
+
+    # 1. Ausência ou invalidade de token -> HTTP 401 em rotas protegidas
+    for metodo, rota in [
+        ("GET", "/api/v1/admin/resumo-operacional"),
+        ("GET", "/api/v1/usuarios"),
+        ("GET", "/api/v1/atribuicoes"),
+        ("GET", f"/api/v1/turmas/{cenario['turma_1a'].id}"),
+        ("GET", "/api/v1/estudantes"),
+        ("GET", "/api/v1/indicadores/gerais"),
+        ("GET", "/api/v1/importacoes"),
+    ]:
+        assert client.request(metodo, rota).status_code == 401
+        assert client.request(metodo, rota, headers=headers_invalid).status_code == 401
+
+    headers_admin = _login_headers(client, "admin@vertice.edu.br", "SenhaForte@123")
+    headers_ga = _login_headers(client, "gestor.a@vertice.edu.br", "SenhaForte@123")
+    headers_gb = _login_headers(client, "gestor.b@vertice.edu.br", "SenhaForte@123")
+    headers_p1 = _login_headers(client, "prof1@vertice.edu.br", "SenhaForte@123")
+
+    # 2. Administrador bloqueado na importação e em confirmação de lote existente
+    csv_header = (
+        "codigo_anonimo,turma,disciplina,ano_letivo,periodo_letivo,"
+        "frequencia_percentual,faltas,media_geral,nota,nota_prova,"
+        "nota_trabalho,historico_reprovacoes,participacao_recuperacao,situacao_final\n"
+    )
+    csv_escola_a = (
+        csv_header
+        + "EST-SEC-1,Turma 1A,MAT,2026,2º Bimestre,90,2,8.0,8.0,8.0,8.0,0,Não,Aprovado\n"
+    ).encode("utf-8")
+
+    r_adm_val = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("dados.csv", csv_escola_a, "text/csv")},
+        headers=headers_admin,
+    )
+    assert r_adm_val.status_code == 403
+
+    r_ga_val = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("dados.csv", csv_escola_a, "text/csv")},
+        headers=headers_ga,
+    )
+    assert r_ga_val.status_code == 201
+    lote_ga_id = r_ga_val.json()["id"]
+    assert r_ga_val.json()["pode_confirmar"] is True
+
+    # Administrador não confirma lote existente (403); Gestor de outra escola não acessa/confirma lote (404)
+    assert client.post(f"/api/v1/importacoes/{lote_ga_id}/confirmar", headers=headers_admin).status_code == 403
+    assert client.post(f"/api/v1/importacoes/{lote_ga_id}/confirmar", headers=headers_gb).status_code == 404
+
+    # 3. Professor tentando importar turma não atribuída (Turma 3A) ou disciplina não atribuída (QUI)
+    csv_prof_fora = (
+        csv_header
+        + "EST-SEC-2,Turma 3A,QUI,2026,2º Bimestre,85,3,7.5,7.5,7.5,7.5,0,Não,Aprovado\n"
+    ).encode("utf-8")
+    r_p1_val = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("fora_escopo.csv", csv_prof_fora, "text/csv")},
+        headers=headers_p1,
+    )
+    assert r_p1_val.status_code == 201
+    dados_p1 = r_p1_val.json()
+    assert dados_p1["pode_confirmar"] is False
+    assert dados_p1["relatorio_validacao"]["quantidade_erros"] >= 1
+    assert (
+        client.post(f"/api/v1/importacoes/{dados_p1['id']}/confirmar", headers=headers_p1).status_code
+        == 409
+    )
+
+    # 4. Gestor A tentando importar para turma exclusiva de outra escola (Turma 1A-Sul)
+    csv_outra_escola = (
+        csv_header
+        + "EST-SEC-3,Turma 1A-Sul,MAT,2026,2º Bimestre,85,3,7.5,7.5,7.5,7.5,0,Não,Aprovado\n"
+    ).encode("utf-8")
+    r_ga_fora = client.post(
+        "/api/v1/importacoes/validar",
+        files={"arquivo": ("outra_escola.csv", csv_outra_escola, "text/csv")},
+        headers=headers_ga,
+    )
+    assert r_ga_fora.status_code == 201
+    assert r_ga_fora.json()["pode_confirmar"] is False
+    assert r_ga_fora.json()["relatorio_validacao"]["quantidade_erros"] >= 1
+    assert (
+        client.post(
+            f"/api/v1/importacoes/{r_ga_fora.json()['id']}/confirmar",
+            headers=headers_ga,
+        ).status_code
+        == 409
+    )

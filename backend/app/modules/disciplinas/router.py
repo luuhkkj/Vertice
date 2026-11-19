@@ -45,10 +45,12 @@ def listar_disciplinas(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_qualquer_papel),
+    current_user: Usuario = Depends(require_qualquer_papel),
 ) -> list[Disciplina]:
     """Lista todas as disciplinas cadastradas."""
-    return DisciplinaService.listar_disciplinas(db, skip=skip, limit=limit)
+    return DisciplinaService.listar_disciplinas(
+        db, skip=skip, limit=limit, usuario=current_user
+    )
 
 
 @router.get(
@@ -59,10 +61,10 @@ def listar_disciplinas(
 def obter_disciplina(
     disciplina_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _current_user: Usuario = Depends(require_qualquer_papel),
+    current_user: Usuario = Depends(require_qualquer_papel),
 ) -> Disciplina:
     """Retorna os detalhes de uma disciplina específica."""
-    return DisciplinaService.obter_por_id(db, disciplina_id)
+    return DisciplinaService.obter_por_id(db, disciplina_id, usuario=current_user)
 
 
 @router.patch(

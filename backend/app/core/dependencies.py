@@ -240,6 +240,60 @@ def garantir_escopo_pedagogico_turma_disciplina(
     )
 
 
+def garantir_escopo_pedagogico_filtro_opcional(
+    db: Session,
+    usuario: Usuario,
+    turma_id: Optional[uuid.UUID] = None,
+    disciplina_id: Optional[uuid.UUID] = None,
+) -> None:
+    """
+    Valida filtros opcionais (`turma_id`, `disciplina_id`) em listagens pedagógicas:
+    - Rejeita `ADMINISTRADOR` e `GESTOR` sem `escola_id` antes de consultar o banco.
+    - Quando `turma_id` é informado, delega integralmente a `garantir_escopo_pedagogico_turma_disciplina`.
+    - Quando apenas `disciplina_id` é informado por um `PROFESSOR`, garante vínculo ativo
+      com a disciplina (ou vínculo polivalente `disciplina_id IS NULL`) em turma/escola ativas.
+    """
+    garantir_escopo_importacao_usuario(usuario)
+
+    if turma_id is not None:
+        garantir_escopo_pedagogico_turma_disciplina(
+            db=db,
+            usuario=usuario,
+            turma_id=turma_id,
+            disciplina_id=disciplina_id,
+        )
+        return
+
+    if disciplina_id is not None and usuario.papel == PapelUsuario.PROFESSOR:
+        from app.modules.escolas.models import Escola
+
+        stmt_atrib = (
+            select(ProfessorTurma, Turma)
+            .join(Turma, ProfessorTurma.turma_id == Turma.id)
+            .join(Escola, Turma.escola_id == Escola.id)
+            .where(
+                ProfessorTurma.professor_id == usuario.id,
+                Turma.ativo.is_(True),
+                Escola.ativo.is_(True),
+            )
+        )
+        autorizado = False
+        for atrib, turma in db.execute(stmt_atrib).all():
+            if (
+                usuario.escola_id is not None
+                and turma.escola_id != usuario.escola_id
+            ):
+                continue
+            if atrib.disciplina_id is None or atrib.disciplina_id == disciplina_id:
+                autorizado = True
+                break
+        if not autorizado:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: professor não possui vínculo autorizado com esta disciplina.",
+            )
+
+
 def verificar_vinculo_professor_turma_disciplina(
     db: Session,
     professor_id: uuid.UUID,
@@ -333,14 +387,19 @@ def garantir_acesso_turma(
     escola_id: Optional[uuid.UUID] = None,
 ) -> None:
     """
-    Valida se o usuário tem autorização para acessar uma turma específica.
-    - Administradores possuem acesso irrestrito.
+    Valida se o usuário tem autorização pedagógica para acessar uma turma específica.
+    - Administradores NÃO possuem acesso pedagógico a turmas individuais (`HTTP 403`).
     - Gestores com `escola_id` vinculado só podem acessar turmas de sua própria escola.
-    - Professores só podem acessar turmas às quais estão vinculados em `professor_turmas`.
-    Lança HTTPException 403 em caso de violação de escopo.
+    - Professores só podem acessar turmas às quais estão vinculados em `professor_turmas`
+      (respeitando `usuario.escola_id`, se definido).
+    Lança HTTPException 403 em caso de violação de escopo (ou 404 se turma inexistente
+    quando `escola_id` não for fornecida).
     """
     if usuario.papel == PapelUsuario.ADMINISTRADOR:
-        return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado: administrador não possui acesso pedagógico a turmas.",
+        )
 
     if usuario.papel == PapelUsuario.GESTOR:
         if usuario.escola_id is None:
@@ -352,15 +411,37 @@ def garantir_acesso_turma(
         if target_escola_id is None:
             stmt = select(Turma.escola_id).where(Turma.id == turma_id)
             target_escola_id = db.execute(stmt).scalar_one_or_none()
-        if target_escola_id is not None and target_escola_id != usuario.escola_id:
+            if target_escola_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Turma não encontrada.",
+                )
+        if target_escola_id != usuario.escola_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Acesso negado: gestor não possui permissão para turmas de outra escola.",
             )
         return
 
-    if not verificar_vinculo_professor_turma(db, usuario.id, turma_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acesso negado: professor não possui vínculo com esta turma.",
-        )
+    if usuario.papel == PapelUsuario.PROFESSOR:
+        if usuario.escola_id is not None:
+            target_escola_id = escola_id
+            if target_escola_id is None:
+                stmt = select(Turma.escola_id).where(Turma.id == turma_id)
+                target_escola_id = db.execute(stmt).scalar_one_or_none()
+            if target_escola_id is not None and target_escola_id != usuario.escola_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Acesso negado: esta turma pertence a uma escola fora do escopo do professor.",
+                )
+        if not verificar_vinculo_professor_turma(db, usuario.id, turma_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: professor não possui vínculo com esta turma.",
+            )
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Acesso negado.",
+    )

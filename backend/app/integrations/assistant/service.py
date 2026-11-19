@@ -38,6 +38,7 @@ from app.integrations.assistant.schemas import (
 from app.integrations.prediction.service import PredictionService
 from app.modules.acompanhamento.service import AcompanhamentoService
 from app.modules.escolas.models import Escola
+from app.modules.escolas.service import _escola_ids_autorizadas_professor
 from app.modules.estudantes.repository import EstudanteRepository
 from app.modules.estudantes.service import EstudanteService
 from app.modules.indicadores.repository import IndicadoresRepository
@@ -634,7 +635,14 @@ class AssistenteContextoService:
                 )
             escola_filtro = usuario.escola_id
         else:
-            # Professor visualiza somente suas próprias consultas registradas
+            # Professor visualiza somente suas próprias consultas registradas e apenas dentro de escolas do seu escopo
+            if escola_id is not None:
+                escolas_prof = _escola_ids_autorizadas_professor(db, usuario)
+                if escola_id not in escolas_prof:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Acesso negado: auditoria solicitada pertence a escola fora do escopo do professor.",
+                    )
             usuario_filtro = usuario.id
 
         regs = AssistantAuditRepository.listar(

@@ -112,7 +112,7 @@ Todas as rotas exigem `require_admin` (`administrador`). Não expõem dados nomi
 |---|---|---|---|---|---|
 | `POST` | `/api/v1/turmas` | `require_gestor_ou_admin` | — | `TurmaCreate`: `nome`*, `serie`*, `turno`*, `ano_letivo`*, `escola_id`*, `ativo` | `201 TurmaResponse` |
 | `GET` | `/api/v1/turmas` | `require_qualquer_papel` | `skip=0`, `limit=100` | — | `200 list[TurmaResponse]` |
-| `GET` | `/api/v1/turmas/{turma_id}` | `require_qualquer_papel` | Path: `turma_id` (UUID) | — | `200 TurmaResponse` |
+| `GET` | `/api/v1/turmas/{turma_id}` | `require_acesso_pedagogico` | Path: `turma_id` (UUID) | — | `200 TurmaResponse` |
 | `PATCH` | `/api/v1/turmas/{turma_id}` | `require_gestor_ou_admin` | Path: `turma_id` (UUID) | `TurmaUpdate`: `nome?`, `serie?`, `turno?`, `ano_letivo?`, `ativo?` | `200 TurmaResponse` |
 
 ### 5.3 Disciplinas (`/api/v1/disciplinas`)

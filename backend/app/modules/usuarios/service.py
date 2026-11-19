@@ -133,6 +133,7 @@ class UsuarioService:
         usuario_id: uuid.UUID,
         current_user: Optional[Usuario] = None,
     ) -> Usuario:
+        UsuarioService._garantir_escopo_consulta_gestor(current_user)
         usuario = UsuarioRepository.get_by_id(db, usuario_id)
         if usuario is None:
             raise HTTPException(

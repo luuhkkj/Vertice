@@ -10,6 +10,10 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import (
+    garantir_escopo_importacao_usuario,
+    garantir_escopo_pedagogico_filtro_opcional,
+)
 from app.modules.atribuicoes.models import ProfessorTurma
 from app.modules.disciplinas.models import Disciplina
 from app.modules.escolas.models import Escola
@@ -90,6 +94,13 @@ class EstudanteService:
           A ausência do filtro `disciplina_id` na requisição NUNCA amplia o acesso para outras
           disciplinas da mesma turma.
         """
+        garantir_escopo_pedagogico_filtro_opcional(
+            db=db,
+            usuario=usuario_solicitante,
+            turma_id=turma_id,
+            disciplina_id=disciplina_id,
+        )
+
         if usuario_solicitante.papel == PapelUsuario.GESTOR:
             if usuario_solicitante.escola_id is None:
                 raise HTTPException(
@@ -180,6 +191,13 @@ class EstudanteService:
         periodo_letivo: Optional[str] = None,
     ) -> int:
         """Retorna a contagem total de estudantes distintos dentro do escopo autorizado."""
+        garantir_escopo_pedagogico_filtro_opcional(
+            db=db,
+            usuario=usuario_solicitante,
+            turma_id=turma_id,
+            disciplina_id=disciplina_id,
+        )
+
         if usuario_solicitante.papel == PapelUsuario.GESTOR:
             if usuario_solicitante.escola_id is None:
                 raise HTTPException(
@@ -234,6 +252,8 @@ class EstudanteService:
           boletins daquela turma ativa.
         Retorna 404 caso o estudante não exista ou esteja fora do escopo autorizado.
         """
+        garantir_escopo_importacao_usuario(usuario_solicitante)
+
         estudante = EstudanteRepository.get_by_id(db, estudante_id)
         if estudante is None:
             raise HTTPException(

@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.dependencies import garantir_escopo_importacao_usuario
 from app.integrations.prediction.leakage import (
     CAMPOS_PROIBIDOS_PREDICAO,
     CATALOGO_METADADOS_TECNICOS_PERMITIDOS,
@@ -699,11 +700,7 @@ class PredictionService:
         modelo_nome: Optional[str] = None,
         modelo_versao: Optional[str] = None,
     ) -> HistoricoPrevisoesEstudanteResponse:
-        if usuario.papel not in {PapelUsuario.GESTOR, PapelUsuario.PROFESSOR}:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Acesso negado: perfil sem acesso pedagógico ao histórico preditivo.",
-            )
+        garantir_escopo_importacao_usuario(usuario)
 
         estudante = EstudanteRepository.get_by_id(db, estudante_id)
         if estudante is None:

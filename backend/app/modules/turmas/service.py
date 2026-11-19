@@ -95,8 +95,19 @@ class TurmaService:
         db: Session, turma_id: uuid.UUID, usuario: Usuario
     ) -> Turma:
         """
-        Obtém uma turma verificando primeiro se o usuário tem escopo autorizado sobre ela.
+        Obtém uma turma verificando primeiro o papel/escopo do usuário antes de revelar existência.
         """
+        if usuario.papel == PapelUsuario.ADMINISTRADOR:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: administrador não possui acesso pedagógico a turmas.",
+            )
+        if usuario.papel == PapelUsuario.GESTOR and usuario.escola_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Gestor sem escola vinculada não possui permissão para consultar turmas.",
+            )
+
         turma = TurmaRepository.get_by_id(db, turma_id)
         if turma is None:
             raise HTTPException(
@@ -144,6 +155,17 @@ class TurmaService:
         dados: TurmaUpdate,
         usuario: Optional[Usuario] = None,
     ) -> Turma:
+        if usuario is None or usuario.papel == PapelUsuario.PROFESSOR:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: perfil sem permissão para atualizar turmas.",
+            )
+        if usuario.papel == PapelUsuario.GESTOR and usuario.escola_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Gestor sem escola vinculada não possui permissão para atualizar turmas.",
+            )
+
         turma = TurmaRepository.get_by_id(db, turma_id)
         if turma is None:
             raise HTTPException(
@@ -151,13 +173,7 @@ class TurmaService:
                 detail="Turma não encontrada.",
             )
 
-        if usuario is not None:
-            garantir_acesso_turma(
-                db=db,
-                usuario=usuario,
-                turma_id=turma.id,
-                escola_id=turma.escola_id,
-            )
+        garantir_acesso_escola(usuario, turma.escola_id)
 
         campos = dados.model_fields_set
         novo_nome = dados.nome.strip() if "nome" in campos and dados.nome is not None else turma.nome

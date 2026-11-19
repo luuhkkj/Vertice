@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
     garantir_escopo_importacao_usuario,
+    garantir_escopo_pedagogico_filtro_opcional,
     garantir_escopo_pedagogico_turma_disciplina,
 )
 from app.modules.avaliacoes.models import (
@@ -207,16 +208,12 @@ class AvaliacaoService:
         skip: int = 0,
         limit: int = 100,
     ) -> list[AvaliacaoResponse]:
-        garantir_escopo_importacao_usuario(usuario_autenticado)
-
-        if turma_id is not None or disciplina_id is not None:
-            if turma_id is not None:
-                garantir_escopo_pedagogico_turma_disciplina(
-                    db=db,
-                    usuario=usuario_autenticado,
-                    turma_id=turma_id,
-                    disciplina_id=disciplina_id,
-                )
+        garantir_escopo_pedagogico_filtro_opcional(
+            db=db,
+            usuario=usuario_autenticado,
+            turma_id=turma_id,
+            disciplina_id=disciplina_id,
+        )
 
         if usuario_autenticado.papel == PapelUsuario.GESTOR:
             assert usuario_autenticado.escola_id is not None
@@ -347,6 +344,7 @@ class AvaliacaoService:
         dados: QuestaoAvaliacaoUpdate,
         usuario_autenticado: Usuario,
     ) -> QuestaoAvaliacaoResponse:
+        garantir_escopo_importacao_usuario(usuario_autenticado)
         questao = AvaliacaoRepository.get_questao_by_id(db, questao_id)
         if questao is None:
             raise HTTPException(
@@ -607,6 +605,7 @@ class AvaliacaoService:
         usuario_autenticado: Usuario,
         permitir_atualizacao: bool = False,
     ) -> RespostaAvaliacaoResponse:
+        garantir_escopo_importacao_usuario(usuario_autenticado)
         questao = AvaliacaoRepository.get_questao_by_id(db, questao_id)
         if questao is None:
             raise HTTPException(

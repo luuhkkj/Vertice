@@ -112,6 +112,15 @@ class EscolaService:
         escola_id: uuid.UUID,
         usuario: Optional[Usuario] = None,
     ) -> Escola:
+        if (
+            usuario is not None
+            and usuario.papel == PapelUsuario.GESTOR
+            and usuario.escola_id is None
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso negado: gestor não possui uma unidade escolar vinculada.",
+            )
         escola = EscolaRepository.get_by_id(db, escola_id)
         if escola is None:
             raise HTTPException(
@@ -166,9 +175,9 @@ class EscolaService:
         dados: EscolaUpdate,
         usuario: Optional[Usuario] = None,
     ) -> Escola:
-        escola = EscolaService.obter_por_id(db, escola_id)
         if usuario is not None:
-            garantir_acesso_escola(usuario, escola.id)
+            garantir_acesso_escola(usuario, escola_id)
+        escola = EscolaService.obter_por_id(db, escola_id)
 
         campos = dados.model_fields_set
 
