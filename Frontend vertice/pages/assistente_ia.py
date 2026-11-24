@@ -12,6 +12,7 @@ from components.layout import titulo_pagina
 from data.api_client import (
     construir_contexto_assistente_api,
     consultar_assistente_ia_api,
+    consultar_assistente_ia_stream_api,
     consultar_status_assistente_api,
     listar_estudantes_api,
     listar_turmas_api,
@@ -54,90 +55,85 @@ def montar_resumo_contexto_ui(contexto: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _aplicar_estilos():
-    """Mantém o layout do card e do chat responsivo."""
+def _processar_pergunta_pendente(
+    *,
+    contexto: Optional[dict[str, Any]],
+    nivel: str,
+    escopo: dict[str, Any],
+) -> None:
+    pendente = st.session_state.get("ia_pergunta_pendente")
+    if not isinstance(pendente, dict):
+        return
 
-    st.html(
-        """
-        <style>
-            .st-key-assistente_card {
-                width: 90% !important;
-                max-width: 1375px !important;
-                margin: 20px auto 0 !important;
-                min-width: 0 !important;
-                box-sizing: border-box;
-            }
-
-            .st-key-assistente_cabecalho {
-                width: 100%;
-            }
-
-            .st-key-assistente_cabecalho .assistente-header-linha {
-                display: flex;
-                align-items: center;
-                gap: 14px;
-            }
-
-            .st-key-assistente_cabecalho .assistente-header-icone {
-                width: 46px;
-                height: 46px;
-                border-radius: 50%;
-                background: #334D8D;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                flex-shrink: 0;
-            }
-
-            .st-key-assistente_cabecalho .assistente-header-icone img {
-                width: 24px;
-                height: 24px;
-            }
-
-            .st-key-assistente_cabecalho .assistente-header-titulo {
-                font-size: 18px;
-                font-weight: 700;
-                color: #1E293B;
-                line-height: 1.25;
-            }
-
-            .st-key-assistente_cabecalho .assistente-header-sub {
-                font-size: 13px;
-                color: #64748B;
-            }
-
-            .st-key-assistente_mensagens {
-                min-height: 180px;
-                max-height: 380px;
-                overflow-y: auto;
-                padding: 8px 4px;
-            }
-
-            .st-key-assistente_rodape [data-testid="stTextInput"] [data-baseweb="input"] {
-                min-height: 46px;
-                border-radius: 100px !important;
-                background: #ffffff !important;
-                border: 1px solid #e2e8f0 !important;
-            }
-
-            .st-key-assistente_rodape [data-testid="stFormSubmitButton"] button {
-                width: 100% !important;
-                min-height: 46px !important;
-                background: #334D8D !important;
-                color: #ffffff !important;
-                border: none !important;
-                border-radius: 15px !important;
-                font-weight: 600 !important;
-            }
-        </style>
-        """
+    cache_id = (
+        contexto.get("metadados", {}).get("context_cache_id")
+        if isinstance(contexto, dict)
+        else None
     )
+    texto_resposta: Optional[str] = None
+    erro: Optional[str] = None
+    coluna_resposta, _ = st.columns([1.65, 2.35], gap="small")
+    with coluna_resposta:
+        with st.container(key=f"chat_assistente_{len(st.session_state['chat_mensagens'])}"):
+            payload = {
+                "pergunta_usuario": pendente["pergunta"],
+                "tipo_contexto": nivel,
+                "turma_id": escopo["turma_id"],
+                "estudante_id": escopo["estudante_id"],
+                "conversation_id": st.session_state["ia_conversation_id"],
+                "historico_mensagens": pendente["historico_mensagens"],
+                "incluir_acompanhamentos": True,
+                "context_cache_id": cache_id,
+            }
+            area_resposta = st.empty()
+            area_resposta.caption("Analisando os indicadores...")
+            try:
+                texto_resposta = area_resposta.write_stream(
+                    consultar_assistente_ia_stream_api(
+                        payload=payload,
+                        arquivos=pendente.get("arquivos"),
+                    )
+                )
+            except RuntimeError as exc:
+                erro = str(exc)
+                texto_resposta = None
+            except Exception as exc:
+                erro = f"Falha na comunicação com o assistente: {exc}"
+                texto_resposta = None
+
+            if isinstance(texto_resposta, str) and texto_resposta.strip():
+                texto_resposta = texto_resposta.strip()
+                st.markdown(
+                    "*Resposta baseada nos indicadores disponíveis; deve ser avaliada "
+                    "por um profissional. Previsões não são certezas.*"
+                )
+            elif erro:
+                st.error(f"Não foi possível responder: {erro}")
+
+    if isinstance(texto_resposta, str) and texto_resposta.strip():
+        texto_final = (
+            f"{texto_resposta.strip()}\n\n"
+            "Resposta baseada nos indicadores disponíveis; deve ser avaliada por um "
+            "profissional. Previsões não são certezas."
+        )
+        st.session_state["chat_mensagens"].append(
+            {"autor": "ia", "texto": texto_final}
+        )
+    else:
+        st.session_state["chat_mensagens"].append(
+            {
+                "autor": "ia",
+                "texto": f"Não foi possível responder: {erro or 'o servidor não retornou uma resposta válida.'}",
+                "erro": True,
+            }
+        )
+    st.session_state.pop("ia_pergunta_pendente", None)
+    st.rerun()
 
 
 def render():
     """Renderiza a tela do Assistente IA conectada à camada de contexto auditado."""
 
-    _aplicar_estilos()
     titulo_pagina("Assistente IA")
 
     if not possui_sessao_api_ativa():
@@ -177,13 +173,9 @@ def render():
     st.session_state.setdefault("ia_formulario_versao", 0)
 
     with st.container(key="assistente_card", border=True):
-        icone_b64 = _icone_base64("sparkles-2.svg")
+        icone_b64 = _icone_base64("IA.svg")
         with st.container(key="assistente_cabecalho"):
-            img_html = (
-                f'<img src="data:image/svg+xml;base64,{icone_b64}" alt="IA">'
-                if icone_b64
-                else "✨"
-            )
+            img_html = f'<img src="data:image/svg+xml;base64,{icone_b64}" alt="Assistente IA">'
             sub_status = (
                 "Seu assistente de IA para apoiar professores na leitura dos indicadores pedagógicos."
             )
@@ -316,9 +308,18 @@ def render():
         with st.container(key="assistente_mensagens"):
             for i, msg in enumerate(st.session_state["chat_mensagens"]):
                 balao(msg["texto"], msg["autor"], i)
+            _processar_pergunta_pendente(
+                contexto=ctx_salvo if isinstance(ctx_salvo, dict) else None,
+                nivel=nivel,
+                escopo=escopo_selecionado,
+            )
 
         with st.container(key="assistente_rodape"):
-            c_anexo, c_conversa = st.columns([1.2, 6], gap="small")
+            c_anexo, c_conversa = st.columns(
+                [1.2, 6],
+                gap="small",
+                vertical_alignment="center",
+            )
             with c_anexo:
                 with st.popover("Anexar", icon=":material/attach_file:"):
                     arquivos_carregados = st.file_uploader(
@@ -347,33 +348,22 @@ def render():
                 if not anexos_validos:
                     st.error("Remova arquivos para respeitar o limite total de 5 arquivos e 10 MB.")
             with c_conversa:
-                with st.form("form_chat_assistente", clear_on_submit=False):
-                    c_input, c_btn = st.columns([5, 1])
-                    with c_input:
-                        pergunta = st.text_input(
-                            "Pergunta",
-                            key=f"ia_pergunta_{st.session_state['ia_formulario_versao']}",
-                            label_visibility="collapsed",
-                            placeholder="Pergunte sobre os indicadores do recorte preparado...",
-                            disabled=(
-                                not provedor_ativo
-                                or not contexto_pronto
-                                or "ia_pergunta_pendente" in st.session_state
-                                or not anexos_validos
-                            ),
-                        )
-                    with c_btn:
-                        enviar = st.form_submit_button(
-                            "Enviar",
-                            disabled=(
-                                not provedor_ativo
-                                or not contexto_pronto
-                                or "ia_pergunta_pendente" in st.session_state
-                                or not anexos_validos
-                            ),
-                        )
+                pergunta = st.chat_input(
+                    "Pergunte sobre os indicadores do recorte preparado...",
+                    key=f"ia_pergunta_{st.session_state['ia_formulario_versao']}",
+                    max_chars=2000,
+                    disabled=(
+                        not provedor_ativo
+                        or not contexto_pronto
+                        or "ia_pergunta_pendente" in st.session_state
+                        or not anexos_validos
+                    ),
+                    height="content",
+                    submit_mode="disable",
+                )
 
-            if enviar and pergunta.strip():
+            pergunta_texto = (pergunta or "").strip()
+            if pergunta_texto:
                 mensagens_anteriores = [
                     {
                         "papel": "assistant" if mensagem["autor"] == "ia" else "user",
@@ -382,7 +372,7 @@ def render():
                     for mensagem in st.session_state["chat_mensagens"]
                     if not mensagem.get("erro")
                 ][-12:]
-                pergunta_enviada = pergunta.strip()
+                pergunta_enviada = pergunta_texto
                 st.session_state["chat_mensagens"].append(
                     {"autor": "usuario", "texto": pergunta_enviada}
                 )
@@ -399,52 +389,4 @@ def render():
                     ],
                 }
                 st.session_state["ia_formulario_versao"] += 1
-                st.rerun()
-
-            pergunta_pendente = st.session_state.get("ia_pergunta_pendente")
-            if isinstance(pergunta_pendente, dict):
-                with st.spinner(
-                    "Consultando os indicadores e aguardando o assistente...",
-                    show_time=True,
-                ):
-                    resposta = consultar_assistente_ia_api(
-                        pergunta_usuario=pergunta_pendente["pergunta"],
-                        tipo_contexto=nivel,
-                        turma_id=escopo_selecionado["turma_id"],
-                        estudante_id=escopo_selecionado["estudante_id"],
-                        conversation_id=st.session_state["ia_conversation_id"],
-                        historico_mensagens=pergunta_pendente["historico_mensagens"],
-                        arquivos=pergunta_pendente["arquivos"],
-                    )
-                st.session_state.pop("ia_pergunta_pendente", None)
-                texto_resposta = (
-                    resposta.dados.get("resposta_texto")
-                    if resposta.ok and isinstance(resposta.dados, dict)
-                    else None
-                )
-                if isinstance(texto_resposta, str) and texto_resposta.strip():
-                    texto_resposta = texto_resposta.strip()
-                    fontes = resposta.dados.get("citacoes_fontes") or []
-                    aviso = resposta.dados.get("aviso_responsavel")
-                    if fontes:
-                        texto_resposta += f"\n\nFontes: {', '.join(fontes)}."
-                    if aviso:
-                        texto_resposta += f"\n\n_{aviso}_"
-                    st.session_state["chat_mensagens"].append(
-                        {"autor": "ia", "texto": texto_resposta}
-                    )
-                else:
-                    st.session_state["chat_mensagens"].append(
-                        {
-                            "autor": "ia",
-                            "texto": (
-                                "Não foi possível responder: "
-                                + (
-                                    resposta.erro
-                                    or "o servidor não retornou uma resposta válida."
-                                )
-                            ),
-                            "erro": True,
-                        }
-                    )
                 st.rerun()

@@ -1076,6 +1076,7 @@ def consultar_assistente_ia_api(
     conversation_id: Optional[str] = None,
     historico_mensagens: Optional[list[dict[str, str]]] = None,
     arquivos: Optional[list[tuple[str, bytes, str]]] = None,
+    context_cache_id: Optional[str] = None,
 ) -> RespostaAPI:
     """Envia uma pergunta ao assistente com contexto autorizado e histórico recente."""
     payload: dict[str, Any] = {
@@ -1084,6 +1085,8 @@ def consultar_assistente_ia_api(
         "incluir_acompanhamentos": incluir_acompanhamentos,
         "historico_mensagens": historico_mensagens or [],
     }
+    if context_cache_id:
+        payload["context_cache_id"] = context_cache_id
     if conversation_id:
         payload["conversation_id"] = conversation_id
     if escola_id:
@@ -1123,6 +1126,73 @@ def consultar_assistente_ia_api(
         json_body=payload,
         timeout=timeout,
     )
+
+
+def consultar_assistente_ia_stream_api(
+    *,
+    payload: dict[str, Any],
+    arquivos: Optional[list[tuple[str, bytes, str]]] = None,
+):
+    """Conecta ao SSE do backend e produz fragmentos para `st.write_stream`."""
+    token = obter_token_sessao()
+    if not token:
+        return
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "text/event-stream",
+    }
+    if arquivos:
+        url = f"{API_BASE_URL}/assistente/consultar-arquivos-stream"
+        arquivos_form = [
+            ("arquivos", (nome, conteudo, mime))
+            for nome, conteudo, mime in arquivos
+        ]
+        data_form = {"dados_json": json.dumps(payload, ensure_ascii=False)}
+        stream_kwargs: dict[str, Any] = {"data": data_form, "files": arquivos_form}
+    else:
+        url = f"{API_BASE_URL}/assistente/consultar-stream"
+        stream_kwargs = {"json": payload}
+
+    try:
+        with httpx.stream(
+            "POST",
+            url,
+            headers=headers,
+            timeout=_timeout_resposta_assistente(),
+            trust_env=False,
+            **stream_kwargs,
+        ) as resposta:
+            try:
+                resposta.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise RuntimeError(
+                    "O servidor não conseguiu iniciar a resposta do assistente."
+                ) from exc
+            finalizado = False
+            for linha in resposta.iter_lines():
+                if not linha.startswith("data:"):
+                    continue
+                dados = linha[5:].strip()
+                if dados == "[DONE]":
+                    finalizado = True
+                    break
+                try:
+                    evento = json.loads(dados)
+                except ValueError:
+                    continue
+                if evento.get("erro"):
+                    raise RuntimeError(evento["erro"])
+                fragmento = evento.get("conteudo")
+                if isinstance(fragmento, str):
+                    yield fragmento
+            if not finalizado:
+                raise RuntimeError(
+                    "A conexão com o assistente foi encerrada antes de concluir a resposta."
+                )
+    except httpx.TimeoutException as exc:
+        raise RuntimeError("O tempo limite do Ollama foi excedido.") from exc
+    except httpx.RequestError as exc:
+        raise RuntimeError("Não foi possível conectar ao assistente local.") from exc
 
 
 # ==============================================================================

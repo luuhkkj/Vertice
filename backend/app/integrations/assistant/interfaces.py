@@ -26,6 +26,13 @@ class ProvedorLLMBase(ABC):
     ) -> RespostaAssistenteLLM:
         """Gera uma resposta a partir do contexto estruturado autorizado."""
 
+    def gerar_resposta_stream(
+        self,
+        requisicao: RequisicaoAssistenteLLM,
+    ):
+        """Opcional: gera fragmentos de texto progressivamente."""
+        yield from ()
+
 
 class ProvedorLLMNaoConfigurado(ProvedorLLMBase):
     """Estado explícito quando nenhum provedor local foi configurado."""

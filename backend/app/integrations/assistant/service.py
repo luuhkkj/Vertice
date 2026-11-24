@@ -9,6 +9,10 @@ Garante:
 """
 
 from datetime import datetime, timezone
+import json
+import secrets
+import threading
+import time
 from typing import Any, Optional
 import uuid
 
@@ -105,6 +109,215 @@ def _filtros_estruturais(solicitacao: SolicitacaoContextoAssistente) -> dict[str
 
 class AssistenteContextoService:
     """Orquestra autorização, auditoria e montagem de contexto estruturado para IA."""
+
+    _cache_contextos: dict[str, dict[str, Any]] = {}
+    _cache_lock = threading.RLock()
+
+    @staticmethod
+    def _criar_provedor_para_stream() -> ProvedorLLMBase:
+        return _criar_provedor_llm_padrao()
+
+    @staticmethod
+    def _fingerprint_contexto(
+        usuario: Usuario,
+        solicitacao: SolicitacaoContextoAssistente,
+    ) -> str:
+        dados = _filtros_estruturais(solicitacao)
+        dados["usuario_id"] = str(usuario.id)
+        dados.pop("conversation_id", None)
+        return json.dumps(dados, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+    @staticmethod
+    def _obter_contexto_em_cache(
+        usuario: Usuario,
+        solicitacao: SolicitacaoContextoAssistente,
+        db: Session,
+    ) -> Optional[ContextoAssistenteEstruturado]:
+        cache_id = solicitacao.context_cache_id
+        if not cache_id:
+            return None
+        now = time.monotonic()
+        with AssistenteContextoService._cache_lock:
+            entrada = AssistenteContextoService._cache_contextos.get(cache_id)
+            if not entrada:
+                return None
+            if entrada["expira_em"] <= now:
+                AssistenteContextoService._cache_contextos.pop(cache_id, None)
+                return None
+            if entrada["usuario_id"] != str(usuario.id):
+                return None
+            if (
+                entrada.get("conversation_id")
+                and solicitacao.conversation_id
+                and entrada["conversation_id"] != str(solicitacao.conversation_id)
+            ):
+                return None
+            if entrada["fingerprint"] != AssistenteContextoService._fingerprint_contexto(
+                usuario, solicitacao
+            ):
+                return None
+
+        if usuario.papel not in {PapelUsuario.GESTOR, PapelUsuario.PROFESSOR}:
+            AssistenteContextoService._cache_contextos.pop(cache_id, None)
+            return None
+
+        try:
+            escola_obj, turma_obj, estudante_obj = (
+                AssistenteContextoService._resolver_fks_existentes(db, solicitacao)
+            )
+            escola_efetiva = solicitacao.escola_id
+            turma_efetiva = solicitacao.turma_id
+            if solicitacao.tipo_contexto == TipoContextoAssistente.TURMA:
+                if turma_obj is None:
+                    raise HTTPException(status.HTTP_404_NOT_FOUND, "Turma solicitada não encontrada.")
+                escola_efetiva = solicitacao.escola_id or turma_obj.escola_id
+            if solicitacao.tipo_contexto == TipoContextoAssistente.INDIVIDUAL:
+                if estudante_obj is None:
+                    raise HTTPException(status.HTTP_404_NOT_FOUND, "Estudante solicitado não encontrado.")
+                escola_efetiva = solicitacao.escola_id or estudante_obj.escola_id
+                EstudanteService.obter_estudante_com_historico(
+                    db=db,
+                    estudante_id=solicitacao.estudante_id,
+                    usuario_solicitante=usuario,
+                )
+            IndicadoresRepository.validar_filtros_escopo(
+                db=db,
+                usuario=usuario,
+                escola_id=escola_efetiva,
+                turma_id=turma_efetiva,
+                disciplina_id=solicitacao.disciplina_id,
+            )
+        except HTTPException:
+            AssistenteContextoService._cache_contextos.pop(cache_id, None)
+            raise
+
+        entrada["ultimo_acesso"] = now
+        return entrada["contexto"].model_copy(deep=True)
+
+    @staticmethod
+    def _armazenar_contexto_em_cache(
+        usuario: Usuario,
+        solicitacao: SolicitacaoContextoAssistente,
+        contexto: ContextoAssistenteEstruturado,
+    ) -> ContextoAssistenteEstruturado:
+        cache_id = secrets.token_urlsafe(32)
+        ttl = settings.ASSISTENTE_CONTEXTO_CACHE_TTL_SEGUNDOS
+        with AssistenteContextoService._cache_lock:
+            expirados = [
+                chave
+                for chave, entrada in AssistenteContextoService._cache_contextos.items()
+                if entrada["expira_em"] <= time.monotonic()
+            ]
+            for chave in expirados:
+                AssistenteContextoService._cache_contextos.pop(chave, None)
+            limite = settings.ASSISTENTE_CONTEXTO_CACHE_MAX_ITENS
+            while len(AssistenteContextoService._cache_contextos) >= limite:
+                chave_antiga = min(
+                    AssistenteContextoService._cache_contextos,
+                    key=lambda chave: AssistenteContextoService._cache_contextos[chave]["ultimo_acesso"],
+                )
+                AssistenteContextoService._cache_contextos.pop(chave_antiga, None)
+            AssistenteContextoService._cache_contextos[cache_id] = {
+                "usuario_id": str(usuario.id),
+                "conversation_id": (
+                    str(solicitacao.conversation_id)
+                    if solicitacao.conversation_id
+                    else None
+                ),
+                "fingerprint": AssistenteContextoService._fingerprint_contexto(usuario, solicitacao),
+                "expira_em": time.monotonic() + ttl,
+                "ultimo_acesso": time.monotonic(),
+                "contexto": contexto,
+            }
+        metadados = contexto.metadados.model_copy(update={"context_cache_id": cache_id})
+        return contexto.model_copy(update={"metadados": metadados})
+
+    @classmethod
+    def invalidar_cache(
+        cls,
+        *,
+        usuario_id: Optional[uuid.UUID | str] = None,
+        escola_id: Optional[uuid.UUID | str] = None,
+        turma_id: Optional[uuid.UUID | str] = None,
+        estudante_id: Optional[uuid.UUID | str] = None,
+        cache_id: Optional[str] = None,
+    ) -> int:
+        """Invalida seletivamente entradas do cache de contexto pedagógico."""
+        removidos = 0
+        with cls._cache_lock:
+            chaves = list(cls._cache_contextos.keys())
+            for chave in chaves:
+                entrada = cls._cache_contextos.get(chave)
+                if not entrada:
+                    continue
+                remover = False
+                if cache_id and chave == cache_id:
+                    remover = True
+                if usuario_id and entrada.get("usuario_id") == str(usuario_id):
+                    remover = True
+                ctx = entrada.get("contexto")
+                if ctx and hasattr(ctx, "metadados"):
+                    if escola_id and str(ctx.metadados.escola_id) == str(escola_id):
+                        remover = True
+                    if turma_id and str(ctx.metadados.turma_id) == str(turma_id):
+                        remover = True
+                    if estudante_id and str(ctx.metadados.estudante_id) == str(estudante_id):
+                        remover = True
+                if remover:
+                    cls._cache_contextos.pop(chave, None)
+                    removidos += 1
+        return removidos
+
+    @classmethod
+    def limpar_cache_completo(cls) -> None:
+        """Limpa integralmente o cache em memória (manutenção e testes)."""
+        with cls._cache_lock:
+            cls._cache_contextos.clear()
+
+    @classmethod
+    def obter_ou_construir_contexto_autorizado(
+        cls,
+        *,
+        db: Session,
+        solicitacao: SolicitacaoContextoAssistente,
+        usuario: Usuario,
+        motivo_reuso: str = "Consulta autorizada reutilizando contexto preparado e revalidado.",
+    ) -> tuple[ContextoAssistenteEstruturado, bool]:
+        """Recupera contexto em cache revalidado ou constrói novo contexto auditado."""
+        contexto = cls._obter_contexto_em_cache(
+            usuario=usuario,
+            solicitacao=solicitacao,
+            db=db,
+        )
+        if contexto is not None:
+            request_id = uuid.uuid4()
+            auditoria = cls._registrar_auditoria(
+                db=db,
+                usuario=usuario,
+                solicitacao=solicitacao,
+                resultado=ResultadoAutorizacaoIA.AUTORIZADO,
+                motivo=motivo_reuso,
+                request_id=request_id,
+                escola_fk_segura=contexto.metadados.escola_id,
+                turma_fk_segura=contexto.metadados.turma_id,
+                estudante_fk_segura=contexto.metadados.estudante_id,
+                fontes=contexto.metadados.fontes_utilizadas,
+            )
+            metadados = contexto.metadados.model_copy(
+                update={
+                    "auditoria_id": auditoria.id,
+                    "request_id": request_id,
+                    "gerado_em": datetime.now(timezone.utc),
+                }
+            )
+            return contexto.model_copy(update={"metadados": metadados}), True
+
+        novo_contexto = cls.construir_contexto_autorizado(
+            db=db,
+            solicitacao=solicitacao,
+            usuario=usuario,
+        )
+        return novo_contexto, False
 
     @staticmethod
     def obter_status(
@@ -582,7 +795,7 @@ class AssistenteContextoService:
             fontes_utilizadas=fontes_utilizadas,
         )
 
-        return ContextoAssistenteEstruturado(
+        contexto = ContextoAssistenteEstruturado(
             metadados=metadados,
             escopo_pedagogico=escopo_pedagogico,
             indicadores_gerais=ind_gerais,
@@ -593,6 +806,11 @@ class AssistenteContextoService:
             previsoes_estudante=previsoes_est,
             acompanhamentos_recentes=acompanhamentos,
             diretrizes_interpretacao=DIRETRIZES_INTERPRETACAO_PADRAO,
+        )
+        return AssistenteContextoService._armazenar_contexto_em_cache(
+            usuario=usuario,
+            solicitacao=solicitacao,
+            contexto=contexto,
         )
 
     @staticmethod
@@ -609,7 +827,7 @@ class AssistenteContextoService:
         Prepara contexto auditado e delega para `ProvedorLLMBase`.
         O provedor padrão usa Ollama local quando configurado; sem ele, falha explicitamente (503).
         """
-        contexto = AssistenteContextoService.construir_contexto_autorizado(
+        contexto, _ = AssistenteContextoService.obter_ou_construir_contexto_autorizado(
             db=db,
             solicitacao=solicitacao,
             usuario=usuario,

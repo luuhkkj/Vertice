@@ -259,3 +259,161 @@ def test_ollama_indisponivel_retorna_erro_explicito(monkeypatch) -> None:
         assert "Ollama local" in exc.detail
     else:
         raise AssertionError("A indisponibilidade do Ollama deve ser comunicada.")
+
+
+def test_selecao_indicadores_sinonimos_e_visao_geral() -> None:
+    contexto_base = {
+        "indicadores_gerais": {"frequencia_media": 92.0},
+        "indicadores_avaliacoes": {"media_geral": 7.8},
+        "indicadores_participacao": {
+            "taxa_entrega_geral_percentual": 85.0,
+            "taxa_por_atividade": [{"titulo": "Lição 1", "taxa": 85.0}],
+        },
+        "resumo_previsoes_risco": {"risco_alto": 2},
+    }
+
+    # Sinônimos de notas / boletim
+    ctx_notas = ProvedorLLMOllama._compactar_contexto_para_modelo(
+        dict(contexto_base), "ESCOLA", "Como estão as notas do boletim?"
+    )
+    assert "indicadores_avaliacoes" in ctx_notas
+    assert "indicadores_gerais" not in ctx_notas
+
+    # Sinônimos de atividades / tarefas
+    ctx_ativ = ProvedorLLMOllama._compactar_contexto_para_modelo(
+        dict(contexto_base), "ESCOLA", "Quais tarefas e atividades têm pendências de entrega?"
+    )
+    assert "indicadores_participacao" in ctx_ativ
+    assert "taxa_por_atividade" in ctx_ativ["indicadores_participacao"]
+    assert "indicadores_avaliacoes" not in ctx_ativ
+
+    # Sinônimos de evasão / abandono
+    ctx_risco = ProvedorLLMOllama._compactar_contexto_para_modelo(
+        dict(contexto_base), "ESCOLA", "Existe risco de evasão ou abandono?"
+    )
+    assert "resumo_previsoes_risco" in ctx_risco
+    assert "indicadores_gerais" not in ctx_risco
+
+    # Pergunta de panorama / visão geral mantém todos
+    ctx_geral = ProvedorLLMOllama._compactar_contexto_para_modelo(
+        dict(contexto_base), "ESCOLA", "Faça um panorama e visão geral da escola"
+    )
+    assert "indicadores_gerais" in ctx_geral
+    assert "indicadores_avaliacoes" in ctx_geral
+    assert "indicadores_participacao" in ctx_geral
+    assert "resumo_previsoes_risco" in ctx_geral
+
+
+def test_ollama_stream_yields_fragmentos(monkeypatch) -> None:
+    requisicao = RequisicaoAssistenteLLM.model_construct(
+        pergunta_usuario="Qual é o panorama?",
+        contexto=_ContextoFake(),
+        historico_mensagens=[],
+        documentos_anexados=[],
+    )
+
+    class _StreamFake:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def raise_for_status(self):
+            return None
+
+        def iter_lines(self):
+            linhas = [
+                json.dumps({"message": {"content": "Olá, "}}),
+                json.dumps({"message": {"content": "tudo bem?"}}),
+                json.dumps({
+                    "done": True,
+                    "total_duration": 500000000,
+                    "load_duration": 50000000,
+                    "prompt_eval_count": 10,
+                    "eval_count": 5,
+                }),
+            ]
+            for linha in linhas:
+                yield linha
+
+    class _ClienteStreamFake:
+        def __init__(self, *, timeout: int, trust_env: bool) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def stream(self, *args, **kwargs):
+            return _StreamFake()
+
+    monkeypatch.setattr(
+        "app.integrations.assistant.ollama.httpx.Client",
+        _ClienteStreamFake,
+    )
+    provedor = ProvedorLLMOllama(
+        base_url="http://localhost:11434",
+        modelo="qwen2.5:3b",
+    )
+    fragmentos = list(provedor.gerar_resposta_stream(requisicao))
+    assert fragmentos == ["Olá, ", "tudo bem?"]
+
+
+def test_cache_contexto_armazenamento_isolamento_e_invalidacao() -> None:
+    from app.integrations.assistant.service import AssistenteContextoService
+    from app.modules.auth.models import Usuario, PapelUsuario
+    from app.integrations.assistant.schemas import SolicitacaoContextoAssistente, TipoContextoAssistente
+
+    AssistenteContextoService.limpar_cache_completo()
+
+    user_a = Usuario(id=uuid.uuid4(), email="prof_a@escola.br", papel=PapelUsuario.PROFESSOR)
+    user_b = Usuario(id=uuid.uuid4(), email="prof_b@escola.br", papel=PapelUsuario.PROFESSOR)
+    conv_id = uuid.uuid4()
+
+    solicitacao = SolicitacaoContextoAssistente(
+        tipo_contexto=TipoContextoAssistente.ESCOLA,
+        conversation_id=conv_id,
+    )
+    contexto_mock = _ContextoFake()
+
+    # Armazena
+    ctx_armazenado = AssistenteContextoService._armazenar_contexto_em_cache(
+        usuario=user_a,
+        solicitacao=solicitacao,
+        contexto=contexto_mock,
+    )
+    cache_id = ctx_armazenado.metadados.context_cache_id
+    assert cache_id is not None
+
+    # Consulta por outro usuário é rejeitada (isolamento)
+    solic_outro_user = SolicitacaoContextoAssistente(
+        tipo_contexto=TipoContextoAssistente.ESCOLA,
+        conversation_id=conv_id,
+        context_cache_id=cache_id,
+    )
+    assert AssistenteContextoService._obter_contexto_em_cache(
+        usuario=user_b,
+        solicitacao=solic_outro_user,
+        db=None,
+    ) is None
+
+    # Consulta com conversation_id diferente é rejeitada
+    solic_outra_conv = SolicitacaoContextoAssistente(
+        tipo_contexto=TipoContextoAssistente.ESCOLA,
+        conversation_id=uuid.uuid4(),
+        context_cache_id=cache_id,
+    )
+    assert AssistenteContextoService._obter_contexto_em_cache(
+        usuario=user_a,
+        solicitacao=solic_outra_conv,
+        db=None,
+    ) is None
+
+    # Invalidação seletiva por usuário
+    removidos = AssistenteContextoService.invalidar_cache(usuario_id=user_a.id)
+    assert removidos == 1
+    assert len(AssistenteContextoService._cache_contextos) == 0
+

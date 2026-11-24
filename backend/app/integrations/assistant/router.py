@@ -15,6 +15,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
 from pydantic import Field, ValidationError
 from sqlalchemy.orm import Session
 
@@ -97,6 +98,136 @@ def consultar_assistente_llm(
         usuario=current_user,
         historico_mensagens=dados.historico_mensagens,
     )
+
+
+@router.post(
+    "/consultar-stream",
+    summary="Responder progressivamente com contexto autorizado usando Ollama local",
+)
+def consultar_assistente_llm_stream(
+    dados: ConsultaAssistentePromptRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+) -> StreamingResponse:
+    provedor = AssistenteContextoService._criar_provedor_para_stream()
+    contexto, _ = AssistenteContextoService.obter_ou_construir_contexto_autorizado(
+        db=db,
+        solicitacao=dados,
+        usuario=current_user,
+    )
+
+    from app.integrations.assistant.schemas import RequisicaoAssistenteLLM
+
+    requisicao = RequisicaoAssistenteLLM(
+        pergunta_usuario=dados.pergunta_usuario,
+        contexto=contexto,
+        historico_mensagens=dados.historico_mensagens,
+        documentos_anexados=[],
+    )
+
+    def eventos():
+        import json
+
+        try:
+            for fragmento in provedor.gerar_resposta_stream(requisicao):
+                if isinstance(fragmento, str):
+                    yield f"data: {json.dumps({'conteudo': fragmento}, ensure_ascii=False)}\n\n"
+                elif isinstance(fragmento, dict):
+                    yield f"data: {json.dumps(fragmento, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except HTTPException as exc:
+            yield f"data: {json.dumps({'erro': exc.detail}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'erro': f'Erro na resposta do assistente: {type(exc).__name__}'}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(eventos(), media_type="text/event-stream")
+
+
+@router.post(
+    "/consultar-arquivos-stream",
+    summary="Responder progressivamente com contexto autorizado e arquivos de texto",
+)
+def consultar_assistente_arquivos_stream(
+    dados_json: str = Form(...),
+    arquivos: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user),
+) -> StreamingResponse:
+    try:
+        dados = ConsultaAssistentePromptRequest.model_validate_json(dados_json)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Os dados da consulta enviados junto aos arquivos são inválidos.",
+        ) from exc
+
+    if not arquivos or len(arquivos) > MAX_ARQUIVOS_ASSISTENTE:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Envie de 1 a {MAX_ARQUIVOS_ASSISTENTE} arquivos por consulta.",
+        )
+
+    entradas: list[tuple[str, bytes]] = []
+    total_bytes = 0
+    try:
+        for arquivo in arquivos:
+            conteudo = arquivo.file.read(MAX_BYTES_ARQUIVO_ASSISTENTE + 1)
+            if len(conteudo) > MAX_BYTES_ARQUIVO_ASSISTENTE:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=(
+                        f"O arquivo {arquivo.filename or 'enviado'} "
+                        "excede o limite de 5 MB."
+                    ),
+                )
+            total_bytes += len(conteudo)
+            if total_bytes > MAX_BYTES_TOTAL_ASSISTENTE:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="O tamanho total dos anexos excede 10 MB.",
+                )
+            entradas.append((arquivo.filename or "", conteudo))
+    finally:
+        for arquivo in arquivos:
+            arquivo.file.close()
+
+    documentos = extrair_documentos_assistente(entradas)
+    provedor = AssistenteContextoService._criar_provedor_para_stream()
+    contexto, _ = AssistenteContextoService.obter_ou_construir_contexto_autorizado(
+        db=db,
+        solicitacao=dados,
+        usuario=current_user,
+    )
+
+    from app.integrations.assistant.schemas import RequisicaoAssistenteLLM
+
+    requisicao = RequisicaoAssistenteLLM(
+        pergunta_usuario=dados.pergunta_usuario,
+        contexto=contexto,
+        historico_mensagens=dados.historico_mensagens,
+        documentos_anexados=documentos,
+    )
+
+    def eventos():
+        import json
+
+        try:
+            for fragmento in provedor.gerar_resposta_stream(requisicao):
+                if isinstance(fragmento, str):
+                    yield f"data: {json.dumps({'conteudo': fragmento}, ensure_ascii=False)}\n\n"
+                elif isinstance(fragmento, dict):
+                    yield f"data: {json.dumps(fragmento, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except HTTPException as exc:
+            yield f"data: {json.dumps({'erro': exc.detail}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'erro': f'Erro na resposta do assistente: {type(exc).__name__}'}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(eventos(), media_type="text/event-stream")
 
 
 @router.post(

@@ -39,6 +39,7 @@ class SolicitacaoContextoAssistente(BaseModel):
     modelo_versao: Optional[str] = Field(default=None, max_length=50)
     incluir_acompanhamentos: bool = True
     conversation_id: Optional[uuid.UUID] = None
+    context_cache_id: Optional[str] = Field(default=None, max_length=128)
 
     @model_validator(mode="after")
     def _validar_alvo_por_tipo(self) -> "SolicitacaoContextoAssistente":
@@ -75,6 +76,7 @@ class MetadadosContextoAssistente(BaseModel):
     anonimizacao_ativa: bool = True
     garantias_privacidade: list[str]
     fontes_utilizadas: list[str]
+    context_cache_id: Optional[str] = None
 
 
 class ContextoAssistenteEstruturado(BaseModel):

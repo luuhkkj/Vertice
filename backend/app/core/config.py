@@ -101,6 +101,8 @@ class Settings(BaseSettings):
     ASSISTENTE_OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
     ASSISTENTE_OLLAMA_MODELO: str = ""
     ASSISTENTE_OLLAMA_TIMEOUT_SEGUNDOS: int = Field(default=120, ge=1, le=600)
+    ASSISTENTE_CONTEXTO_CACHE_TTL_SEGUNDOS: int = Field(default=120, ge=10, le=900)
+    ASSISTENTE_CONTEXTO_CACHE_MAX_ITENS: int = Field(default=64, ge=1, le=1000)
 
     @model_validator(mode="after")
     def validar_seguranca_configuracoes(self) -> "Settings":

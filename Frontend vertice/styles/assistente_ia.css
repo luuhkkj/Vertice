@@ -1,17 +1,20 @@
 /* Card principal do assistente */
 
 .st-key-assistente_card {
-    margin-top: 1rem;
+    width: calc(100% - 2rem);
+    max-width: 1375px;
+    margin: 1rem auto 0;
     overflow: hidden;
     background: #f8fafc;
     border: 1px solid #232020;
     border-radius: 16px;
+    box-sizing: border-box;
 }
 
 /* Cabeçalho */
 
 .st-key-assistente_cabecalho {
-    min-height: 3.75rem;
+    min-height: 5rem;
     display: flex;
     align-items: center;
     padding: 0 1.8rem;
@@ -27,36 +30,48 @@
 }
 
 .assistente-header-icone {
-    width: 1.65rem;
-    height: 1.65rem;
-    flex: 0 0 1.65rem;
+    width: 2.875rem;
+    height: 2.875rem;
+    min-width: 2.875rem;
+    min-height: 2.875rem;
+    aspect-ratio: 1 / 1;
+    flex: 0 0 2.875rem;
     display: flex;
     align-items: center;
     justify-content: center;
     margin: 0;
     padding: 0;
     line-height: 0;
+    overflow: hidden;
+    border-radius: 50%;
+    background: #334d8d;
 }
 
 .assistente-header-icone img {
-    width: 1.5rem;
-    height: 1.5rem;
+    width: 1.65rem;
+    height: 1.65rem;
     display: block;
     margin: 0;
     padding: 0;
     object-fit: contain;
+    filter: brightness(0) invert(1);
 }
 
 .assistente-header-titulo {
-    height: 1.65rem;
     display: flex;
     align-items: center;
     margin: 0;
     padding: 0;
     color: #232020;
-    font-size: 0.95rem;
+    font-size: 1.125rem;
     font-weight: 700;
     line-height: 1;
+}
+
+.assistente-header-sub {
+    color: #64748b;
+    font-size: 0.8125rem;
+    line-height: 1.4;
 }
 
 .st-key-assistente_cabecalho
@@ -70,6 +85,10 @@
 
 .st-key-assistente_mensagens {
     min-height: 19rem;
+    max-height: 30rem;
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
     padding: 1.4rem 1.55rem !important;
     background: #f8fafc;
 }
@@ -88,26 +107,32 @@
 [class*="st-key-chat_usuario_"] {
     width: 100%;
     min-height: 2.8rem;
+    height: auto !important;
+    max-height: none;
     box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    padding: 0.65rem 0.9rem;
+    display: block !important;
+    padding: 0.7rem 0.9rem !important;
     background: #fff;
     border: 1px solid #232020;
     border-radius: 16px;
+    overflow: visible !important;
 }
 
 [class*="st-key-chat_assistente_"] [data-testid="stMarkdownContainer"],
 [class*="st-key-chat_usuario_"] [data-testid="stMarkdownContainer"] {
     width: 100%;
+    height: auto !important;
+    overflow: visible !important;
 }
 
 [class*="st-key-chat_assistente_"] p,
 [class*="st-key-chat_usuario_"] p {
     margin: 0 !important;
     color: #232020 !important;
-    font-size: 0.78rem !important;
-    line-height: 1.2rem !important;
+    font-size: 0.875rem !important;
+    line-height: 1.5 !important;
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere !important;
 }
 
 /* Linha de envio */
@@ -117,195 +142,157 @@
     box-sizing: border-box;
     display: flex;
     align-items: center;
-    padding: 0 1.7rem;
+    padding: 0.65rem 1.7rem;
     background: #f8fafc;
     border-top: 1px solid #232020;
 }
 
-.st-key-assistente_rodape
-[data-testid="stForm"] {
-    width: 100%;
-    margin: 0 !important;
-    padding: 0 !important;
-    border: none !important;
-    background: transparent !important;
-}
-
-.st-key-assistente_rodape
-[data-testid="stForm"] [data-testid="stHorizontalBlock"] {
+.st-key-assistente_rodape [data-testid="stHorizontalBlock"] {
     width: 100%;
     display: flex !important;
     align-items: center !important;
     gap: 0.75rem !important;
 }
 
-.st-key-assistente_rodape
-[data-testid="stForm"] [data-testid="stColumn"] {
+.st-key-assistente_rodape [data-testid="stColumn"] {
     padding: 0 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
 }
 
-.st-key-assistente_rodape
-[data-testid="stForm"] [data-testid="stElementContainer"] {
+.st-key-assistente_rodape [data-testid="stElementContainer"] {
     width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
 }
 
-.assistente-envio {
-    width: 2.7rem;
-    height: 2.7rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0;
-    padding: 0;
-    line-height: 0;
-}
-
-.assistente-envio img {
-    width: 1.45rem;
-    height: 1.45rem;
-    display: block;
-    margin: 0;
-    padding: 0;
-    object-fit: contain;
-    filter: brightness(0) saturate(100%) invert(28%) sepia(28%) saturate(1800%)
-        hue-rotate(183deg) brightness(87%) contrast(90%);
-}
-
-/* Campo de mensagem */
-
-.st-key-assistente_rodape
-[data-testid="stTextInput"] {
-    width: 100%;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-/* O raio fica no wrapper do BaseWeb para continuar redondo durante o foco. */
-.st-key-assistente_rodape
-[data-testid="stTextInputRootElement"] {
-    width: 100% !important;
-    height: 2.7rem !important;
-    min-height: 2.7rem !important;
-    box-sizing: border-box !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    overflow: hidden !important;
-    background: #fff !important;
-    border: 1px solid #d5d9e1 !important;
-    border-radius: 999px !important;
-    outline: none !important;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
-}
-
-.st-key-assistente_rodape
-[data-testid="stTextInputRootElement"]:focus,
-.st-key-assistente_rodape
-[data-testid="stTextInputRootElement"]:focus-within,
-.st-key-assistente_rodape
-[data-testid="stTextInputRootElement"][data-focus="true"] {
-    background: #fff !important;
-    border: 1px solid #4e67ca !important;
-    border-radius: 999px !important;
-    outline: none !important;
-    box-shadow: 0 0 0 1px rgba(78, 103, 202, 0.2) !important;
-}
-
-.st-key-assistente_rodape
-[data-testid="stTextInput"] input {
-    width: 100% !important;
-    height: 2.7rem !important;
-    min-height: 2.7rem !important;
-    box-sizing: border-box !important;
-    margin: 0 !important;
-    padding: 0 1rem !important;
-    background: transparent !important;
-    border: none !important;
-    border-radius: 999px !important;
-    outline: none !important;
-    box-shadow: none !important;
-    color: #232020 !important;
-    font-size: 0.75rem !important;
-    line-height: normal !important;
-    -webkit-text-fill-color: #232020 !important;
-    caret-color: #232020 !important;
-}
-
-.st-key-assistente_rodape
-[data-testid="stTextInput"] input:focus,
-.st-key-assistente_rodape
-[data-testid="stTextInput"] input:active,
-.st-key-assistente_rodape
-[data-testid="stTextInput"] input:focus-visible {
-    background: transparent !important;
-    border: none !important;
-    outline: none !important;
-    box-shadow: none !important;
-}
-
-.st-key-assistente_rodape
-[data-testid="stTextInput"] [aria-invalid="true"] {
-    outline: none !important;
-    box-shadow: none !important;
-}
-
-.st-key-assistente_rodape
-[data-testid="stTextInput"] input::placeholder {
-    color: #7b8491 !important;
-    opacity: 1;
-}
-
-.st-key-assistente_rodape
-[data-testid="stTextInput"] input:disabled {
-    -webkit-text-fill-color: #5f5b57 !important;
-    opacity: 1 !important;
-}
-
+/* Botão de anexar */
 .st-key-assistente_rodape [data-testid="stPopoverButton"] {
     width: 100% !important;
-    min-height: 2.7rem !important;
+    height: 2.8rem !important;
+    min-height: 2.8rem !important;
+    max-height: 2.8rem !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     color: #232020 !important;
     background: #ffffff !important;
     border: 1px solid #d5d9e1 !important;
     border-radius: 12px !important;
     box-shadow: none !important;
+    box-sizing: border-box !important;
 }
 
-.st-key-assistente_rodape
-[data-testid="InputInstructions"] {
-    display: none !important;
+.st-key-assistente_rodape [data-testid="stPopoverButton"]:hover {
+    border-color: #334d8d !important;
 }
 
-/* Botão de envio */
-
-.st-key-assistente_rodape
-[data-testid="stFormSubmitButton"] {
-    width: 100%;
+/* Chat Input */
+.st-key-assistente_rodape .stChatInput {
+    width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
 }
 
-.st-key-assistente_rodape
-[data-testid="stFormSubmitButton"] button {
+.st-key-assistente_rodape [data-testid="stChatInput"] {
     width: 100% !important;
-    height: 2.7rem !important;
-    min-height: 2.7rem !important;
-    max-height: 2.7rem !important;
+    min-height: 2.8rem !important;
+    background: #ffffff !important;
+    border: 1px solid #d5d9e1 !important;
+    border-radius: 999px !important;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
     box-sizing: border-box !important;
+    padding: 0 0.5rem 0 1rem !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+.st-key-assistente_rodape [data-testid="stChatInput"]:focus-within {
+    border-color: #4e67ca !important;
+    box-shadow: 0 0 0 1px rgba(78, 103, 202, 0.2) !important;
+}
+
+.st-key-assistente_rodape [data-testid="stChatInputTextArea"] {
+    min-height: 2.4rem !important;
+    max-height: 7.5rem !important;
+    height: auto !important;
+    padding: 0.5rem 0.5rem 0.5rem 0 !important;
+    font-size: 0.85rem !important;
+    color: #232020 !important;
+    line-height: 1.4 !important;
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    resize: none !important;
+    overflow-y: auto !important;
+}
+
+.st-key-assistente_rodape [data-testid="stChatInputTextArea"]::placeholder {
+    color: #7b8491 !important;
+    opacity: 1;
+}
+
+.st-key-assistente_rodape [data-testid="stChatInputSubmitButton"] {
+    background: #334d8d !important;
+    color: #ffffff !important;
+    border: 1px solid #334d8d !important;
+    border-radius: 50% !important;
+    width: 2.2rem !important;
+    height: 2.2rem !important;
+    min-height: 2.2rem !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    margin: 0 !important;
-    padding: 0 0.85rem !important;
-    background: #334d8d !important;
-    border: 1px solid #334d8d !important;
-    border-radius: 10px !important;
-    outline: none !important;
+    margin: auto 0 !important;
+    align-self: center !important;
     box-shadow: none !important;
+    cursor: pointer !important;
+}
+
+.st-key-assistente_rodape [data-testid="stChatInputSubmitButton"]:disabled {
+    background: #a0aec0 !important;
+    border-color: #a0aec0 !important;
+    cursor: not-allowed !important;
+}
+
+/* Suporte complementar para formulários legados */
+.st-key-assistente_rodape [data-testid="stForm"] {
+    width: 100%;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+}
+
+.st-key-assistente_rodape [data-testid="stTextInputRootElement"] {
+    width: 100% !important;
+    height: 2.8rem !important;
+    min-height: 2.8rem !important;
+    border: 1px solid #d5d9e1 !important;
+    border-radius: 999px !important;
+    background: #fff !important;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1) !important;
+}
+
+.st-key-assistente_rodape [data-testid="stTextInput"] input {
+    height: 2.8rem !important;
+    padding: 0 1rem !important;
+    font-size: 0.85rem !important;
+    color: #232020 !important;
+    background: transparent !important;
+    border: 0 !important;
+}
+
+.st-key-assistente_rodape [data-testid="stFormSubmitButton"] button {
+    width: 100% !important;
+    max-width: 7.5rem !important;
+    height: 2.8rem !important;
+    background: #334d8d !important;
+    border-radius: 10px !important;
+    color: #fff !important;
+    font-weight: 600 !important;
 }
 
 .st-key-assistente_rodape
@@ -313,9 +300,40 @@
     margin: 0 !important;
     padding: 0 !important;
     color: #fff !important;
-    font-size: 0.72rem !important;
-    font-weight: 500 !important;
+    font-size: 0.9rem !important;
+    font-weight: 600 !important;
     line-height: 1 !important;
+}
+
+@media (max-width: 700px) {
+    .st-key-assistente_card {
+        width: calc(100% - 0.5rem);
+        margin-top: 0.5rem;
+    }
+
+    .st-key-assistente_cabecalho {
+        min-height: 4.5rem;
+        padding: 0 0.85rem;
+    }
+
+    .st-key-assistente_mensagens {
+        min-height: 14rem;
+        padding: 0.9rem 0.75rem !important;
+    }
+
+    .st-key-assistente_rodape {
+        padding: 0.65rem 0.75rem;
+    }
+
+    .st-key-assistente_rodape
+    [data-testid="stForm"] [data-testid="stHorizontalBlock"] {
+        gap: 0.5rem !important;
+    }
+
+    .st-key-assistente_rodape
+    [data-testid="stFormSubmitButton"] button {
+        min-width: 5.5rem !important;
+    }
 }
 
 .st-key-assistente_rodape input:focus-visible,
