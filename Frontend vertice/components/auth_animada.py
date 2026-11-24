@@ -1,11 +1,9 @@
-
 """Autenticação do Vértice com painéis deslizantes."""
 
 import base64
 from pathlib import Path
 
 import streamlit as st
-
 
 
 PASTA_ICONS = (
@@ -29,41 +27,47 @@ def _capelo_base64():
 
 
 def _estilos_pagina():
-    """Faz a autenticação ocupar toda a área principal."""
+    """Fixa a tela de autenticação nas 4 bordas da janela sem margens."""
 
     st.html(
         """
         <style>
-            div[data-testid="stMainBlockContainer"]:has(
-                .st-key-vertice_auth_tela
-            ),
-            div[data-testid="stAppViewBlockContainer"]:has(
-                .st-key-vertice_auth_tela
-            ),
-            .stMainBlockContainer:has(
-                .st-key-vertice_auth_tela
-            ) {
-                max-width: none !important;
-                width: 100% !important;
-                padding: 0 !important;
+            html:has(.st-key-vertice_auth_tela),
+            body:has(.st-key-vertice_auth_tela) {
                 margin: 0 !important;
-            }
-
-            .st-key-vertice_auth_tela {
-                width: 100% !important;
-                max-width: none !important;
                 padding: 0 !important;
-                margin: 0 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                overflow: hidden !important;
             }
 
-            .st-key-vertice_auth_tela
-            [data-testid="stVerticalBlock"] {
-                gap: 0 !important;
-            }
-
-            body:has(.st-key-vertice_auth_tela)
-            header[data-testid="stHeader"] {
+            body:has(.st-key-vertice_auth_tela) header[data-testid="stHeader"],
+            body:has(.st-key-vertice_auth_tela) [data-testid="stToolbar"],
+            body:has(.st-key-vertice_auth_tela) [data-testid="stDecoration"],
+            body:has(.st-key-vertice_auth_tela) [data-testid="stSidebar"] {
                 display: none !important;
+            }
+
+            .st-key-vertice_auth_tela,
+            .st-key-vertice_auth_tela > div,
+            .st-key-vertice_auth_tela [data-testid="stVerticalBlock"],
+            .st-key-vertice_auth_tela [data-testid="stElementContainer"],
+            .st-key-vertice_auth_tela [data-testid="stCustomComponentV2"],
+            .st-key-vertice_auth_tela [data-testid="stCustomComponentV2"] > * {
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                max-width: none !important;
+                max-height: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                gap: 0 !important;
+                z-index: 999 !important;
+                overflow: hidden !important;
             }
         </style>
         """
@@ -137,13 +141,38 @@ HTML = """
 
                 <label for="v-login-senha">Senha</label>
 
-                <input
-                    id="v-login-senha"
-                    type="password"
-                    placeholder="********"
-                    autocomplete="current-password"
-                    required
-                >
+                <div class="v-password-wrap">
+                    <input
+                        id="v-login-senha"
+                        type="password"
+                        placeholder="********"
+                        autocomplete="current-password"
+                        required
+                    >
+                    <button
+                        type="button"
+                        class="v-toggle-pass"
+                        id="v-toggle-senha"
+                        aria-label="Mostrar senha"
+                        title="Mostrar senha"
+                    >
+                        <svg
+                            id="v-icon-eye"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path class="v-eye-outline" d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"></path>
+                            <circle class="v-eye-pupil" cx="12" cy="12" r="3"></circle>
+                            <line class="v-eye-slash" x1="3" y1="3" x2="21" y2="21"></line>
+                        </svg>
+                    </button>
+                </div>
 
                 <p class="v-forgot">
                     O perfil de acesso é definido automaticamente pela sua conta institucional.
@@ -199,10 +228,14 @@ HTML = """
 
 CSS = """
 :host {
+    position: fixed;
+    inset: 0;
     display: block;
-    width: 100%;
+    width: 100vw;
+    height: 100vh;
     margin: 0;
     padding: 0;
+    overflow: hidden;
     font-family: Arial, Helvetica, sans-serif;
 }
 
@@ -211,10 +244,13 @@ CSS = """
 }
 
 .v-auth {
-    position: relative;
-    width: 100%;
-    height: 100dvh;
-    min-height: 620px;
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
     overflow: hidden;
     border-radius: 0;
     background: #f7f4ed;
@@ -459,6 +495,74 @@ CSS = """
     color: #8890a0;
 }
 
+/* Campo de senha com um único olho e transição suave */
+
+.v-password-wrap {
+    position: relative;
+    width: 100%;
+}
+
+.v-password-wrap input {
+    padding-right: 44px;
+}
+
+.v-password-wrap input::-ms-reveal,
+.v-password-wrap input::-ms-clear,
+.v-password-wrap input::-webkit-credentials-auto-fill-button,
+.v-password-wrap input::-webkit-contacts-auto-fill-button {
+    display: none !important;
+}
+
+.v-toggle-pass {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: #52607a;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px;
+    border-radius: 6px;
+    transition: color 180ms ease, background 180ms ease;
+}
+
+.v-toggle-pass:hover {
+    color: #24314e;
+    background: rgba(36, 49, 78, 0.08);
+}
+
+.v-toggle-pass .v-eye-pupil {
+    transform-origin: 12px 12px;
+    transform: scale(0.75);
+    opacity: 0.55;
+    transition:
+        transform 240ms cubic-bezier(.4, 0, .2, 1),
+        opacity 240ms ease;
+}
+
+.v-toggle-pass .v-eye-slash {
+    stroke-dasharray: 26;
+    stroke-dashoffset: 0;
+    opacity: 1;
+    transition:
+        stroke-dashoffset 260ms cubic-bezier(.4, 0, .2, 1),
+        opacity 200ms ease;
+}
+
+.v-toggle-pass.is-open .v-eye-pupil {
+    transform: scale(1);
+    opacity: 1;
+}
+
+.v-toggle-pass.is-open .v-eye-slash {
+    stroke-dashoffset: 26;
+    opacity: 0;
+}
+
 /* Recuperação de senha */
 
 .v-forgot {
@@ -467,13 +571,21 @@ CSS = """
     font-size: 13px;
 }
 
-/* Mensagens de validação */
+/* Mensagens de validação / erro de login */
 
 .v-error {
     min-height: 18px;
-    margin: 9px 0 0;
+    margin: 9px 0 4px;
     font-size: 13px;
-    color: #ffe7a9;
+    font-weight: 600;
+    color: #fff5f5;
+}
+
+.v-error:not(:empty) {
+    background: rgba(229, 57, 53, 0.28);
+    border: 1px solid rgba(255, 205, 210, 0.75);
+    padding: 9px 12px;
+    border-radius: 8px;
 }
 
 /* Botões principais */
@@ -513,12 +625,10 @@ button:focus-visible {
 @media (max-width: 800px) {
 
     .v-auth {
-        height: 850px;
-        min-height: 850px;
+        height: 100vh;
+        min-height: 100vh;
         border-radius: 0;
     }
-
-    /* O azul ocupa 58% e o creme 42%. */
 
     .v-cream {
         top: 0;
@@ -542,8 +652,6 @@ button:focus-visible {
             transform 750ms cubic-bezier(.76, 0, .24, 1);
     }
 
-    /* Animação vertical */
-
     .v-auth.is-register .v-cream {
         transform: translateY(138.095238%);
     }
@@ -551,8 +659,6 @@ button:focus-visible {
     .v-auth.is-register .v-blue {
         transform: translateY(-72.413793%);
     }
-
-    /* Formulários compactos */
 
     .v-form {
         padding: 24px 8%;
@@ -597,8 +703,6 @@ button:focus-visible {
     .v-forgot {
         margin: 12px 0;
     }
-
-    /* Boas-vindas */
 
     .v-welcome {
         padding: 20px 14px;
@@ -663,7 +767,9 @@ button:focus-visible {
     .v-cream,
     .v-blue,
     .v-welcome,
-    .v-form {
+    .v-form,
+    .v-toggle-pass .v-eye-pupil,
+    .v-toggle-pass .v-eye-slash {
         transition-duration: 0ms !important;
         transition-delay: 0ms !important;
     }
@@ -681,7 +787,6 @@ export default function(component) {
 
     const el = (id) => root.querySelector("#" + id);
 
-    // Configura a tela inicial somente uma vez.
     if (!root.dataset.initialized) {
         root.dataset.initialized = "true";
 
@@ -690,7 +795,6 @@ export default function(component) {
         }
     }
 
-    // Carrega o logotipo.
     const capelo = data.capelo || "";
 
     for (const id of [
@@ -708,14 +812,37 @@ export default function(component) {
         }
     }
 
-    // Animação de troca de tela.
+    // Exibe mensagem de erro retornada pelo backend quando houver nova tentativa
+    const loginErro = el("v-login-erro");
+    const seqAtual = String(data.erroSeq || 0);
+    if (loginErro && data.erroLogin && root.dataset.lastErroSeq !== seqAtual) {
+        root.dataset.lastErroSeq = seqAtual;
+        loginErro.textContent = data.erroLogin;
+    }
+
+    // Único olho com transição suave entre fechado e aberto
+    const btnToggleSenha = el("v-toggle-senha");
+    const inputSenha = el("v-login-senha");
+
+    if (btnToggleSenha && inputSenha) {
+        btnToggleSenha.onclick = () => {
+            const abrir = inputSenha.type === "password";
+            inputSenha.type = abrir ? "text" : "password";
+            btnToggleSenha.classList.toggle("is-open", abrir);
+            btnToggleSenha.setAttribute(
+                "aria-label",
+                abrir ? "Ocultar senha" : "Mostrar senha"
+            );
+            btnToggleSenha.title = abrir ? "Ocultar senha" : "Mostrar senha";
+        };
+    }
+
     function trocarTela(destino) {
         root.classList.toggle(
             "is-register",
             destino === "cadastro"
         );
 
-        const loginErro = el("v-login-erro");
         if (loginErro) {
             loginErro.textContent = "";
         }
@@ -729,26 +856,38 @@ export default function(component) {
         trocarTela("login");
     };
 
-    // Validação inicial do formulário.
+    const campoEmail = el("v-login-email");
+    for (const campo of [campoEmail, inputSenha]) {
+        if (campo) {
+            campo.oninput = () => {
+                if (loginErro) loginErro.textContent = "";
+            };
+            campo.onkeydown = (ev) => {
+                if (ev.key === "Enter") {
+                    ev.preventDefault();
+                    el("v-entrar").click();
+                }
+            };
+        }
+    }
+
     el("v-entrar").onclick = () => {
-        const campoEmail = el("v-login-email");
         const email = campoEmail.value.trim();
-        const senha = el("v-login-senha").value;
-        const erro = el("v-login-erro");
+        const senha = inputSenha.value;
 
         if (!email || !senha) {
-            erro.textContent =
+            loginErro.textContent =
                 "Informe seu e-mail e sua senha.";
             return;
         }
 
         if (!campoEmail.checkValidity()) {
-            erro.textContent =
+            loginErro.textContent =
                 "Informe um e-mail válido.";
             return;
         }
 
-        erro.textContent = "";
+        loginErro.textContent = "";
 
         setTriggerValue("submit", {
             tipo: "login",
@@ -757,7 +896,6 @@ export default function(component) {
         });
     };
 
-    // Retorno ao login a partir do aviso de acesso institucional.
     el("v-cadastrar").onclick = () => {
         trocarTela("login");
     };
@@ -779,10 +917,14 @@ def render():
     _estilos_pagina()
 
     if st.session_state.get("sessao_api_expirada"):
-        st.warning(
+        st.toast(
             st.session_state.get("mensagem_sessao_expirada")
-            or "Sua sessão expirou. Faça login novamente para continuar."
+            or "Sua sessão expirou. Faça login novamente para continuar.",
+            icon="⚠️",
         )
+
+    erro_login = st.session_state.get("auth_erro_login", "")
+    erro_seq = st.session_state.get("auth_erro_seq", 0)
 
     with st.container(key="vertice_auth_tela"):
         resultado = componente_auth(
@@ -790,6 +932,8 @@ def render():
             data={
                 "initialView": "login",
                 "capelo": _capelo_base64(),
+                "erroLogin": erro_login,
+                "erroSeq": erro_seq,
             },
             on_submit_change=lambda: None,
         )
@@ -810,11 +954,14 @@ def render():
             if resp.ok and isinstance(resp.dados, dict):
                 usuario = resp.dados.get("usuario") or {}
                 registrar_usuario_sessao(usuario, email_fallback=email)
+                st.session_state.pop("auth_erro_login", None)
+                st.session_state.pop("auth_erro_seq", None)
                 st.session_state["logado"] = True
                 st.rerun()
                 return
+
             st.session_state["logado"] = False
-            st.error(
+            st.session_state["auth_erro_login"] = (
                 resp.erro
                 or (
                     "Servidor do Vértice indisponível. "
@@ -823,10 +970,13 @@ def render():
                     else "E-mail ou senha inválidos."
                 )
             )
+            st.session_state["auth_erro_seq"] = erro_seq + 1
+            st.rerun()
             return
 
     elif acao.get("tipo") == "cadastro":
         st.session_state["tela_auth"] = "login"
-        st.info(
-            "O provisionamento de contas no Vértice é realizado exclusivamente pelo Administrador."
+        st.toast(
+            "O provisionamento de contas no Vértice é realizado exclusivamente pelo Administrador.",
+            icon="ℹ️",
         )

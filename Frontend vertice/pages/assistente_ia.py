@@ -226,7 +226,7 @@ def render():
             for e in estudantes
         }
 
-        col_n, col_t, col_e = st.columns(3)
+        col_n, col_t, col_e = st.columns(3, vertical_alignment="bottom")
         with col_n:
             nivel = st.selectbox(
                 "Nível de contexto",

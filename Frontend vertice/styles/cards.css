@@ -18,24 +18,44 @@
 }
 
 /* Cartão de KPI */
+[class*="st-key-kpi_"] [data-testid="stMetricLabel"],
+[class*="st-key-kpi_"] [data-testid="stMetricLabel"] > div,
 [class*="st-key-kpi_"] [data-testid="stMetricLabel"] p {
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     color: var(--cinza-texto);
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    line-height: 1.25;
 }
-[class*="st-key-kpi_"] [data-testid="stMetricValue"] {
-    font-size: 2rem;
-    font-weight: 700;
+
+[class*="st-key-kpi_"] [data-testid="stMetricValue"],
+[class*="st-key-kpi_"] [data-testid="stMetricValue"] > div,
+[class*="st-key-kpi_"] [data-testid="stMetricValue"] * {
+    font-size: 1.45rem !important;
+    font-weight: 700 !important;
+    line-height: 1.25 !important;
+    white-space: normal !important;
+    overflow-wrap: break-word !important;
     color: var(--grafite);
 }
+
 [class*="st-key-kpi_"] [data-testid="stCaptionContainer"] {
     font-size: 0.75rem;
 }
 
-
-/* KPI colorido (Visão geral): card_kpi(..., cor="azul") */
+/* KPIs coloridos */
 [class*="st-key-kpi_azul_"] {
     background-color: var(--azul-kpi);
     border-color: var(--azul-kpi);
+}
+[class*="st-key-kpi_azul_medio_"] {
+    background-color: var(--azul-medio);
+    border-color: var(--azul-medio);
+}
+[class*="st-key-kpi_roxo_"] {
+    background-color: var(--azul);
+    border-color: var(--azul);
 }
 [class*="st-key-kpi_verde_"] {
     background-color: var(--verde);
@@ -51,34 +71,32 @@
 }
 
 /* Textos brancos nos cartões coloridos, e o rodapé separado por uma linha. */
-:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_verde_"],
+:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_azul_medio_"],
+    [class*="st-key-kpi_roxo_"], [class*="st-key-kpi_verde_"],
     [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"]) [data-testid="stMetricLabel"] p,
-:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_verde_"],
+:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_azul_medio_"],
+    [class*="st-key-kpi_roxo_"], [class*="st-key-kpi_verde_"],
     [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"]) [data-testid="stMetricValue"],
-:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_verde_"],
-    [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"]) [data-testid="stCaptionContainer"] {
-    color: var(--branco);
+:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_azul_medio_"],
+    [class*="st-key-kpi_roxo_"], [class*="st-key-kpi_verde_"],
+    [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"]) [data-testid="stMetricValue"] *,
+:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_azul_medio_"],
+    [class*="st-key-kpi_roxo_"], [class*="st-key-kpi_verde_"],
+    [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"]) [data-testid="stCaptionContainer"],
+:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_azul_medio_"],
+    [class*="st-key-kpi_roxo_"], [class*="st-key-kpi_verde_"],
+    [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"]) [data-testid="stCaptionContainer"] * {
+    color: #ffffff !important;
+    opacity: 1 !important;
 }
-:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_verde_"],
+
+:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_azul_medio_"],
+    [class*="st-key-kpi_roxo_"], [class*="st-key-kpi_verde_"],
     [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"]) [data-testid="stCaptionContainer"] {
     border-top: 1px solid rgba(255, 255, 255, 0.4);
     padding-top: 0.4rem;
     margin-top: 0.5rem;
 }
-
-/* Correção da legibilidade do rodapé dos KPIs */
-
-:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_verde_"],
-    [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"])
-    [data-testid="stCaptionContainer"],
-:is([class*="st-key-kpi_azul_"], [class*="st-key-kpi_verde_"],
-    [class*="st-key-kpi_laranja_"], [class*="st-key-kpi_vermelho_"])
-    [data-testid="stCaptionContainer"] * {
-    color: #ffffff !important;
-    opacity: 1 !important;
-}
-
-
 
 /* Cartões de KPI da mesma linha com a mesma altura */
 [data-testid="stColumn"]:has([class*="st-key-kpi_"]) > [data-testid="stVerticalBlock"] {
@@ -93,20 +111,11 @@
 
 /* Ajustes da Visão Geral */
 
-/* Cards de indicadores */
 .st-key-kpi_azul_total_de_estudantes,
 .st-key-kpi_verde_frequencia_media,
 .st-key-kpi_laranja_estudantes_em_atencao,
 .st-key-kpi_vermelho_alto_risco_identificado {
     min-height: 4.65rem;
-}
-
-/* Valor principal dos indicadores */
-.st-key-kpi_azul_total_de_estudantes [data-testid="stMetricValue"],
-.st-key-kpi_verde_frequencia_media [data-testid="stMetricValue"],
-.st-key-kpi_laranja_estudantes_em_atencao [data-testid="stMetricValue"],
-.st-key-kpi_vermelho_alto_risco_identificado [data-testid="stMetricValue"] {
-    font-size: 1.7rem;
 }
 
 /* Cards dos gráficos */
@@ -140,7 +149,6 @@
 }
 
 /* Ajuste visual dos cards de gráficos */
-
 .st-key-card_frequencia_media,
 .st-key-card_distribuicao_de_risco,
 .st-key-card_risco_por_serie,
@@ -167,7 +175,6 @@
 }
 
 /* Texto secundário dos cards KPI */
-
 .st-key-kpi_azul_total_de_estudantes [data-testid="stMetricDelta"],
 .st-key-kpi_verde_frequencia_media [data-testid="stMetricDelta"],
 .st-key-kpi_laranja_estudantes_em_atencao [data-testid="stMetricDelta"],
@@ -184,4 +191,4 @@
 .st-key-kpi_vermelho_alto_risco_identificado p {
     color: rgba(255, 255, 255, 0.9) !important;
     opacity: 1 !important;
-}
+}v

@@ -123,6 +123,7 @@ def _render_kpis(resumo: dict[str, Any]) -> None:
             f"{resumo.get('escolas_ativas', 0)}/{resumo.get('total_escolas', 0)}",
             "Escolas ativas",
             rodape="Unidades cadastradas na rede",
+            cor="azul_medio",
             chave="adm_escolas",
         )
     with c3:
@@ -130,6 +131,7 @@ def _render_kpis(resumo: dict[str, Any]) -> None:
             f"{resumo.get('turmas_ativas', 0)} / {resumo.get('disciplinas_ativas', 0)}",
             "Turmas e disciplinas ativas",
             rodape="Registros estruturais em operação",
+            cor="roxo",
             chave="adm_estrutura",
         )
     with c4:
