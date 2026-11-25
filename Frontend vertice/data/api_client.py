@@ -1409,18 +1409,33 @@ def listar_credenciais_ml_api(
     return requisitar_api("GET", "/previsoes/credenciais", params=params)
 
 
+def listar_modelos_ml_disponiveis_api(apenas_disponiveis: bool = True) -> RespostaAPI:
+    """Lista modelos ML disponíveis no backend (`GET /api/v1/previsoes/modelos-disponiveis`)."""
+    return requisitar_api(
+        "GET",
+        "/previsoes/modelos-disponiveis",
+        params={"apenas_disponiveis": str(apenas_disponiveis).lower()},
+    )
+
+
 def criar_credencial_ml_api(
     *,
     nome: str,
     escola_id: Optional[str] = None,
+    modelo_autorizado: Optional[str] = None,
     modelos_permitidos: Optional[list[str]] = None,
+    permite_leitura_inferencia: Optional[bool] = None,
 ) -> RespostaAPI:
     """Emite nova credencial técnica de ML (`POST /api/v1/previsoes/credenciais`)."""
     payload: dict[str, Any] = {"nome": nome.strip()}
     if escola_id:
         payload["escola_id"] = escola_id
+    if modelo_autorizado:
+        payload["modelo_autorizado"] = modelo_autorizado.strip()
     if modelos_permitidos:
         payload["modelos_permitidos"] = modelos_permitidos
+    if permite_leitura_inferencia is not None:
+        payload["permite_leitura_inferencia"] = permite_leitura_inferencia
     return requisitar_api("POST", "/previsoes/credenciais", json_body=payload)
 
 

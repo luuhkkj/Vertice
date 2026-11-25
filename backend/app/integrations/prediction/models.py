@@ -95,6 +95,12 @@ class CredencialIntegracaoPredicao(Base):
         JSON,
         nullable=True,
     )
+    permite_leitura_inferencia: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
     criado_por_usuario_id: Mapped[uuid.UUID] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey(

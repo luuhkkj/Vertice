@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from app.integrations.prediction.router import router
     from app.integrations.prediction.service import PredictionService
     from app.integrations.prediction.modelo_risco import prever_risco
+    from app.integrations.prediction.pipeline import ExecutorPipelineML, PipelineMLConfig
 
 
 def __getattr__(name: str) -> Any:
@@ -58,6 +59,10 @@ def __getattr__(name: str) -> Any:
         from app.integrations.prediction.modelo_risco import prever_risco
 
         return prever_risco
+    if name in {"ExecutorPipelineML", "PipelineMLConfig"}:
+        from app.integrations.prediction import pipeline
+
+        return getattr(pipeline, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -66,7 +71,9 @@ __all__ = [
     "CATALOGO_METADADOS_TECNICOS_PERMITIDOS",
     "CATALOGO_VARIAVEIS_PREDITIVAS",
     "CredencialIntegracaoPredicao",
+    "ExecutorPipelineML",
     "FaixaRisco",
+    "PipelineMLConfig",
     "PredictionService",
     "PrevisaoRisco",
     "TipoPrevisao",

@@ -30,10 +30,10 @@ Gestor / Professor (JWT) ──▶ /api/v1/indicadores/gerais ◀─────
 ## 2. Módulo Preditivo (`backend/app/integrations/prediction/`)
 
 ### 2.1 Credenciais Técnicas de Serviço (`CredencialIntegracaoPredicao`)
-- Tokens JWT comuns de `professor`, `gestor` ou `administrador` **não autorizam** o envio de previsões (`HTTP 403 Forbidden`).
-- Apenas administradores emitem (`POST /api/v1/previsoes/credenciais`), listam (`GET /api/v1/previsoes/credenciais`) e revogam (`PATCH /api/v1/previsoes/credenciais/{id}/revogar`) credenciais técnicas dedicadas.
+- Tokens JWT comuns de `professor`, `gestor` ou `administrador` **não autorizam** a extração nem o envio de previsões pelo pipeline (`HTTP 403 Forbidden`).
+- Apenas administradores consultam modelos elegíveis (`GET /api/v1/previsoes/modelos-disponiveis`), emitem (`POST /api/v1/previsoes/credenciais`), listam (`GET /api/v1/previsoes/credenciais`) e revogam (`PATCH /api/v1/previsoes/credenciais/{id}/revogar`) credenciais técnicas dedicadas.
 - O segredo bruto (`vtx_ml_*`) é exibido **uma única vez** na criação; apenas prefixo e hash SHA-256 são gravados no banco.
-- A credencial pode restringir `escola_id`, `modelos_permitidos` e `expira_em`.
+- Quando emitida com escola específica e modelo autorizado (`permite_leitura_inferencia=True`), a mesma credencial autoriza a exportação controlada do 1º período (`GET /api/v1/previsoes/exportacao-inferencia`) e o envio de previsões (`POST /api/v1/previsoes/lote`) exclusivamente para essa escola e esse modelo; credenciais legadas (`permite_leitura_inferencia=False`) permanecem restritas ao envio.
 
 ### 2.2 Persistência Append-Only e Idempotência (`PrevisaoRisco`)
 - Cada previsão persistida armazena: `estudante_id`, `escola_id`, `turma_id` (opcional), `ano_letivo`, `periodo_letivo`, `tipo_previsao` (`EVASAO`, `REPROVACAO`, `RISCO_ACADEMICO`), `pontuacao_risco` (`0.0 <= x <= 1.0`), `faixa_risco` (`BAIXO`, `MODERADO`, `ALTO`, `CRITICO`), `politica_classificacao_versao`, `modelo_nome`, `modelo_versao`, `gerado_em`, `recebido_em`, `lote_externo_id`, `assinatura_idempotencia` e `metadados_tecnicos`.
@@ -117,8 +117,9 @@ Todos os cálculos reutilizam exclusivamente os serviços existentes do Vértice
 
 ---
 
-## 5. Limitações Conhecidas e Próximos Passos (Pós-Fase 7)
+## 5. Pipeline Automatizado e Limitações Conhecidas (Pós-Fase 7)
 
-1. Existe um protótipo treinável e uma função local, mas o modelo ainda não é operacional: a ingestão persistente `/api/v1/previsoes(/lote)` continua reservada a serviços autorizados com credenciais `vtx_ml_*`, e os rótulos do notebook não validam risco real.
-2. O Ollama e o modelo devem estar instalados/baixados e acessíveis pelo backend; a primeira inferência pode demorar enquanto o modelo é carregado.
-3. Políticas dinâmicas de limiares por faixa (`politica_classificacao_versao`) e explicabilidade detalhada (*SHAP / feature contributions*) podem trafegar via `metadados_tecnicos` seguindo a política anti-leakage.
+1. O fluxo automatizado desacoplado reside em `backend/app/integrations/prediction/pipeline/` (`config.py`, `extrator.py`, `transformador.py`, `executor.py`, `cliente_api.py` e `agendador.py`), utilizando uma única credencial `X-Service-Token` (`VERTICE_ML_SERVICE_TOKEN`) que identifica automaticamente escola e modelo em `GET /api/v1/previsoes/exportacao-inferencia` e envia previsões `RISCO_ACADEMICO` para `POST /api/v1/previsoes/lote`.
+2. A emissão de credenciais `vtx_ml_*` permanece **estritamente manual** pelo perfil `administrador`, e o protótipo `poc-risco-academico-uci-v1` segue sem validação científica para estudantes reais do Vértice. Consulte [PIPELINE_ML.md](PIPELINE_ML.md), [CONFIGURACAO_CREDENCIAIS_ML.md](CONFIGURACAO_CREDENCIAIS_ML.md), [EXECUCAO_PIPELINE_ML.md](EXECUCAO_PIPELINE_ML.md), [VALIDACAO_MODELO_ML.md](VALIDACAO_MODELO_ML.md) e [TROUBLESHOOTING_ML.md](TROUBLESHOOTING_ML.md).
+3. O Ollama e o modelo devem estar instalados/baixados e acessíveis pelo backend; a primeira inferência pode demorar enquanto o modelo é carregado.
+4. Políticas dinâmicas de limiares por faixa (`politica_classificacao_versao`) e explicabilidade detalhada (*SHAP / feature contributions*) podem trafegar via `metadados_tecnicos` seguindo a política anti-leakage.

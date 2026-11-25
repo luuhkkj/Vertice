@@ -1,6 +1,6 @@
 # Referência Completa de Endpoints — API Vértice (`v1`)
 
-Documentação técnica dos endpoints expostos pelo backend FastAPI do **Vértice** (`app.main:app`), alinhada ao contrato OpenAPI gerado pela aplicação (`77` operações HTTP).
+Documentação técnica dos endpoints expostos pelo backend FastAPI do **Vértice** (`app.main:app`), alinhada ao contrato OpenAPI gerado pela aplicação (`82` operações HTTP).
 
 ---
 
@@ -35,7 +35,8 @@ Documentação técnica dos endpoints expostos pelo backend FastAPI do **Vértic
 | `require_gestor_ou_admin` | `administrador`, `gestor` | Cadastros estruturais (`escolas`, `turmas`, `disciplinas`; `gestor` restrito à sua `escola_id`) |
 | `require_importacao_datasets` | `gestor`, `professor` | Escopo escolar/turma/disciplina estrito (`administrador` recebe `403`) |
 | `require_acesso_pedagogico` | `gestor`, `professor` | Indicadores, avaliações, atividades, acompanhamentos e previsões (`administrador` recebe `403`) |
-| `get_credencial_integracao_predicao` | Pipeline ML (`X-Service-Token`) | Escopo opcional por `escola_id` e lista `modelos_permitidos` |
+| `get_credencial_integracao_predicao` | Pipeline ML (`X-Service-Token`) | Ingestão de previsões; escopo por `escola_id` e modelo autorizado |
+| `get_credencial_exportacao_inferencia` | Pipeline ML (`X-Service-Token` com leitura) | Extração controlada do 1º período para inferência no escopo estrito da escola e modelo da credencial (`403` para tokens sem permissão de leitura e JWTs comuns) |
 
 ### 1.4 Códigos HTTP Comuns e LGPD
 - `200 OK` / `201 Created` / `204 No Content`: operação bem-sucedida.
@@ -244,7 +245,8 @@ Documentação arquitetural complementar em [FASE7_INTEGRACAO_PREDITIVA_E_IA.md]
 
 | Método | Rota | RBAC | Parâmetros / Corpo | Resposta |
 |---|---|---|---|---|
-| `POST` | `/api/v1/previsoes/credenciais` | `require_admin` | `CredencialIntegracaoCreate`: `nome`*, `escola_id?`, `modelos_permitidos?`, `expira_em?` | `201 CredencialIntegracaoCriadaResponse` (`chave_secreta` exibida apenas na criação) |
+| `GET` | `/api/v1/previsoes/modelos-disponiveis` | `require_admin` | Query: `apenas_disponiveis=true` | `200 list[ModeloPreditivoDisponivelResponse]` |
+| `POST` | `/api/v1/previsoes/credenciais` | `require_admin` | `CredencialIntegracaoCreate`: `nome`*, `escola_id?`, `modelo_autorizado?`, `modelos_permitidos?`, `permite_leitura_inferencia?`, `expira_em?` | `201 CredencialIntegracaoCriadaResponse` (`chave_secreta` exibida apenas na criação) |
 | `GET` | `/api/v1/previsoes/credenciais` | `require_admin` | Query: `escola_id?`, `apenas_ativas?` | `200 list[CredencialIntegracaoResponse]` |
 | `PATCH` | `/api/v1/previsoes/credenciais/{credencial_id}/revogar` | `require_admin` | Path: `credencial_id` | `200 CredencialIntegracaoResponse` |
 
@@ -254,6 +256,7 @@ Documentação arquitetural complementar em [FASE7_INTEGRACAO_PREDITIVA_E_IA.md]
 |---|---|---|---|---|
 | `GET` | `/api/v1/previsoes/contrato-variaveis` | `get_current_user` | — | `200 CatalogoVariaveisResponse` (`variaveis_elegiveis`, `campos_proibidos_base`, `alvo_supervisionado_reservado`, `metadados_tecnicos_permitidos`) |
 | `POST` | `/api/v1/previsoes/validar-variaveis` | `get_current_user` | `ValidarVariaveisRequest`: `variaveis`*, `campos_proibidos_extras?`, `catalogo_extensao?` | `200 ResultadoValidacaoLeakage` |
+| `GET` | `/api/v1/previsoes/exportacao-inferencia` | `get_credencial_exportacao_inferencia` (`X-Service-Token` com `permite_leitura_inferencia=True`) | Query: `escola_id?`, `turma_id?`, `disciplina_id?`, `ano_letivo?`, `periodo_letivo="1º Bimestre"`, `skip=0`, `limit=200` | `200 ExportacaoInferenciaResponse` (metadados da credencial/modelo + atributos do corte inicial sem PII; header `X-Total-Count`) |
 | `POST` | `/api/v1/previsoes` | `X-Service-Token` / `Authorization` (serviço ML) | `PrevisaoRecebimentoItem`: `ano_letivo`*, `periodo_letivo`*, `pontuacao_risco`* (`0..1`), `faixa_risco`* (`BAIXO|MODERADO|ALTO|CRITICO`), `modelo_nome`*, `modelo_versao`*, `gerado_em`*, `estudante_id?`/`codigo_anonimo?`, `escola_id?`, `turma_id?`, `tipo_previsao`, `variaveis_utilizadas?`, `metadados_tecnicos?` | `201 PrevisaoResponse` (`409` em assinatura duplicada; `422` em leakage/variável não catalogada) |
 | `POST` | `/api/v1/previsoes/lote` | `X-Service-Token` / `Authorization` (serviço ML) | `PrevisaoRecebimentoLoteRequest`: `lote_externo_id?`, `itens`* | `201 PrevisaoLoteResponse` (transação atômica) |
 
@@ -274,7 +277,9 @@ Documentação arquitetural complementar em [FASE7_INTEGRACAO_PREDITIVA_E_IA.md]
 | `GET` | `/api/v1/assistente/status` | `get_current_user` | — | `200 StatusAssistenteResponse`: estado do provedor (`provedor_llm_configurado`, `modo_operacao`, `niveis_contexto_suportados`, `auditoria_ativa`) |
 | `POST` | `/api/v1/assistente/contexto` | `get_current_user` (somente `gestor` e `professor`; `administrador` é negado com `403` e auditado) | `SolicitacaoContextoAssistente`: `tipo_contexto`* (`ESCOLA`\|`TURMA`\|`INDIVIDUAL`), `escola_id?`, `turma_id?`, `disciplina_id?`, `estudante_id?`, `ano_letivo?`, `periodo_letivo?`, `modelo_nome?`, `modelo_versao?`, `incluir_acompanhamentos`, `conversation_id?` | `200 ContextoAssistenteEstruturado` (dados reais e diretrizes anti-alucinação; gera `request_id` único no backend) |
 | `POST` | `/api/v1/assistente/consultar` | `get_current_user` (mesma validação estrita de escopo de `/contexto`) | `ConsultaAssistentePromptRequest`: campos de `SolicitacaoContextoAssistente` + `pergunta_usuario`* + `historico_mensagens?` (até 12 mensagens de usuário/assistente) | `200 RespostaAssistenteLLM` via Ollama local; `503` se não configurado ou indisponível |
+| `POST` | `/api/v1/assistente/consultar-stream` | `get_current_user` (mesma validação estrita de escopo de `/contexto`) | `ConsultaAssistentePromptRequest` | `200 text/event-stream` (SSE progressivo via Ollama local) |
 | `POST` | `/api/v1/assistente/consultar-arquivos` | `get_current_user` (mesma validação estrita de escopo de `/contexto`) | `multipart/form-data`: `dados_json` (consulta JSON) + `arquivos` (até 5 PDF/DOCX/TXT/CSV/XLSX; 5 MB cada, 10 MB total) | `200 RespostaAssistenteLLM`; texto extraído em memória e não persistido na auditoria |
+| `POST` | `/api/v1/assistente/consultar-arquivos-stream` | `get_current_user` (mesma validação estrita de escopo de `/contexto`) | `multipart/form-data`: `dados_json` + `arquivos` | `200 text/event-stream` (SSE progressivo com anexos em memória) |
 | `GET` | `/api/v1/assistente/auditoria` | `get_current_user` (`administrador`: rede; `gestor`: própria escola; `professor`: apenas próprias consultas) | Query: `escola_id?`, `resultado_autorizacao?`, `request_id?`, `conversation_id?`, `skip=0`, `limit=100` | `200 list[AuditoriaConsultaIAResponse]` |
 
 ---

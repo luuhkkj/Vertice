@@ -22,12 +22,27 @@ AVISO_METODOLOGICO_PADRAO = (
 )
 
 
+class ModeloPreditivoDisponivelResponse(BaseModel):
+    """Metadados de modelo preditivo descoberto centralmente para seleção e execução."""
+
+    modelo_nome: str
+    nome_exibicao: str
+    modelo_versao: str
+    artefato_relativo: str
+    tipo_previsao: str
+    politica_classificacao_versao: str
+    disponivel_inferencia: bool
+    motivo_indisponibilidade: Optional[str] = None
+
+
 class CredencialIntegracaoCreate(BaseModel):
-    """Solicitação administrativa para emitir credencial técnica de envio preditivo."""
+    """Solicitação administrativa para emitir credencial técnica de integração preditiva."""
 
     nome: str = Field(..., min_length=3, max_length=120)
     escola_id: Optional[uuid.UUID] = None
+    modelo_autorizado: Optional[str] = Field(default=None, min_length=2, max_length=100)
     modelos_permitidos: Optional[list[str]] = None
+    permite_leitura_inferencia: Optional[bool] = None
     expira_em: Optional[datetime] = None
 
     @field_validator("nome")
@@ -36,6 +51,16 @@ class CredencialIntegracaoCreate(BaseModel):
         s = v.strip()
         if len(s) < 3:
             raise ValueError("Nome da credencial deve ter ao menos 3 caracteres.")
+        return s
+
+    @field_validator("modelo_autorizado")
+    @classmethod
+    def _strip_modelo_autorizado(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        s = v.strip()
+        if not s:
+            raise ValueError("`modelo_autorizado` não pode ser vazio.")
         return s
 
     @field_validator("modelos_permitidos")
@@ -50,6 +75,43 @@ class CredencialIntegracaoCreate(BaseModel):
             )
         return list(dict.fromkeys(limpos))
 
+    @model_validator(mode="after")
+    def _conciliar_modelo_e_escopo(self) -> "CredencialIntegracaoCreate":
+        informou_modelo_autorizado = self.modelo_autorizado is not None
+        if informou_modelo_autorizado:
+            if (
+                self.modelos_permitidos is not None
+                and self.modelos_permitidos != [self.modelo_autorizado]
+            ):
+                raise ValueError(
+                    "`modelo_autorizado` e `modelos_permitidos` possuem valores conflitantes."
+                )
+            self.modelos_permitidos = [self.modelo_autorizado]
+        elif (
+            self.permite_leitura_inferencia is True
+            and self.modelos_permitidos
+            and len(self.modelos_permitidos) == 1
+        ):
+            self.modelo_autorizado = self.modelos_permitidos[0]
+
+        if self.permite_leitura_inferencia is None:
+            self.permite_leitura_inferencia = bool(
+                self.escola_id is not None and informou_modelo_autorizado
+            )
+
+        if self.permite_leitura_inferencia:
+            if self.escola_id is None:
+                raise ValueError(
+                    "Credenciais autorizadas a exportar dados para inferência devem estar "
+                    "vinculadas a uma unidade escolar específica (`escola_id`)."
+                )
+            if not self.modelos_permitidos or len(self.modelos_permitidos) != 1:
+                raise ValueError(
+                    "Credenciais autorizadas a exportar dados para inferência exigem a "
+                    "seleção de exatamente um modelo autorizado."
+                )
+        return self
+
 
 class CredencialIntegracaoResponse(BaseModel):
     """Representação pública/administrativa de uma credencial técnica (sem segredo)."""
@@ -60,13 +122,25 @@ class CredencialIntegracaoResponse(BaseModel):
     nome: str
     prefixo_chave: str
     escola_id: Optional[uuid.UUID]
+    modelo_autorizado: Optional[str] = None
     modelos_permitidos: Optional[list[str]]
+    permite_leitura_inferencia: bool = False
     criado_por_usuario_id: uuid.UUID
     ativo: bool
     expira_em: Optional[datetime]
     ultimo_uso_em: Optional[datetime]
     criado_em: datetime
     atualizado_em: datetime
+
+    @model_validator(mode="after")
+    def _preencher_modelo_autorizado(self) -> "CredencialIntegracaoResponse":
+        if (
+            self.modelo_autorizado is None
+            and self.modelos_permitidos
+            and len(self.modelos_permitidos) == 1
+        ):
+            self.modelo_autorizado = self.modelos_permitidos[0]
+        return self
 
 
 class CredencialIntegracaoCriadaResponse(CredencialIntegracaoResponse):
@@ -255,3 +329,40 @@ class ResumoPrevisoesRiscoResponse(BaseModel):
     distribuicao_faixas: list[FaixaDistribuicaoPrevisaoSchema] = []
     versoes_disponiveis: list[VersaoModeloDisponivelSchema] = []
     aviso_metodologico: str = AVISO_METODOLOGICO_PADRAO
+
+
+class ItemExportacaoInferenciaSchema(BaseModel):
+    """
+    Registro anonimizado mínimo exportado exclusivamente para inferência no corte
+    do primeiro período. Não inclui PII nem variáveis pós-corte.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    estudante_id: uuid.UUID
+    escola_id: uuid.UUID
+    turma_id: uuid.UUID
+    ano_letivo: int = Field(..., ge=2000, le=2100)
+    periodo_letivo: str = Field(..., min_length=1, max_length=30)
+    idade: Optional[int] = Field(default=None, ge=10, le=100)
+    historico_reprovacoes: Optional[int] = Field(default=None, ge=0, le=50)
+    nota_t1: Optional[float] = Field(default=None, ge=0.0, le=10.0)
+
+
+class ExportacaoInferenciaResponse(BaseModel):
+    """Resposta paginada da rota controlada de extração e descoberta de configuração ML."""
+
+    escola_id: uuid.UUID
+    credencial_nome: str
+    modelo_nome: str
+    modelo_versao: Optional[str] = None
+    artefato_relativo: Optional[str] = None
+    tipo_previsao: str = "RISCO_ACADEMICO"
+    periodo_letivo: str
+    ano_letivo: Optional[int] = None
+    turma_id: Optional[uuid.UUID] = None
+    disciplina_id: Optional[uuid.UUID] = None
+    total: int = Field(..., ge=0)
+    skip: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1)
+    itens: list[ItemExportacaoInferenciaSchema] = []

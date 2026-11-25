@@ -23,6 +23,7 @@ from data.api_client import (
     listar_credenciais_ml_api,
     listar_disciplinas_api,
     listar_escolas_api,
+    listar_modelos_ml_disponiveis_api,
     listar_turmas_api,
     listar_usuarios_api,
     possui_sessao_api_ativa,
@@ -61,6 +62,7 @@ def carregar_contexto_admin_tecnico_api() -> dict[str, Any]:
         "turmas": [],
         "disciplinas": [],
         "credenciais": [],
+        "modelos_ml": [],
         "auditoria_tecnica": [],
         "auditoria_ia": [],
     }
@@ -89,6 +91,7 @@ def carregar_contexto_admin_tecnico_api() -> dict[str, Any]:
         ("turmas", listar_turmas_api()),
         ("disciplinas", listar_disciplinas_api()),
         ("credenciais", listar_credenciais_ml_api()),
+        ("modelos_ml", listar_modelos_ml_disponiveis_api()),
         ("auditoria_tecnica", listar_auditoria_tecnica_api(limit=100)),
         ("auditoria_ia", listar_auditoria_ia_api(limit=100)),
     ]
@@ -436,10 +439,30 @@ def _render_pagina_estrutura(ctx: dict[str, Any]) -> None:
 
 
 def _render_pagina_credenciais(ctx: dict[str, Any]) -> None:
-    escolas_opcoes: dict[str, Optional[str]] = {"Todas as escolas (global)": None}
-    for e in ctx["escolas"]:
-        if e.get("id"):
-            escolas_opcoes[f"{e.get('nome')} ({e.get('codigo')})"] = str(e["id"])
+    escolas_ativas = [e for e in ctx["escolas"] if e.get("id") and e.get("ativo", True)]
+    escolas_opcoes: dict[str, Optional[str]] = {
+        f"{e.get('nome')} ({e.get('codigo')})": str(e["id"])
+        for e in escolas_ativas
+    }
+    escolas_nome_por_id = {
+        str(e["id"]): f"{e.get('nome')} ({e.get('codigo')})"
+        for e in ctx["escolas"]
+        if e.get("id")
+    }
+    if escolas_opcoes:
+        escolas_opcoes["Todas as escolas (global — somente envio)"] = None
+
+    modelos_disponiveis = [
+        m
+        for m in (ctx.get("modelos_ml") or [])
+        if isinstance(m, dict) and m.get("disponivel_inferencia") and m.get("modelo_nome")
+    ]
+    modelos_opcoes = {
+        f"{m.get('nome_exibicao', m['modelo_nome'])} ({m.get('modelo_versao', '')})".strip(): str(
+            m["modelo_nome"]
+        )
+        for m in modelos_disponiveis
+    }
 
     segredo_recem_criado = st.session_state.pop("adm_nova_credencial_segredo", None)
     if segredo_recem_criado:
@@ -461,7 +484,21 @@ def _render_pagina_credenciais(ctx: dict[str, Any]) -> None:
                             {
                                 "Nome": c.get("nome"),
                                 "Prefixo": c.get("prefixo_chave"),
-                                "Modelos": ", ".join(c.get("modelos_permitidos") or []) or "Todos",
+                                "Escola": (
+                                    escolas_nome_por_id.get(str(c.get("escola_id")), str(c.get("escola_id")))
+                                    if c.get("escola_id")
+                                    else "Global"
+                                ),
+                                "Modelo": (
+                                    c.get("modelo_autorizado")
+                                    or ", ".join(c.get("modelos_permitidos") or [])
+                                    or "Todos"
+                                ),
+                                "Permissão": (
+                                    "Extração + Envio"
+                                    if c.get("permite_leitura_inferencia")
+                                    else "Somente envio"
+                                ),
                                 "Ativa": "Sim" if c.get("ativo") else "Revogada",
                             }
                             for c in creds
@@ -487,29 +524,37 @@ def _render_pagina_credenciais(ctx: dict[str, Any]) -> None:
 
     with col_form:
         with card("Emitir nova credencial ML", chave="adm_cred_emitir"):
-            with st.form("form_adm_emitir_credencial", clear_on_submit=True):
-                c_nome = st.text_input("Identificação do serviço", key="adm_cr_nome")
-                c_esc_lbl = st.selectbox("Escopo escolar", list(escolas_opcoes.keys()), key="adm_cr_escola")
-                c_modelos = st.text_input(
-                    "Modelos permitidos (separados por vírgula, opcional)",
-                    key="adm_cr_modelos",
-                )
-                if st.form_submit_button("Emitir token técnico", type="primary", width="stretch"):
-                    if not c_nome.strip():
-                        st.warning("Informe a identificação do serviço preditivo.")
-                    else:
-                        modelos = [m.strip() for m in c_modelos.split(",") if m.strip()] or None
-                        resp = criar_credencial_ml_api(
-                            nome=c_nome,
-                            escola_id=escolas_opcoes[c_esc_lbl],
-                            modelos_permitidos=modelos,
-                        )
-                        if resp.ok and isinstance(resp.dados, dict):
-                            st.session_state["adm_nova_credencial_segredo"] = resp.dados.get("chave_secreta")
-                            st.session_state["adm_aviso"] = ("sucesso", "Credencial ML emitida com segurança.")
-                            st.rerun()
+            if not escolas_ativas:
+                st.info("Cadastre e ative ao menos uma unidade escolar antes de emitir uma credencial para o pipeline.")
+            elif not modelos_opcoes:
+                st.warning("Nenhum modelo preditivo compatível está disponível no backend no momento.")
+            else:
+                with st.form("form_adm_emitir_credencial", clear_on_submit=True):
+                    c_nome = st.text_input("Identificação do serviço", key="adm_cr_nome")
+                    c_esc_lbl = st.selectbox("Escola", list(escolas_opcoes.keys()), key="adm_cr_escola")
+                    c_modelo_lbl = st.selectbox(
+                        "Modelo de Machine Learning",
+                        list(modelos_opcoes.keys()),
+                        key="adm_cr_modelo",
+                    )
+                    if st.form_submit_button("Emitir token técnico", type="primary", width="stretch"):
+                        if not c_nome.strip():
+                            st.warning("Informe a identificação do serviço preditivo.")
                         else:
-                            st.error(resp.erro or "Falha ao emitir credencial ML.")
+                            escola_sel = escolas_opcoes[c_esc_lbl]
+                            modelo_sel = modelos_opcoes[c_modelo_lbl]
+                            resp = criar_credencial_ml_api(
+                                nome=c_nome,
+                                escola_id=escola_sel,
+                                modelo_autorizado=modelo_sel,
+                                permite_leitura_inferencia=escola_sel is not None,
+                            )
+                            if resp.ok and isinstance(resp.dados, dict):
+                                st.session_state["adm_nova_credencial_segredo"] = resp.dados.get("chave_secreta")
+                                st.session_state["adm_aviso"] = ("sucesso", "Credencial ML emitida com segurança.")
+                                st.rerun()
+                            else:
+                                st.error(resp.erro or "Falha ao emitir credencial ML.")
 
 
 def _render_pagina_auditoria(ctx: dict[str, Any]) -> None:

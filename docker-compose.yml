@@ -60,6 +60,10 @@ services:
     restart: unless-stopped
     environment:
       <<: *backend-env
+      VERTICE_ML_SERVICE_TOKEN: ${VERTICE_ML_SERVICE_TOKEN:-}
+      VERTICE_ML_PERIODO_LETIVO: ${VERTICE_ML_PERIODO_LETIVO:-1º Bimestre}
+      VERTICE_ML_SCHEDULER_ENABLED: ${VERTICE_ML_SCHEDULER_ENABLED:-false}
+      VERTICE_ML_SCHEDULER_INTERVAL_SECONDS: ${VERTICE_ML_SCHEDULER_INTERVAL_SECONDS:-3600}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:

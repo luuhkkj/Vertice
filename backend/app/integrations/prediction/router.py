@@ -2,15 +2,16 @@
 Roteador FastAPI para o módulo de Integração Preditiva (Fase 7).
 
 Separa estritamente:
-- Gestão de credenciais de serviço (ADMINISTRADOR).
-- Ingestão de previsões unitárias e em lote (exclusiva para credencial técnica `X-Service-Token`).
+- Gestão de credenciais de serviço e listagem de modelos disponíveis (ADMINISTRADOR).
+- Extração controlada para inferência e ingestão de previsões unitárias e em lote
+  (credencial técnica `X-Service-Token`, sob escopo estrito da escola e modelo vinculados).
 - Consultas e resumos de risco (exclusivos para perfis pedagógicos no próprio escopo).
 """
 
 from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import (
@@ -30,7 +31,9 @@ from app.integrations.prediction.schemas import (
     CredencialIntegracaoCreate,
     CredencialIntegracaoCriadaResponse,
     CredencialIntegracaoResponse,
+    ExportacaoInferenciaResponse,
     HistoricoPrevisoesEstudanteResponse,
+    ModeloPreditivoDisponivelResponse,
     PrevisaoLoteResponse,
     PrevisaoRecebimentoItem,
     PrevisaoRecebimentoLoteRequest,
@@ -44,15 +47,10 @@ from app.modules.usuarios.models import Usuario
 router = APIRouter()
 
 
-def get_credencial_integracao_predicao(
+def _extrair_token_servico(
     x_service_token: Optional[str] = Header(default=None, alias="X-Service-Token"),
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
-    db: Session = Depends(get_db),
-) -> CredencialIntegracaoPredicao:
-    """
-    Dependência exclusiva de autenticação de serviço externo de predição.
-    Rejeita explicitamente tokens comuns de usuário (JWT) com HTTP 403.
-    """
+) -> Optional[str]:
     token_bruto = x_service_token
     if not token_bruto and authorization:
         partes = authorization.strip().split(" ", 1)
@@ -60,17 +58,58 @@ def get_credencial_integracao_predicao(
             token_bruto = partes[1]
         else:
             token_bruto = authorization.strip()
+    return token_bruto
+
+
+def get_credencial_integracao_predicao(
+    token_bruto: Optional[str] = Depends(_extrair_token_servico),
+    db: Session = Depends(get_db),
+) -> CredencialIntegracaoPredicao:
+    """
+    Dependência exclusiva de autenticação de serviço externo de predição.
+    Rejeita explicitamente tokens comuns de usuário (JWT) com HTTP 403.
+    """
     return PredictionService.autenticar_credencial_servico(db=db, token_bruto=token_bruto)
 
 
+def get_credencial_exportacao_inferencia(
+    token_bruto: Optional[str] = Depends(_extrair_token_servico),
+    db: Session = Depends(get_db),
+) -> CredencialIntegracaoPredicao:
+    """
+    Dependência de autenticação única (`X-Service-Token`) para extração controlada de
+    atributos do corte inicial. Exige `permite_leitura_inferencia=True`, escola e modelo
+    vinculados à credencial, preservando tokens legados como somente escrita.
+    """
+    return PredictionService.autenticar_credencial_leitura_inferencia(
+        db=db,
+        token_bruto=token_bruto,
+    )
+
+
 # ==============================================================================
-# Credenciais técnicas de serviço (Administrativo)
+# Credenciais técnicas de serviço e modelos disponíveis (Administrativo)
 # ==============================================================================
+@router.get(
+    "/modelos-disponiveis",
+    response_model=list[ModeloPreditivoDisponivelResponse],
+    summary="Listar modelos preditivos disponíveis para seleção na emissão de credenciais (somente Administrador)",
+)
+def listar_modelos_preditivos_disponiveis(
+    apenas_disponiveis: bool = Query(default=True),
+    admin_user: Usuario = Depends(require_admin),
+) -> list[ModeloPreditivoDisponivelResponse]:
+    _ = admin_user
+    return PredictionService.listar_modelos_disponiveis(
+        apenas_disponiveis=apenas_disponiveis
+    )
+
+
 @router.post(
     "/credenciais",
     response_model=CredencialIntegracaoCriadaResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Emitir credencial técnica de envio de previsões (somente Administrador)",
+    summary="Emitir credencial técnica de integração ML (somente Administrador)",
 )
 def criar_credencial_integracao(
     dados: CredencialIntegracaoCreate,
@@ -146,6 +185,40 @@ def validar_variaveis_entrada(
 ) -> ResultadoValidacaoLeakage:
     _ = current_user
     return PredictionService.inspecionar_variaveis_entrada(dados)
+
+
+@router.get(
+    "/exportacao-inferencia",
+    response_model=ExportacaoInferenciaResponse,
+    summary="Exportar atributos anonimizados do corte inicial para inferência ML (credencial única X-Service-Token)",
+)
+def exportar_dados_inferencia(
+    response: Response,
+    escola_id: Optional[uuid.UUID] = Query(default=None),
+    turma_id: Optional[uuid.UUID] = Query(default=None),
+    disciplina_id: Optional[uuid.UUID] = Query(default=None),
+    ano_letivo: Optional[int] = Query(default=None, ge=2000, le=2100),
+    periodo_letivo: str = Query(default="1º Bimestre", min_length=2, max_length=30),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    credencial: CredencialIntegracaoPredicao = Depends(
+        get_credencial_exportacao_inferencia
+    ),
+) -> ExportacaoInferenciaResponse:
+    resultado = PredictionService.exportar_dados_inferencia(
+        db=db,
+        credencial=credencial,
+        escola_id=escola_id,
+        turma_id=turma_id,
+        disciplina_id=disciplina_id,
+        ano_letivo=ano_letivo,
+        periodo_letivo=periodo_letivo,
+        skip=skip,
+        limit=limit,
+    )
+    response.headers["X-Total-Count"] = str(resultado.total)
+    return resultado
 
 
 # ==============================================================================
