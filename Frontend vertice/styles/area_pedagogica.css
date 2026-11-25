@@ -1,0 +1,189 @@
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) {
+    --academico-ink: #232020;
+    --academico-green: #16A34A;
+    --academico-blue: #4E67CA;
+    --academico-border: #EEE5E9;
+    --academico-navy: #1E3A5F;
+    --academico-sage: #70A37F;
+    --academico-amber: #F59E0B;
+    --academico-red: #DC2626;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stCaptionContainer"],
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stCaptionContainer"] * {
+    color: var(--academico-navy) !important;
+    opacity: 1 !important;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) .st-key-mapa_detalhe [data-testid="stCaptionContainer"],
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) .st-key-mapa_detalhe [data-testid="stCaptionContainer"] *,
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) .st-key-participacao_detalhes [data-testid="stCaptionContainer"],
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) .st-key-participacao_detalhes [data-testid="stCaptionContainer"] * {
+    color: var(--academico-navy) !important;
+    opacity: 1 !important;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) .st-key-participacao_detalhes [data-testid="stButton"] button:disabled {
+    color: var(--academico-navy) !important;
+    background: var(--academico-border) !important;
+    border-color: var(--academico-sage) !important;
+    opacity: 1 !important;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) .st-key-assistente_rodape [data-testid="stChatInputSubmitButton"]:disabled {
+    color: var(--academico-navy) !important;
+    background: var(--academico-border) !important;
+    border-color: var(--academico-sage) !important;
+    opacity: 1 !important;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stWidgetLabel"] p {
+    color: var(--academico-navy) !important;
+    opacity: 1 !important;
+    font-weight: 600;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-card_"] {
+    border-color: var(--academico-border);
+    border-left: 3px solid var(--academico-sage);
+    border-radius: 0.8rem;
+    box-shadow: 0 4px 14px rgba(30, 58, 95, 0.06);
+    transition: box-shadow 160ms ease, transform 160ms ease;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-card_"]:hover {
+    box-shadow: 0 8px 20px rgba(30, 58, 95, 0.1);
+    transform: translateY(-1px);
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stDataFrame"] {
+    overflow: hidden;
+    border: 1px solid var(--academico-border);
+    border-radius: 0.7rem;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stTextInput"] input,
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stTextArea"] textarea,
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stSelectbox"] [data-baseweb="select"] > div,
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stMultiSelect"] [data-baseweb="select"] > div {
+    border-radius: 0.65rem;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stTextInput"] input:disabled,
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stTextArea"] textarea:disabled {
+    color: var(--academico-navy) !important;
+    -webkit-text-fill-color: var(--academico-navy) !important;
+    opacity: 1 !important;
+    background: var(--academico-border) !important;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stTextInput"] input:focus,
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stTextArea"] textarea:focus,
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within,
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stMultiSelect"] [data-baseweb="select"] > div:focus-within {
+    border-color: var(--academico-amber) !important;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.18);
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stButton"] button:focus-visible,
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stFormSubmitButton"] button:focus-visible {
+    outline: 3px solid var(--academico-amber);
+    outline-offset: 2px;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stButton"] button:disabled {
+    color: var(--academico-navy) !important;
+    background: var(--academico-border) !important;
+    border-color: var(--academico-sage) !important;
+    opacity: 1 !important;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-kpi_azul_"] {
+    background: var(--academico-navy);
+    border-color: var(--academico-navy);
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-kpi_azul_medio_"] {
+    background: var(--academico-blue);
+    border-color: var(--academico-blue);
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-kpi_roxo_"] {
+    background: var(--academico-sage);
+    border-color: var(--academico-sage);
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-kpi_verde_"] {
+    background: var(--academico-green);
+    border-color: var(--academico-green);
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-kpi_laranja_"] {
+    background: var(--academico-amber);
+    border-color: var(--academico-amber);
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-kpi_vermelho_"] {
+    background: var(--academico-red);
+    border-color: var(--academico-red);
+}
+
+:is(
+    :is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-kpi_azul_"],
+    :is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-kpi_azul_medio_"],
+    :is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-kpi_vermelho_"]
+) :is(
+    [data-testid="stMetricLabel"],
+    [data-testid="stMetricLabel"] *,
+    [data-testid="stMetricValue"],
+    [data-testid="stMetricValue"] *,
+    [data-testid="stCaptionContainer"],
+    [data-testid="stCaptionContainer"] *
+) {
+    color: #FFFFFF !important;
+    opacity: 1 !important;
+}
+
+:is(
+    :is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-kpi_roxo_"],
+    :is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-kpi_verde_"],
+    :is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-kpi_laranja_"]
+) :is(
+    [data-testid="stMetricLabel"],
+    [data-testid="stMetricLabel"] *,
+    [data-testid="stMetricValue"],
+    [data-testid="stMetricValue"] *,
+    [data-testid="stCaptionContainer"],
+    [data-testid="stCaptionContainer"] *
+) {
+    color: var(--academico-ink) !important;
+    opacity: 1 !important;
+}
+
+:is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stAlert"] {
+    border-radius: 0.75rem;
+}
+
+@media (max-width: 900px) {
+    :is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap;
+        gap: 0.85rem;
+    }
+
+    :is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex: 1 1 17rem !important;
+        min-width: min(100%, 17rem) !important;
+    }
+}
+
+@media (max-width: 560px) {
+    :is(.st-key-gestor_workspace, .st-key-professor_workspace) [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex-basis: 100% !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :is(.st-key-gestor_workspace, .st-key-professor_workspace) [class*="st-key-card_"] {
+        transition: none;
+    }
+}

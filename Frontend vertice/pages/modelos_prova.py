@@ -79,7 +79,7 @@ def render():
         )
         return
 
-    if st.button(
+    if _papel_atual_modelos() == "professor" and st.button(
         "Voltar para Mapa de Acertos",
         icon=":material/arrow_back:",
         key="modelos_voltar",

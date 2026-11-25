@@ -16,8 +16,8 @@ def _arquivo_base64(nome):
     return base64.b64encode(caminho.read_bytes()).decode("utf-8")
 
 
-def painel_boas_vindas(pergunta, rotulo_botao, tela_destino):
-    """Renderiza o painel de boas-vindas usado no login e no cadastro."""
+def painel_boas_vindas():
+    """Renderiza o painel de boas-vindas do login institucional."""
     capelo = _arquivo_base64("capelo.svg")
 
     with st.container(key="painel_creme"):
@@ -32,14 +32,9 @@ def painel_boas_vindas(pergunta, rotulo_botao, tela_destino):
                 )
 
             st.html(
-                f"""
+                """
 <div class="auth-textos">
     <div class="auth-titulo">Olá! Bem-vindo(a)<br>ao Vértice</div>
-    <div class="auth-pergunta">{pergunta}</div>
 </div>
 """
             )
-
-            if st.button(rotulo_botao, key=f"auth_ir_{tela_destino}"):
-                st.session_state["tela_auth"] = tela_destino
-                st.rerun()

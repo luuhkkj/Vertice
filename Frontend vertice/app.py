@@ -39,7 +39,6 @@ st.set_page_config(
 carregar_estilos()
 
 st.session_state.setdefault("logado", False)
-st.session_state.setdefault("tela_auth", "login")
 st.session_state.setdefault("perfil", "professor")
 
 
@@ -71,29 +70,54 @@ def montar_paginas_internas():
     )
 
     if papel == "administrador":
-        pagina_admin = st.Page(
-            administracao_tecnica.render,
-            title="Administração Técnica",
-            url_path="administracao-tecnica",
-            default=True,
-        )
-        paginas_menu = [pagina_admin, pagina_perfil]
+        paginas_menu = [
+            st.Page(
+                administracao_tecnica.render,
+                title="Visão geral",
+                url_path="visao-geral",
+                default=True,
+            ),
+            st.Page(
+                administracao_tecnica.render_usuarios_e_contas,
+                title="Usuários e Contas",
+                url_path="usuarios-e-contas",
+            ),
+            st.Page(
+                administracao_tecnica.render_estrutura,
+                title="Escolas, Turmas e Disciplinas",
+                url_path="escolas-turmas-disciplinas",
+            ),
+            st.Page(
+                administracao_tecnica.render_credenciais_ml,
+                title="Credenciais ML",
+                url_path="credenciais-ml",
+            ),
+            st.Page(
+                administracao_tecnica.render_auditoria,
+                title="Auditoria Técnica e IA",
+                url_path="auditoria-tecnica-ia",
+            ),
+            pagina_perfil,
+        ]
         return list(paginas_menu), list(paginas_menu)
-
-    pagina_mapa = st.Page(
-        mapa_acertos.render,
-        title="Mapa de Acertos",
-        url_path="mapa-de-acertos",
-    )
 
     pagina_modelos = st.Page(
         modelos_prova.render,
         title="Modelos de Planilha",
         url_path="modelos-de-prova",
     )
-
-    st.session_state["pagina_mapa_acertos"] = pagina_mapa
     st.session_state["pagina_modelos_prova"] = pagina_modelos
+
+    if papel == "professor":
+        pagina_mapa = st.Page(
+            mapa_acertos.render,
+            title="Mapa de Acertos",
+            url_path="mapa-de-acertos",
+        )
+        st.session_state["pagina_mapa_acertos"] = pagina_mapa
+    else:
+        pagina_mapa = None
+        st.session_state.pop("pagina_mapa_acertos", None)
 
     paginas_menu = [
         st.Page(
@@ -118,21 +142,25 @@ def montar_paginas_internas():
             )
         )
 
-    paginas_menu.extend(
-        [
-            st.Page(
-                assistente_ia.render,
-                title="Assistente IA",
-                url_path="assistente-ia",
-            ),
-            pagina_mapa,
-            st.Page(
-                participacao.render,
-                title="Participação",
-                url_path="participacao",
-            ),
-        ]
+    paginas_menu.append(
+        st.Page(
+            assistente_ia.render,
+            title="Assistente IA",
+            url_path="assistente-ia",
+        )
     )
+
+    if papel == "professor":
+        paginas_menu.extend(
+            [
+                pagina_mapa,
+                st.Page(
+                    participacao.render,
+                    title="Participação",
+                    url_path="participacao",
+                ),
+            ]
+        )
 
     if papel == "gestor":
         paginas_menu.append(
@@ -166,7 +194,12 @@ def executar_navegacao_autenticada() -> None:
     render_sidebar(paginas_menu, pagina_atual)
 
     try:
-        pagina_atual.run()
+        papel = obter_papel_canonico()
+        if papel in ("gestor", "professor"):
+            with st.container(key=f"{papel}_workspace"):
+                pagina_atual.run()
+        else:
+            pagina_atual.run()
     except Exception as exc:
         if type(exc).__name__ in _EXCECOES_CONTROLE_STREAMLIT:
             raise

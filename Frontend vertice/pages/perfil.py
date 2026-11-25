@@ -111,10 +111,11 @@ def render():
         st.error("É necessário entrar no sistema.")
         return
 
-    titulo_pagina(
-        "Meu Perfil",
-        "Identidade autenticada, escola vinculada e permissões reais no sistema.",
-    )
+    with st.container(key="perfil_cabecalho"):
+        titulo_pagina(
+            "Meu Perfil",
+            "Identidade autenticada, escola vinculada e permissões reais no sistema.",
+        )
 
     ctx = carregar_perfil_api()
     if ctx["sessao_expirada"]:
@@ -163,10 +164,11 @@ def render():
             "Perfil Administrador: gestão técnica da plataforma "
             "(contas de usuários, estrutura institucional, credenciais ML e auditoria técnica)."
         )
-        st.caption(
-            "Observação de segurança: por segregação de funções, o perfil Administrador "
-            "não acessa módulos pedagógicos, dados de estudantes, indicadores nem atribuição de turmas."
-        )
+        with st.container(key="perfil_seguranca"):
+            st.caption(
+                "Observação de segurança: por segregação de funções, o perfil Administrador "
+                "não acessa módulos pedagógicos, dados de estudantes, indicadores nem atribuição de turmas."
+            )
     elif papel == "gestor":
         st.info(
             "Perfil Gestor/Coordenador: opera dados acadêmicos, importações, avaliações, participação, "

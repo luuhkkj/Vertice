@@ -16,6 +16,7 @@ if str(FRONTEND_DIR) not in sys.path:
     sys.path.insert(0, str(FRONTEND_DIR))
 
 import data.api_client as api_client  # noqa: E402
+from components import auth_animada  # noqa: E402
 
 
 def _resposta_padrao_escola_vazia(
@@ -242,6 +243,33 @@ def _iniciar_app_autenticado(
     return at
 
 
+def _iniciar_perfil_autenticado(papel: str, transport_fn, escola_id: str | None) -> AppTest:
+    """Renderiza somente a tela de perfil no AppTest com identidade autenticada."""
+    api_client.configurar_cliente_http_teste(transport_fn)
+    snippet = f"""
+import sys
+sys.path.insert(0, {str(FRONTEND_DIR)!r})
+import streamlit as st
+from pages import perfil
+perfil.render()
+"""
+    at = AppTest.from_string(snippet, default_timeout=10)
+    at.session_state["logado"] = True
+    at.session_state["access_token"] = f"tok-{papel}-{uuid.uuid4()}"
+    at.session_state["usuario_api"] = {
+        "id": "user-teste-1",
+        "nome": f"Usuário {papel.title()}",
+        "email": f"{papel}@vertice.edu.br",
+        "papel": papel,
+        "escola_id": escola_id,
+        "ativo": True,
+    }
+    at.session_state["perfil"] = papel
+    at.session_state["papel_api"] = papel
+    at.run()
+    return at
+
+
 def _chaves_blocos(at: AppTest) -> list[str]:
     return [getattr(bloco, "key", None) for bloco in at.main if getattr(bloco, "key", None)]
 
@@ -251,6 +279,14 @@ class TestFrontendStreamlitE2E(unittest.TestCase):
 
     def tearDown(self) -> None:
         api_client.configurar_cliente_http_teste(None)
+
+    def test_autenticacao_publica_mantem_apenas_login(self) -> None:
+        interface = auth_animada.HTML + auth_animada.JS
+
+        self.assertIn('id="v-login-email"', interface)
+        self.assertIn('id="v-login-senha"', interface)
+        self.assertIn('id="v-entrar"', interface)
+        self.assertNotIn("cadastro", interface.lower())
 
     def test_criar_avaliacao_envia_status_aceito_pela_api(self) -> None:
         with patch("data.api_client.requisitar_api") as requisitar:
@@ -309,21 +345,56 @@ with card("Atividade ATV-01", subtitulo="Turma 1A | MAT", chave="atividade_detal
         keys = _chaves_blocos(at)
         self.assertIn("cabecalho", keys)
         self.assertIn("vertice_menu_lateral", keys)
-        self.assertIn("menu_ativo_administracao_tecnica", keys)
+        self.assertIn("menu_ativo_visao_geral", keys)
+        for item in (
+            "menu_usuarios_e_contas",
+            "menu_escolas_turmas_disciplinas",
+            "menu_credenciais_ml",
+            "menu_auditoria_tecnica_ia",
+        ):
+            self.assertIn(item, keys)
         self.assertIn("menu_meu_perfil", keys)
         self.assertNotIn("menu_atribuir_turmas", keys)
-        self.assertNotIn("menu_visao_geral", keys)
         self.assertNotIn("menu_entrada_de_dados", keys)
-        self.assertIn("Administração Técnica da Plataforma", [t.value for t in at.title])
+        self.assertIn("Visão geral", [t.value for t in at.title])
+        self.assertIn("admin_workspace", keys)
 
-        # Navega para Meu Perfil pelo botão do cabeçalho preservando navegação e sem erros
-        at.button(key="botao_perfil_cabecalho").click().run()
-        self.assertFalse(at.exception, at.exception)
-        self.assertIn("Meu Perfil", [t.value for t in at.title])
-        keys_perfil = _chaves_blocos(at)
-        self.assertIn("cabecalho", keys_perfil)
-        self.assertIn("vertice_menu_lateral", keys_perfil)
-        self.assertIn("menu_ativo_meu_perfil", keys_perfil)
+        paginas_admin = (
+            ("usuarios-e-contas", "Usuários e Contas", "Contas cadastradas na plataforma"),
+            (
+                "escolas-turmas-disciplinas",
+                "Escolas, Turmas e Disciplinas",
+                "Unidades Escolares",
+            ),
+            ("credenciais-ml", "Credenciais ML", "Emitir nova credencial ML"),
+            (
+                "auditoria-tecnica-ia",
+                "Auditoria Técnica e IA",
+                "Trilha de auditoria técnica administrativa",
+            ),
+        )
+        for url_path, titulo, secao in paginas_admin:
+            page_link = next(
+                link
+                for link in at.page_link
+                if link.value == titulo
+            )
+            at._page_hash = page_link.proto.page_script_hash
+            at.run()
+            self.assertFalse(at.exception, at.exception)
+            self.assertIn(titulo, [item.value for item in at.title])
+            self.assertIn(secao, [item.value for item in at.subheader])
+            self.assertIn(
+                f"menu_ativo_{url_path.replace('-', '_')}",
+                _chaves_blocos(at),
+            )
+
+        self.assertIn("Meu Perfil", [link.value for link in at.page_link])
+        self.assertNotIn("botao_perfil_cabecalho", [button.key for button in at.button])
+        at_perfil = _iniciar_perfil_autenticado("administrador", transport, escola_id=None)
+        self.assertFalse(at_perfil.exception, at_perfil.exception)
+        self.assertIn("Meu Perfil", [item.value for item in at_perfil.title])
+        self.assertIn("perfil_informacoes", _chaves_blocos(at_perfil))
 
     def test_gestor_escola_sem_dados_e_navegacao_completa(self) -> None:
         transport = _resposta_padrao_escola_vazia(papel="gestor")
@@ -334,17 +405,20 @@ with card("Atividade ATV-01", subtitulo="Turma 1A | MAT", chave="atividade_detal
         keys = _chaves_blocos(at)
         self.assertEqual(keys.count("cabecalho"), 1)
         self.assertEqual(keys.count("vertice_menu_lateral"), 1)
+        self.assertIn("gestor_workspace", keys)
         self.assertIn("menu_ativo_visao_geral", keys)
         for esperado in (
             "menu_estudantes",
             "menu_entrada_de_dados",
             "menu_assistente_ia",
-            "menu_mapa_de_acertos",
-            "menu_participacao",
             "menu_atribuir_turmas",
             "menu_meu_perfil",
         ):
             self.assertIn(esperado, keys)
+        self.assertNotIn("menu_mapa_de_acertos", keys)
+        self.assertNotIn("menu_participacao", keys)
+        self.assertNotIn("Mapa de Acertos", [link.value for link in at.page_link])
+        self.assertNotIn("Participação", [link.value for link in at.page_link])
 
         # Visão Geral sem dados: 4 cartões com títulos únicos (sem duplicação) e mensagens informativas
         subheaders = [s.value for s in at.subheader]
@@ -366,8 +440,6 @@ with card("Atividade ATV-01", subtitulo="Turma 1A | MAT", chave="atividade_detal
             ("Estudantes", "estudantes", "estudantes"),
             ("Entrada de Dados", "entrada-de-dados", "entrada_dados"),
             ("Assistente IA", "assistente-ia", "assistente_ia"),
-            ("Mapa de Acertos", "mapa-de-acertos", "mapa_acertos"),
-            ("Participação", "participacao", "participacao"),
             ("Atribuir turmas", "atribuir-turmas", "atribuicao"),
             ("Meu Perfil", "perfil", "perfil"),
         ]:
@@ -554,16 +626,21 @@ pagina_atual.run()
         self.assertIn("cabecalho", keys)
         self.assertIn("vertice_menu_lateral", keys)
         self.assertIn("menu_ativo_visao_geral", keys)
+        self.assertIn("professor_workspace", keys)
         self.assertNotIn("menu_administracao_tecnica", keys)
         self.assertNotIn("menu_entrada_de_dados", keys)
         self.assertNotIn("menu_atribuir_turmas", keys)
+        self.assertIn("menu_mapa_de_acertos", keys)
+        self.assertIn("menu_participacao", keys)
         self.assertIn("menu_meu_perfil", keys)
 
-        # Navega para Meu Perfil pelo botão superior
-        at.button(key="botao_perfil_cabecalho").click().run()
-        self.assertFalse(at.exception, at.exception)
-        self.assertIn("Meu Perfil", [t.value for t in at.title])
-        self.assertIn("menu_ativo_meu_perfil", _chaves_blocos(at))
+        self.assertIn("Meu Perfil", [link.value for link in at.page_link])
+        self.assertIn("Mapa de Acertos", [link.value for link in at.page_link])
+        self.assertIn("Participação", [link.value for link in at.page_link])
+        self.assertNotIn("botao_perfil_cabecalho", [button.key for button in at.button])
+        at_perfil = _iniciar_perfil_autenticado("professor", transport, escola_id="escola-vazia-1")
+        self.assertFalse(at_perfil.exception, at_perfil.exception)
+        self.assertIn("Meu Perfil", [item.value for item in at_perfil.title])
 
         # Renderiza Participação com atividade real (exercita card(titulo, subtitulo=...) e card_kpi!)
         snippet_part = f"""

@@ -1,4 +1,4 @@
-/* Layout das telas de login e cadastro */
+/* Layout legado do login institucional */
 
 [data-testid="stMainBlockContainer"]:has(.st-key-painel_azul) {
     width: 100% !important;
@@ -54,7 +54,6 @@
     max-width: 23rem !important;
     margin: 0 auto !important;
     box-sizing: border-box;
-    transform: translateY(-1.8rem);
 }
 
 .st-key-auth_bloco_esquerdo
@@ -91,45 +90,6 @@
     font-size: 2rem;
     line-height: 2.4rem;
     font-weight: 700;
-}
-
-.auth-pergunta {
-    margin-top: 0.65rem;
-    color: #232020;
-    font-size: 1.15rem;
-    line-height: 1.5rem;
-}
-
-.st-key-auth_bloco_esquerdo
-[data-testid="stButton"] {
-    width: 100% !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    margin-top: 1.35rem !important;
-}
-
-.st-key-auth_bloco_esquerdo
-[data-testid="stButton"] button {
-    width: 7.8rem !important;
-    min-width: 7.8rem !important;
-    height: 2.35rem !important;
-    min-height: 2.35rem !important;
-    margin: 0 auto !important;
-    padding: 0 1rem !important;
-    background: #232020 !important;
-    border: 1px solid #232020 !important;
-    border-radius: 8px !important;
-    color: #fff !important;
-    box-shadow: 0 3px 4px rgba(0, 0, 0, 0.2) !important;
-}
-
-.st-key-auth_bloco_esquerdo
-[data-testid="stButton"] button p {
-    margin: 0 !important;
-    color: #fff !important;
-    font-size: 0.95rem !important;
-    font-weight: 400 !important;
 }
 
 /* Formulário do painel azul */

@@ -113,6 +113,10 @@ ICONES_MENU = {
     "mapa-de-acertos": ("acertos.svg", "image/svg+xml"),
     "participacao": ("participacao.svg", "image/svg+xml"),
     "atribuir-turmas": ("atribuicao.svg", "image/svg+xml"),
+    "usuarios-e-contas": ("estudantes.png", "image/png"),
+    "escolas-turmas-disciplinas": ("dados.svg", "image/svg+xml"),
+    "credenciais-ml": ("IA.svg", "image/svg+xml"),
+    "auditoria-tecnica-ia": ("info.svg", "image/svg+xml"),
 }
 
 
@@ -243,7 +247,6 @@ def _sair():
     st.session_state["logado"] = False
     st.session_state["perfil"] = "professor"
     st.session_state["professor_atual"] = None
-    st.session_state["tela_auth"] = "login"
     st.session_state["menu_mobile_aberto"] = False
 
     for chave in (
@@ -305,37 +308,14 @@ def _estilos_cabecalho():
                 pointer-events: auto !important;
             }
 
-            /* Botão de perfil ao lado de Sair. */
-
-            .st-key-perfil_flutuante {
-                position: fixed !important;
-                top: 0.35rem !important;
-                right: 3.65rem !important;
-
-                width: 42px !important;
-                min-width: 42px !important;
-                max-width: 42px !important;
-
-                margin: 0 !important;
-                padding: 0 !important;
-
-                z-index: 2000000 !important;
-                pointer-events: auto !important;
-            }
-
-            /* Aparência igual para os dois botões. */
-
             .st-key-logout_flutuante
-            [data-testid="stButton"],
-            .st-key-perfil_flutuante
             [data-testid="stButton"] {
                 width: 42px !important;
                 margin: 0 !important;
                 padding: 0 !important;
             }
 
-            .st-key-logout_flutuante button,
-            .st-key-perfil_flutuante button {
+            .st-key-logout_flutuante button {
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
@@ -359,15 +339,13 @@ def _estilos_cabecalho():
                 pointer-events: auto !important;
             }
 
-            .st-key-logout_flutuante button:hover,
-            .st-key-perfil_flutuante button:hover {
+            .st-key-logout_flutuante button:hover {
                 background: rgba(
                     255, 255, 255, .15
                 ) !important;
             }
 
-            .st-key-logout_flutuante button svg,
-            .st-key-perfil_flutuante button svg {
+            .st-key-logout_flutuante button svg {
                 width: 19px !important;
                 height: 19px !important;
                 color: white !important;
@@ -389,12 +367,8 @@ def _estilos_cabecalho():
                     display: none !important;
                 }
 
-                /* Distribui os três botões no celular:
-                   Perfil, Menu e Sair. */
-
-                .st-key-perfil_flutuante {
-                    right: 6.75rem !important;
-                }
+                /* Distribui os dois botões no celular:
+                   Menu e Sair. */
 
                 .st-key-nav_mobile {
                     display: block !important;
@@ -467,16 +441,6 @@ def abrir_menu_mobile(paginas):
         )
 
 
-def _pagina_perfil(paginas):
-    """Encontra a página Meu Perfil já registrada no app."""
-
-    for pagina in paginas or []:
-        if identificar_pagina(pagina) == "meu-perfil":
-            return pagina
-
-    return None
-
-
 def render_header(paginas=None):
     """Exibe o cabeçalho e os controles do sistema."""
 
@@ -534,18 +498,6 @@ def render_header(paginas=None):
             help="Abrir navegação",
         ):
             abrir_menu_mobile(paginas or [])
-
-    pagina_perfil = _pagina_perfil(paginas)
-
-    if pagina_perfil is not None:
-        with st.container(key="perfil_flutuante"):
-            if st.button(
-                "",
-                icon=":material/person_outline:",
-                key="botao_perfil_cabecalho",
-                help="Meu Perfil",
-            ):
-                st.switch_page(pagina_perfil)
 
     with st.container(key="logout_flutuante"):
         st.button(

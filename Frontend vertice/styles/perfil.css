@@ -1,0 +1,30 @@
+.st-key-perfil_cabecalho [data-testid="stCaptionContainer"],
+.st-key-perfil_cabecalho [data-testid="stCaptionContainer"] *,
+.st-key-perfil_seguranca [data-testid="stCaptionContainer"],
+.st-key-perfil_seguranca [data-testid="stCaptionContainer"] * {
+    color: #1E3A5F !important;
+    opacity: 1 !important;
+    font-weight: 500;
+}
+
+.st-key-perfil_informacoes {
+    padding: 1rem 1.2rem;
+    border: 1px solid #EEE5E9;
+    border-radius: 0.8rem;
+    background: #FFFFFF;
+    box-shadow: 0 4px 14px rgba(30, 58, 95, 0.06);
+}
+
+.st-key-perfil_informacoes [data-testid="stWidgetLabel"] p {
+    color: #1E3A5F !important;
+    opacity: 1 !important;
+    font-weight: 600;
+}
+
+.st-key-perfil_informacoes [data-testid="stTextInput"] input:disabled {
+    color: #1E3A5F !important;
+    -webkit-text-fill-color: #1E3A5F !important;
+    opacity: 1 !important;
+    background-color: #EEE5E9 !important;
+    border-color: #D8CBD1 !important;
+}

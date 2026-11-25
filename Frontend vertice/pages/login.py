@@ -11,11 +11,7 @@ def render():
     col_esquerda, col_direita = st.columns([1, 1], gap=None)
 
     with col_esquerda:
-        painel_boas_vindas(
-            "Precisa de uma conta?",
-            "Solicitar acesso",
-            "cadastro",
-        )
+        painel_boas_vindas()
 
     with col_direita:
         with st.container(key="painel_azul"):

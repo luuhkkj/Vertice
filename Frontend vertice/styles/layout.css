@@ -61,7 +61,6 @@
 [data-testid="stLayoutWrapper"]:has(
     > .st-key-cabecalho,
     > .st-key-nav_mobile,
-    > .st-key-perfil_flutuante,
     > .st-key-logout_flutuante,
     > .st-key-vertice_menu_lateral
 ) {
@@ -156,6 +155,7 @@
 [data-testid="stPageLink-NavLink"] {
     display: flex !important;
     align-items: center !important;
+    min-width: 0 !important;
 
     min-height: 2.15rem;
 
@@ -173,11 +173,14 @@
 [class*="st-key-menu_"]
 [data-testid="stPageLink-NavLink"] p {
     margin: 0 !important;
+    min-width: 0 !important;
+    flex: 1 1 auto;
 
     color: #ffffff !important;
     font-size: 0.78rem !important;
     line-height: 1.2rem;
     font-weight: 500;
+    white-space: normal !important;
 }
 
 [class*="st-key-menu_"]
@@ -194,9 +197,32 @@
 [class*="st-key-menu_ativo_"] {
     position: relative;
 
-    background: rgba(
-        255, 255, 255, 0.07
-    );
+    margin: 0.18rem 0.45rem;
+    border: 1px solid rgba(238, 229, 233, 0.28);
+    border-left: 3px solid #F59E0B;
+    border-radius: 0.8rem;
+    background: rgba(238, 229, 233, 0.14);
+    box-shadow: 0 4px 12px rgba(35, 32, 32, 0.14);
+    transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+
+[class*="st-key-menu_ativo_"]:hover {
+    background: rgba(238, 229, 233, 0.2);
+    box-shadow: 0 6px 16px rgba(35, 32, 32, 0.18);
+}
+
+[class*="st-key-menu_ativo_"]
+[data-testid="stPageLink-NavLink"] {
+    min-height: 2.35rem;
+    padding: 0.48rem 0.8rem !important;
+    border-radius: 0 0.65rem 0.65rem 0 !important;
+    background: transparent !important;
+}
+
+[class*="st-key-menu_ativo_"]
+[data-testid="stPageLink-NavLink"]:hover {
+    padding-left: 0.8rem !important;
+    background: transparent !important;
 }
 
 [class*="st-key-menu_ativo_"]
@@ -204,17 +230,10 @@
     font-weight: 700 !important;
 }
 
-[class*="st-key-menu_ativo_"]::after {
-    content: "";
-    position: absolute;
-    right: 0;
-    top: 50%;
-
-    transform: translateY(-50%);
-
-    border-top: 0.7rem solid transparent;
-    border-bottom: 0.7rem solid transparent;
-    border-right: 0.7rem solid var(--creme);
+[class*="st-key-menu_ativo_"]
+[data-testid="stPageLink-NavLink"]:focus-visible {
+    outline: 2px solid #F59E0B !important;
+    outline-offset: -2px;
 }
 
 /* Ícones do menu */

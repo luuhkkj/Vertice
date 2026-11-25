@@ -79,7 +79,7 @@ HTML = """
 
     <section class="v-cream">
 
-        <div class="v-welcome v-welcome-login">
+        <div class="v-welcome">
 
             <div class="v-logo">
                 <img id="v-capelo-login" alt="Vértice">
@@ -87,43 +87,13 @@ HTML = """
 
             <h1>Olá! Bem-vindo(a)<br>ao Vértice</h1>
 
-            <p>Não tem uma conta ainda?</p>
-
-            <button
-                class="v-outline-button"
-                id="v-ir-cadastro"
-                type="button"
-            >
-                Cadastro
-            </button>
-
-        </div>
-
-        <div class="v-welcome v-welcome-register">
-
-            <div class="v-logo">
-                <img id="v-capelo-cadastro" alt="Vértice">
-            </div>
-
-            <h1>Olá! Bem-vindo(a)<br>ao Vértice</h1>
-
-            <p>Já tem uma conta?</p>
-
-            <button
-                class="v-outline-button"
-                id="v-ir-login"
-                type="button"
-            >
-                Login
-            </button>
-
         </div>
 
     </section>
 
     <section class="v-blue">
 
-        <div class="v-form v-form-login">
+        <div class="v-form">
 
             <h2>Login</h2>
 
@@ -197,29 +167,6 @@ HTML = """
 
         </div>
 
-        <div class="v-form v-form-register">
-
-            <h2>Acesso Institucional</h2>
-
-            <div class="v-fields">
-                <p style="font-size: 14px; line-height: 1.6; color: #f7f4ed; margin: 8px 0 18px 0;">
-                    Por segurança e conformidade com a LGPD, o Vértice não permite autocadastro público.
-                    Solicite ao Administrador institucional o cadastro da sua conta (Gestor ou Professor)
-                    ou entre com suas credenciais já habilitadas.
-                </p>
-
-                <button
-                    class="v-submit"
-                    id="v-cadastrar"
-                    type="button"
-                >
-                    Ir para Login
-                </button>
-
-            </div>
-
-        </div>
-
     </section>
 
 </div>
@@ -267,11 +214,6 @@ CSS = """
     height: 100%;
     overflow: hidden;
 
-    transition:
-        transform 950ms cubic-bezier(.76, 0, .24, 1);
-
-    will-change: transform;
-    backface-visibility: hidden;
 }
 
 .v-cream {
@@ -290,16 +232,6 @@ CSS = """
     transform: translateX(0);
 }
 
-/* Animação horizontal */
-
-.v-auth.is-register .v-cream {
-    transform: translateX(100%);
-}
-
-.v-auth.is-register .v-blue {
-    transform: translateX(-100%);
-}
-
 /* Boas-vindas */
 
 .v-welcome {
@@ -312,35 +244,6 @@ CSS = """
     text-align: center;
     padding: 32px;
 
-    transition:
-        opacity 280ms ease,
-        transform 450ms ease;
-}
-
-.v-welcome-login {
-    opacity: 1;
-    transform: translateY(0);
-    transition-delay: 320ms;
-}
-
-.v-welcome-register {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(15px);
-}
-
-.v-auth.is-register .v-welcome-login {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-15px);
-    transition-delay: 0ms;
-}
-
-.v-auth.is-register .v-welcome-register {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateY(0);
-    transition-delay: 320ms;
 }
 
 /* Logotipo */
@@ -361,42 +264,11 @@ CSS = """
 /* Textos de boas-vindas */
 
 .v-welcome h1 {
-    margin: 0 0 30px;
+    margin: 0;
     font-size: clamp(27px, 3vw, 43px);
     line-height: 1.2;
     font-weight: 700;
     letter-spacing: -0.7px;
-}
-
-.v-welcome p {
-    margin: 0 0 22px;
-    font-size: 17px;
-}
-
-/* Botão de troca de tela */
-
-.v-outline-button {
-    min-width: 170px;
-    min-height: 48px;
-    padding: 10px 26px;
-    border: 2px solid #4e67ca;
-    border-radius: 12px;
-    background: transparent;
-    color: #344fae;
-    font-size: 16px;
-    font-weight: 700;
-    cursor: pointer;
-
-    transition:
-        background 200ms ease,
-        color 200ms ease,
-        transform 200ms ease;
-}
-
-.v-outline-button:hover {
-    background: #4e67ca;
-    color: #ffffff;
-    transform: translateY(-2px);
 }
 
 /* Formulários */
@@ -410,35 +282,6 @@ CSS = """
     justify-content: center;
     padding: 28px 12%;
 
-    transition:
-        opacity 280ms ease,
-        transform 450ms ease;
-}
-
-.v-form-login {
-    opacity: 1;
-    transform: translateY(0);
-    transition-delay: 320ms;
-}
-
-.v-form-register {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(15px);
-}
-
-.v-auth.is-register .v-form-login {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-15px);
-    transition-delay: 0ms;
-}
-
-.v-auth.is-register .v-form-register {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateY(0);
-    transition-delay: 320ms;
 }
 
 /* Títulos */
@@ -631,33 +474,14 @@ button:focus-visible {
     }
 
     .v-cream {
-        top: 0;
-        left: 0;
         width: 100%;
         height: 42%;
-        transform: translateY(0);
-
-        transition:
-            transform 750ms cubic-bezier(.76, 0, .24, 1);
     }
 
     .v-blue {
         top: 42%;
-        right: 0;
         width: 100%;
         height: 58%;
-        transform: translateY(0);
-
-        transition:
-            transform 750ms cubic-bezier(.76, 0, .24, 1);
-    }
-
-    .v-auth.is-register .v-cream {
-        transform: translateY(138.095238%);
-    }
-
-    .v-auth.is-register .v-blue {
-        transform: translateY(-72.413793%);
     }
 
     .v-form {
@@ -721,19 +545,6 @@ button:focus-visible {
     .v-welcome h1 {
         font-size: 24px;
         line-height: 1.25;
-        margin: 0 0 14px;
-    }
-
-    .v-welcome p {
-        font-size: 14px;
-        margin: 0 0 12px;
-    }
-
-    .v-outline-button {
-        min-width: 140px;
-        min-height: 42px;
-        padding: 8px 18px;
-        font-size: 14px;
     }
 }
 
@@ -760,14 +571,38 @@ button:focus-visible {
     }
 }
 
+@media (max-width: 800px) and (max-height: 640px) {
+    .v-cream {
+        height: 36%;
+    }
+
+    .v-blue {
+        top: 36%;
+        height: 64%;
+    }
+
+    .v-welcome {
+        padding: 10px 12px;
+    }
+
+    .v-logo {
+        margin-bottom: 4px;
+    }
+
+    .v-logo img {
+        width: 42px;
+        height: 42px;
+    }
+
+    .v-welcome h1 {
+        font-size: 22px;
+    }
+}
+
 /* Acessibilidade */
 
 @media (prefers-reduced-motion: reduce) {
 
-    .v-cream,
-    .v-blue,
-    .v-welcome,
-    .v-form,
     .v-toggle-pass .v-eye-pupil,
     .v-toggle-pass .v-eye-slash {
         transition-duration: 0ms !important;
@@ -787,29 +622,13 @@ export default function(component) {
 
     const el = (id) => root.querySelector("#" + id);
 
-    if (!root.dataset.initialized) {
-        root.dataset.initialized = "true";
-
-        if (data.initialView === "cadastro") {
-            root.classList.add("is-register");
-        }
-    }
-
     const capelo = data.capelo || "";
-
-    for (const id of [
-        "v-capelo-login",
-        "v-capelo-cadastro"
-    ]) {
-        const img = el(id);
-
-        if (capelo) {
-            img.src =
-                "data:image/svg+xml;base64," + capelo;
-            img.hidden = false;
-        } else {
-            img.hidden = true;
-        }
+    const img = el("v-capelo-login");
+    if (capelo) {
+        img.src = "data:image/svg+xml;base64," + capelo;
+        img.hidden = false;
+    } else {
+        img.hidden = true;
     }
 
     // Exibe mensagem de erro retornada pelo backend quando houver nova tentativa
@@ -836,25 +655,6 @@ export default function(component) {
             btnToggleSenha.title = abrir ? "Ocultar senha" : "Mostrar senha";
         };
     }
-
-    function trocarTela(destino) {
-        root.classList.toggle(
-            "is-register",
-            destino === "cadastro"
-        );
-
-        if (loginErro) {
-            loginErro.textContent = "";
-        }
-    }
-
-    el("v-ir-cadastro").onclick = () => {
-        trocarTela("cadastro");
-    };
-
-    el("v-ir-login").onclick = () => {
-        trocarTela("login");
-    };
 
     const campoEmail = el("v-login-email");
     for (const campo of [campoEmail, inputSenha]) {
@@ -896,9 +696,6 @@ export default function(component) {
         });
     };
 
-    el("v-cadastrar").onclick = () => {
-        trocarTela("login");
-    };
 }
 """
 
@@ -930,7 +727,6 @@ def render():
         resultado = componente_auth(
             key="vertice_auth",
             data={
-                "initialView": "login",
                 "capelo": _capelo_base64(),
                 "erroLogin": erro_login,
                 "erroSeq": erro_seq,
@@ -973,10 +769,3 @@ def render():
             st.session_state["auth_erro_seq"] = erro_seq + 1
             st.rerun()
             return
-
-    elif acao.get("tipo") == "cadastro":
-        st.session_state["tela_auth"] = "login"
-        st.toast(
-            "O provisionamento de contas no Vértice é realizado exclusivamente pelo Administrador.",
-            icon="ℹ️",
-        )

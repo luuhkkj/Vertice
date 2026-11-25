@@ -1,0 +1,127 @@
+.st-key-admin_workspace {
+    --admin-ink: #232020;
+    --admin-green: #16A34A;
+    --admin-blue: #4E67CA;
+    --admin-border: #EEE5E9;
+    --admin-navy: #1E3A5F;
+    --admin-cream: #FFF8F0;
+    --admin-sage: #70A37F;
+    --admin-amber: #F59E0B;
+    --admin-red: #DC2626;
+}
+
+.st-key-admin_page_heading [data-testid="stCaptionContainer"],
+.st-key-admin_page_heading [data-testid="stCaptionContainer"] * {
+    color: var(--admin-navy) !important;
+    opacity: 1 !important;
+    font-weight: 500;
+}
+
+.st-key-admin_workspace [class*="st-key-card_"] {
+    border-color: var(--admin-border);
+    border-left: 3px solid var(--admin-sage);
+    box-shadow: 0 4px 14px rgba(30, 58, 95, 0.06);
+    transition: box-shadow 160ms ease, transform 160ms ease;
+}
+
+.st-key-admin_workspace [class*="st-key-card_"]:hover {
+    box-shadow: 0 8px 20px rgba(30, 58, 95, 0.1);
+    transform: translateY(-1px);
+}
+
+.st-key-admin_workspace [data-testid="stDataFrame"] {
+    overflow: hidden;
+    border: 1px solid var(--admin-border);
+    border-radius: 0.7rem;
+}
+
+.st-key-admin_workspace [data-testid="stTextInput"] input,
+.st-key-admin_workspace [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+    border-radius: 0.65rem;
+}
+
+.st-key-admin_workspace [data-testid="stTextInput"] input:focus,
+.st-key-admin_workspace [data-testid="stSelectbox"] [data-baseweb="select"] > div:focus-within {
+    border-color: var(--admin-amber);
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.18);
+}
+
+.st-key-admin_workspace .st-key-adm_cred_rev_btn button {
+    background: var(--admin-red) !important;
+    border-color: var(--admin-red) !important;
+}
+
+.st-key-admin_workspace .st-key-adm_cred_rev_btn button:hover {
+    background: #B91C1C !important;
+    border-color: #B91C1C !important;
+}
+
+.st-key-admin_workspace [data-testid="stButton"] button:focus-visible,
+.st-key-admin_workspace [data-testid="stFormSubmitButton"] button:focus-visible {
+    outline: 3px solid var(--admin-amber);
+    outline-offset: 2px;
+}
+
+.st-key-admin_workspace .st-key-kpi_azul_adm_usuarios,
+.st-key-admin_workspace .st-key-kpi_azul_medio_adm_escolas,
+.st-key-admin_workspace .st-key-kpi_verde_adm_credenciais {
+    min-height: 7rem;
+}
+
+.st-key-admin_workspace .st-key-kpi_azul_adm_usuarios {
+    background: var(--admin-navy);
+    border-color: var(--admin-navy);
+}
+
+.st-key-admin_workspace .st-key-kpi_azul_medio_adm_escolas {
+    background: var(--admin-blue);
+    border-color: var(--admin-blue);
+}
+
+.st-key-admin_workspace .st-key-kpi_roxo_adm_estrutura {
+    min-height: 7rem;
+    background: var(--admin-sage);
+    border-color: var(--admin-sage);
+}
+
+.st-key-admin_workspace .st-key-kpi_roxo_adm_estrutura [data-testid="stMetricLabel"],
+.st-key-admin_workspace .st-key-kpi_roxo_adm_estrutura [data-testid="stMetricLabel"] p,
+.st-key-admin_workspace .st-key-kpi_roxo_adm_estrutura [data-testid="stMetricValue"],
+.st-key-admin_workspace .st-key-kpi_roxo_adm_estrutura [data-testid="stMetricValue"] *,
+.st-key-admin_workspace .st-key-kpi_roxo_adm_estrutura [data-testid="stCaptionContainer"],
+.st-key-admin_workspace .st-key-kpi_roxo_adm_estrutura [data-testid="stCaptionContainer"] * {
+    color: var(--admin-ink) !important;
+}
+
+.st-key-admin_workspace .st-key-kpi_verde_adm_credenciais {
+    background: var(--admin-green);
+    border-color: var(--admin-green);
+}
+
+.st-key-admin_workspace [data-testid="stAlert"] {
+    border-radius: 0.75rem;
+}
+
+@media (max-width: 900px) {
+    .st-key-admin_workspace [data-testid="stHorizontalBlock"] {
+        flex-wrap: wrap;
+        gap: 0.85rem;
+    }
+
+    .st-key-admin_workspace [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex: 1 1 17rem !important;
+        min-width: min(100%, 17rem) !important;
+    }
+}
+
+@media (max-width: 560px) {
+    .st-key-admin_workspace [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex-basis: 100% !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .st-key-admin_workspace [class*="st-key-card_"] {
+        transition: none;
+    }
+}

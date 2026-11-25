@@ -1,6 +1,6 @@
 """Tela: Administração Técnica da Plataforma (exclusiva para o papel Administrador)."""
 
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import pandas as pd
 import streamlit as st
@@ -144,7 +144,7 @@ def _render_kpis(resumo: dict[str, Any]) -> None:
         )
 
 
-def _render_aba_usuarios(ctx: dict[str, Any]) -> None:
+def _render_pagina_usuarios(ctx: dict[str, Any]) -> None:
     escolas = ctx["escolas"]
     escolas_por_id = {str(e["id"]): f"{e.get('nome')} ({e.get('codigo')})" for e in escolas if e.get("id")}
     opcoes_escola: dict[str, Optional[str]] = {"Sem vínculo escolar (global / multi-escola)": None}
@@ -263,7 +263,7 @@ def _render_aba_usuarios(ctx: dict[str, Any]) -> None:
                                 st.error(resp.erro or "Falha ao atualizar usuário.")
 
 
-def _render_aba_estrutura(ctx: dict[str, Any]) -> None:
+def _render_pagina_estrutura(ctx: dict[str, Any]) -> None:
     escolas = ctx["escolas"]
     escolas_opcoes = {
         f"{e.get('nome')} ({e.get('codigo')})": str(e["id"])
@@ -435,7 +435,7 @@ def _render_aba_estrutura(ctx: dict[str, Any]) -> None:
                         st.error(resp.erro or "Erro ao atualizar disciplina.")
 
 
-def _render_aba_credenciais(ctx: dict[str, Any]) -> None:
+def _render_pagina_credenciais(ctx: dict[str, Any]) -> None:
     escolas_opcoes: dict[str, Optional[str]] = {"Todas as escolas (global)": None}
     for e in ctx["escolas"]:
         if e.get("id"):
@@ -512,7 +512,7 @@ def _render_aba_credenciais(ctx: dict[str, Any]) -> None:
                             st.error(resp.erro or "Falha ao emitir credencial ML.")
 
 
-def _render_aba_auditoria(ctx: dict[str, Any]) -> None:
+def _render_pagina_auditoria(ctx: dict[str, Any]) -> None:
     with card("Trilha de auditoria técnica administrativa", chave="adm_auditoria_tecnica"):
         eventos = ctx["auditoria_tecnica"]
         if not eventos:
@@ -558,8 +558,15 @@ def _render_aba_auditoria(ctx: dict[str, Any]) -> None:
             )
 
 
-def render() -> None:
-    """Renderiza a página inicial técnica do Administrador sem acesso pedagógico."""
+def _render_visao_geral(ctx: dict[str, Any]) -> None:
+    _render_kpis(ctx["resumo"])
+
+
+def _render_pagina_admin(
+    titulo: str,
+    subtitulo: str,
+    renderizar_conteudo: Callable[[dict[str, Any]], None],
+) -> None:
     if not st.session_state.get("logado"):
         st.error("É necessário autenticar-se para acessar esta tela.")
         return
@@ -568,45 +575,68 @@ def render() -> None:
         st.error("Permissão insuficiente: esta área é restrita exclusivamente ao perfil Administrador.")
         return
 
-    titulo_pagina(
-        "Administração Técnica da Plataforma",
-        "Gestão de contas de usuários, registros institucionais, credenciais ML e trilha de auditoria.",
+    with st.container(key="admin_workspace"):
+        with st.container(key="admin_page_heading"):
+            titulo_pagina(titulo, subtitulo)
+
+        aviso = st.session_state.pop("adm_aviso", None)
+        if aviso:
+            tipo, mensagem = aviso
+            if tipo == "sucesso":
+                st.success(mensagem)
+            else:
+                st.error(mensagem)
+
+        ctx = carregar_contexto_admin_tecnico_api()
+        if ctx["sessao_expirada"]:
+            st.warning(ctx["erro"] or "Sua sessão expirou. Faça login novamente.")
+            return
+        if ctx["sem_permissao"]:
+            st.error(ctx["erro"] or "Permissão insuficiente para consultar o painel técnico.")
+            return
+        if not ctx["conectado"]:
+            st.error(ctx["erro"] or "Não foi possível carregar os dados operacionais do backend.")
+            return
+
+        renderizar_conteudo(ctx)
+
+
+def render() -> None:
+    """Renderiza a visão geral exclusiva do Administrador."""
+    _render_pagina_admin(
+        "Visão geral",
+        "Acompanhe os principais indicadores e acesse cada área pelo menu lateral.",
+        _render_visao_geral,
     )
 
-    aviso = st.session_state.pop("adm_aviso", None)
-    if aviso:
-        tipo, mensagem = aviso
-        if tipo == "sucesso":
-            st.success(mensagem)
-        else:
-            st.error(mensagem)
 
-    ctx = carregar_contexto_admin_tecnico_api()
-    if ctx["sessao_expirada"]:
-        st.warning(ctx["erro"] or "Sua sessão expirou. Faça login novamente.")
-        return
-    if ctx["sem_permissao"]:
-        st.error(ctx["erro"] or "Permissão insuficiente para consultar o painel técnico.")
-        return
-    if not ctx["conectado"]:
-        st.error(ctx["erro"] or "Não foi possível carregar os dados operacionais do backend.")
-        return
-
-    _render_kpis(ctx["resumo"])
-
-    aba_usuarios, aba_estrutura, aba_ml, aba_auditoria = st.tabs(
-        [
-            "Usuários e Contas",
-            "Escolas, Turmas e Disciplinas",
-            "Credenciais ML",
-            "Auditoria Técnica e IA",
-        ]
+def render_usuarios_e_contas() -> None:
+    _render_pagina_admin(
+        "Usuários e Contas",
+        "Cadastre, revise e controle as contas administrativas e pedagógicas.",
+        _render_pagina_usuarios,
     )
-    with aba_usuarios:
-        _render_aba_usuarios(ctx)
-    with aba_estrutura:
-        _render_aba_estrutura(ctx)
-    with aba_ml:
-        _render_aba_credenciais(ctx)
-    with aba_auditoria:
-        _render_aba_auditoria(ctx)
+
+
+def render_estrutura() -> None:
+    _render_pagina_admin(
+        "Escolas, Turmas e Disciplinas",
+        "Mantenha a estrutura da rede atualizada em um só lugar.",
+        _render_pagina_estrutura,
+    )
+
+
+def render_credenciais_ml() -> None:
+    _render_pagina_admin(
+        "Credenciais ML",
+        "Emita tokens de serviço e revogue credenciais quando necessário.",
+        _render_pagina_credenciais,
+    )
+
+
+def render_auditoria() -> None:
+    _render_pagina_admin(
+        "Auditoria Técnica e IA",
+        "Consulte ações administrativas e registros de autorização e bloqueio da IA.",
+        _render_pagina_auditoria,
+    )
