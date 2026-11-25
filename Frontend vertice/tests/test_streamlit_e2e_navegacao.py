@@ -434,6 +434,12 @@ with card("Atividade ATV-01", subtitulo="Turma 1A | MAT", chave="atividade_detal
         self.assertTrue(
             any("Ainda não há dados escolares importados" in info.value for info in at.info)
         )
+        self.assertTrue(
+            any("/api/v1/previsoes/lote" in info.value for info in at.info)
+        )
+        metricas = {m.label: m.value for m in at.metric}
+        self.assertEqual(metricas["Risco elevado (preditivo)"], "Sem previsões")
+        self.assertTrue(any("Pipeline de ML" in c.value for c in at.caption))
 
         # Navega para todas as páginas autorizadas do Gestor em escola vazia via st.navigation
         for titulo, url_path, mod_nome in [
@@ -549,6 +555,26 @@ pagina_atual.run()
         at = _iniciar_app_autenticado("gestor", transport_cheio)
         at.run()
         self.assertFalse(at.exception, at.exception)
+        self.assertIn('"type":"pie"', at.get("plotly_chart")[1].proto.spec)
+        filtros_periodo = next(
+            elemento for elemento in at.selectbox if elemento.label == "Período letivo"
+        )
+        self.assertIn("1º Bimestre", filtros_periodo.options)
+        self.assertEqual(filtros_periodo.value, "Todos os períodos")
+        self.assertFalse(
+            any("Versão do modelo" in elemento.label for elemento in at.text_input)
+        )
+        filtros_periodo.set_value("1º Bimestre")
+        at.run()
+        self.assertFalse(at.exception, at.exception)
+        self.assertEqual(
+            next(
+                elemento
+                for elemento in at.selectbox
+                if elemento.label == "Período letivo"
+            ).value,
+            "1º Bimestre",
+        )
         metricas = {m.label: m.value for m in at.metric}
         self.assertEqual(metricas["Estudantes distintos"], "45")
         self.assertEqual(metricas["Frequência média observada"], "88,5%")

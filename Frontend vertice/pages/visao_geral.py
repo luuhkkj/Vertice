@@ -172,7 +172,7 @@ def montar_kpis_visao_geral(indicadores: dict[str, Any]) -> list[tuple[str, str,
         sub_risco = f"Estimativa preditiva (Alto/Crítico) • {m_nome} v{m_ver}"
     else:
         valor_risco = "Sem previsões"
-        sub_risco = "Aguardando envio de previsões preditivas"
+        sub_risco = "Pipeline de ML ainda não enviou previsões para este recorte"
 
     return [
         (
@@ -211,7 +211,12 @@ def preparar_dados_risco_visao_geral(
         return (
             False,
             pd.DataFrame(columns=["Faixa de risco", "Estudantes", "Percentual (%)"]),
-            "Nenhuma previsão de risco foi registrada para o recorte selecionado.",
+            (
+                "Nenhuma previsão foi recebida para os filtros atuais. Para preencher este gráfico, "
+                "configure um pipeline de ML com credencial técnica (X-Service-Token) para enviar "
+                "previsões à API `/api/v1/previsoes/lote`. O protótipo local não persiste nem envia "
+                "resultados automaticamente."
+            ),
         )
 
     linhas = []
@@ -315,7 +320,7 @@ def render():
         opcoes_disc[f"{d.get('nome', 'Disciplina')} ({d.get('codigo', '')})".strip()] = d.get("id")
 
     with st.container(key="visao_geral_filtros"):
-        col_turma, col_disc, col_ano, col_periodo, col_versao = st.columns(5)
+        col_turma, col_disc, col_ano, col_periodo = st.columns(4)
         with col_turma:
             turma_label = st.selectbox(
                 "Turma",
@@ -336,19 +341,7 @@ def render():
                 key="vg_ano_api",
             )
         with col_periodo:
-            periodo_str = st.text_input(
-                "Período letivo (opcional)",
-                value="",
-                placeholder="Ex.: 1º Bimestre",
-                key="vg_periodo_api",
-            )
-        with col_versao:
-            versao_str = st.text_input(
-                "Versão do modelo (opcional)",
-                value="",
-                placeholder="Mais recente automática",
-                key="vg_versao_api",
-            )
+            periodo_placeholder = st.empty()
 
     ano_val: Optional[int] = None
     if ano_str.strip().isdigit():
@@ -356,12 +349,56 @@ def render():
 
     turma_id_sel = opcoes_turma.get(turma_label)
     disc_id_sel = opcoes_disc.get(disc_label)
-    resp_ind = consultar_indicadores_gerais_api(
+    resp_periodos = consultar_indicadores_gerais_api(
         turma_id=turma_id_sel,
         disciplina_id=disc_id_sel,
         ano_letivo=ano_val,
-        periodo_letivo=periodo_str.strip() or None,
-        modelo_versao=versao_str.strip() or None,
+    )
+
+    if not resp_periodos.ok:
+        if resp_periodos.sessao_expirada:
+            st.warning(resp_periodos.erro or "Sua sessão expirou. Faça login novamente.")
+        elif resp_periodos.sem_permissao:
+            st.error(resp_periodos.erro or "Sem permissão para consultar este recorte.")
+        elif resp_periodos.indisponivel:
+            st.error(resp_periodos.erro or "Backend indisponível no momento.")
+        else:
+            st.warning(resp_periodos.erro or "Não foi possível carregar os períodos letivos.")
+        return
+
+    indicadores_periodos = (
+        resp_periodos.dados if isinstance(resp_periodos.dados, dict) else {}
+    )
+    periodos_disponiveis = list(
+        dict.fromkeys(
+            str(item.get("periodo_letivo") or "").strip()
+            for item in (indicadores_periodos.get("evolucao_por_periodo") or [])
+            if isinstance(item, dict) and str(item.get("periodo_letivo") or "").strip()
+        )
+    )
+    opcao_todos_periodos = "Todos os períodos"
+    opcoes_periodo = [opcao_todos_periodos, *periodos_disponiveis]
+    if st.session_state.get("vg_periodo_api") not in opcoes_periodo:
+        st.session_state["vg_periodo_api"] = opcao_todos_periodos
+    periodo_label = periodo_placeholder.selectbox(
+        "Período letivo",
+        options=opcoes_periodo,
+        key="vg_periodo_api",
+        disabled=not periodos_disponiveis,
+    )
+    periodo_sel = (
+        None if periodo_label == opcao_todos_periodos else periodo_label
+    )
+
+    resp_ind = (
+        consultar_indicadores_gerais_api(
+            turma_id=turma_id_sel,
+            disciplina_id=disc_id_sel,
+            ano_letivo=ano_val,
+            periodo_letivo=periodo_sel,
+        )
+        if periodo_sel is not None
+        else resp_periodos
     )
 
     if not resp_ind.ok:
@@ -591,8 +628,7 @@ def render():
             turma_id=turma_id_sel,
             disciplina_id=disc_id_sel,
             ano_letivo=ano_val,
-            periodo_letivo=periodo_str.strip() or None,
-            modelo_versao=versao_str.strip() or None,
+            periodo_letivo=periodo_sel,
             limit=100,
         )
         if resp_prev.ok and isinstance(resp_prev.dados, list):
