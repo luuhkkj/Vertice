@@ -578,7 +578,7 @@ def criar_avaliacao_api(
         "disciplina_id": disciplina_id,
         "periodo_letivo": periodo_letivo.strip(),
         "data_avaliacao": data_avaliacao,
-        "status": "publicada",
+        "status": "PUBLICADA",
     }
     if codigo and codigo.strip():
         payload["codigo"] = codigo.strip()

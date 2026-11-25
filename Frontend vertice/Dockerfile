@@ -22,6 +22,7 @@ COPY --chown=vertice:vertice components ./components
 COPY --chown=vertice:vertice data ./data
 COPY --chown=vertice:vertice pages ./pages
 COPY --chown=vertice:vertice styles ./styles
+COPY --chown=vertice:vertice .streamlit ./.streamlit
 COPY --chown=vertice:vertice utils ./utils
 
 USER vertice

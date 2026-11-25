@@ -780,7 +780,12 @@ def _renderizar_aba_historico_turma(
                     st.info("Sem pontos suficientes para série temporal de evolução.")
                 else:
                     st.plotly_chart(
-                        grafico_linha(df_ev, x="Data / Período", y="Taxa de entrega (%)"),
+                        grafico_linha(
+                            df_ev,
+                            x="Data / Período",
+                            y="Taxa de entrega (%)",
+                            faixa_y=[0, 100],
+                        ),
                         use_container_width=True,
                     )
 
@@ -913,7 +918,12 @@ def _renderizar_aba_historico_individual(
         if not df_ev_est.empty:
             with card(f"Evolução da participação — {codigo_sel}"):
                 st.plotly_chart(
-                    grafico_linha(df_ev_est, x="Período / Data", y="Taxa individual (%)"),
+                    grafico_linha(
+                        df_ev_est,
+                        x="Período / Data",
+                        y="Taxa individual (%)",
+                        faixa_y=[0, 100],
+                    ),
                     use_container_width=True,
                 )
 

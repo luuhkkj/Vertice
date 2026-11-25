@@ -132,6 +132,10 @@
     overflow-wrap: anywhere !important;
 }
 
+[class*="st-key-chat_assistente_"] p {
+    text-align: left !important;
+}
+
 /* Linha de envio (Anexar + Chat Input lado a lado) */
 
 .st-key-assistente_rodape {

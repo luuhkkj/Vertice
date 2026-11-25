@@ -34,9 +34,20 @@ def _estilizar(figura):
     return figura
 
 
-def grafico_linha(dados, x, y, cor=None):
+def grafico_linha(dados, x, y, cor=None, faixa_y=None):
     """Linhas de evolução ao longo do tempo. Com `cor`, uma linha por categoria."""
-    figura = px.line(dados, x=x, y=y, color=cor, markers=True, color_discrete_sequence=SEQUENCIA_CORES)
+    figura = px.line(
+        dados,
+        x=x,
+        y=y,
+        color=cor,
+        markers=True,
+        color_discrete_sequence=SEQUENCIA_CORES,
+    )
+    figura.update_traces(marker={"size": 8}, line={"width": 2})
+    figura.update_xaxes(tickangle=-30)
+    if faixa_y is not None:
+        figura.update_yaxes(range=faixa_y)
     return _estilizar(figura)
 
 
@@ -62,6 +73,7 @@ def grafico_barras_horizontais(dados, x, y, cor=None):
     figura = px.bar(dados, x=x, y=y, color=cor, orientation="h",
                     color_discrete_map=COR_POR_CATEGORIA, color_discrete_sequence=SEQUENCIA_CORES)
     figura.update_yaxes(categoryorder="array", categoryarray=list(dados[y]), autorange="reversed")
+    figura.update_xaxes(rangemode="tozero")
     return _estilizar(figura)
 
 
@@ -335,24 +347,31 @@ def grafico_distribuicao_geral_acertos_avaliacao(indicadores_payload: dict):
         df_dist = pd.DataFrame(linhas)
         figura = px.bar(
             df_dist,
-            x="Faixa de acertos",
-            y="Estudantes",
+            x="Estudantes",
+            y="Faixa de acertos",
+            orientation="h",
             text="Estudantes",
             color_discrete_sequence=[AZUL],
             hover_data={"Percentual da turma (%)": ":.1f"},
         )
-        figura.update_xaxes(title="Total de questões acertadas pelo estudante")
-        figura.update_yaxes(
+        figura.update_xaxes(
             title="Quantidade de estudantes",
+            rangemode="tozero",
             showgrid=True,
             gridcolor="#E6E6E6",
         )
+        figura.update_yaxes(
+            title="Total de questões acertadas pelo estudante",
+            categoryorder="array",
+            categoryarray=list(df_dist["Faixa de acertos"]),
+            autorange="reversed",
+        )
         figura.update_traces(textposition="outside")
         figura.update_layout(
-            height=320,
+            height=max(320, 38 * len(df_dist) + 80),
             autosize=True,
             showlegend=False,
-            margin={"l": 10, "r": 15, "t": 25, "b": 20},
+            margin={"l": 10, "r": 35, "t": 25, "b": 20},
         )
         return _estilizar(figura)
 

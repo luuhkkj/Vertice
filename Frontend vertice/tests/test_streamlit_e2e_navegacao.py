@@ -252,6 +252,19 @@ class TestFrontendStreamlitE2E(unittest.TestCase):
     def tearDown(self) -> None:
         api_client.configurar_cliente_http_teste(None)
 
+    def test_criar_avaliacao_envia_status_aceito_pela_api(self) -> None:
+        with patch("data.api_client.requisitar_api") as requisitar:
+            api_client.criar_avaliacao_api(
+                titulo="Prova de Matemática",
+                turma_id="turma-1",
+                disciplina_id="disciplina-1",
+                periodo_letivo="1º Bimestre",
+                data_avaliacao="2026-11-24",
+            )
+
+        payload = requisitar.call_args.kwargs["json_body"]
+        self.assertEqual(payload["status"], "PUBLICADA")
+
     def test_componente_card_renderiza_titulo_subtitulo_e_rejeita_vazio(self) -> None:
         snippet = f"""
 import sys
@@ -469,6 +482,14 @@ pagina_atual.run()
         self.assertEqual(metricas["Frequência média observada"], "88,5%")
         self.assertEqual(metricas["Média geral observada"], "7,4")
         self.assertEqual(metricas["Risco elevado (preditivo)"], "8")
+        self.assertEqual(metricas["Frequência média"], "88.5%")
+        self.assertEqual(metricas["Média geral"], "7.40")
+        self.assertTrue(
+            any(
+                "A tendência será exibida quando houver mais períodos" in c.value
+                for c in at.caption
+            )
+        )
         self.assertEqual(
             [s.value for s in at.subheader],
             [

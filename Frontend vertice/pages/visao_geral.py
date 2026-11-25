@@ -9,6 +9,7 @@ import streamlit as st
 from components.cards import card, card_kpi
 from components.graficos import (
     grafico_barras_horizontais,
+    grafico_linha,
     grafico_rosca,
 )
 from components.layout import titulo_pagina
@@ -429,12 +430,23 @@ def render():
                     )
                 else:
                     df_serie = pd.DataFrame(linhas_freq)
+                    figura = grafico_barras_horizontais(
+                        df_serie,
+                        "Frequência média (%)",
+                        "Série",
+                    )
+                    figura.update_xaxes(
+                        range=[0, 108],
+                        tickvals=[0, 20, 40, 60, 80, 100],
+                        ticksuffix="%",
+                        title="Frequência média (%)",
+                    )
+                    figura.update_traces(
+                        texttemplate="%{x:.1f}%",
+                        textposition="outside",
+                    )
                     st.plotly_chart(
-                        grafico_barras_horizontais(
-                            df_serie,
-                            "Série",
-                            "Frequência média (%)",
-                        ),
+                        figura,
                         use_container_width=True,
                         config={"displayModeBar": False},
                     )
@@ -491,12 +503,21 @@ def render():
                     )
                 else:
                     df_notas_serie = pd.DataFrame(linhas_notas)
+                    figura = grafico_barras_horizontais(
+                        df_notas_serie,
+                        "Média geral",
+                        "Série",
+                    )
+                    figura.update_xaxes(
+                        range=[0, 10],
+                        title="Média geral (0–10)",
+                    )
+                    figura.update_traces(
+                        texttemplate="%{x:.2f}",
+                        textposition="outside",
+                    )
                     st.plotly_chart(
-                        grafico_barras_horizontais(
-                            df_notas_serie,
-                            "Série",
-                            "Média geral",
-                        ),
+                        figura,
                         use_container_width=True,
                         config={"displayModeBar": False},
                     )
@@ -522,7 +543,48 @@ def render():
                             for ev in evolucao
                         ]
                     )
-                    st.dataframe(df_evol, use_container_width=True, hide_index=True)
+                    for coluna in ("Frequência média (%)", "Média geral"):
+                        df_evol[coluna] = pd.to_numeric(df_evol[coluna], errors="coerce")
+
+                    if len(df_evol) < 2:
+                        periodo = df_evol.iloc[0]["Período"]
+                        col_freq, col_media = st.columns(2)
+                        valor_freq = df_evol.iloc[0]["Frequência média (%)"]
+                        valor_media = df_evol.iloc[0]["Média geral"]
+                        col_freq.metric(
+                            "Frequência média",
+                            f"{valor_freq:.1f}%" if pd.notna(valor_freq) else "—",
+                        )
+                        col_media.metric(
+                            "Média geral",
+                            f"{valor_media:.2f}" if pd.notna(valor_media) else "—",
+                        )
+                        st.caption(
+                            f"Período consolidado: {periodo}. "
+                            "A tendência será exibida quando houver mais períodos."
+                        )
+                    else:
+                        for coluna, faixa in (
+                            ("Frequência média (%)", [0, 100]),
+                            ("Média geral", [0, 10]),
+                        ):
+                            dados_metrica = df_evol.dropna(subset=[coluna])
+                            if len(dados_metrica) < 2:
+                                continue
+                            st.plotly_chart(
+                                grafico_linha(
+                                    dados_metrica,
+                                    x="Período",
+                                    y=coluna,
+                                    faixa_y=faixa,
+                                ),
+                                use_container_width=True,
+                                config={"displayModeBar": False},
+                            )
+                            st.caption(coluna)
+
+                    with st.expander("Ver dados detalhados por período"):
+                        st.dataframe(df_evol, use_container_width=True, hide_index=True)
 
     if possui_risco:
         resp_prev = listar_previsoes_api(
