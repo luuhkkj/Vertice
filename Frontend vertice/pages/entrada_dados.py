@@ -1135,10 +1135,10 @@ def render():
         return
 
     papel = _papel_usuario_entrada()
-    if papel not in ("gestor", "professor"):
+    if papel != "gestor":
         st.error(
-            "Perfis administrativos globais não importam datasets pedagógicos diretamente. "
-            "Utilize uma conta de Gestor Escolar ou Professor."
+            "Permissão insuficiente. Apenas o perfil de Gestor Escolar "
+            "pode importar datasets pedagógicos."
         )
         return
 

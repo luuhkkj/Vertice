@@ -555,6 +555,7 @@ pagina_atual.run()
         self.assertIn("vertice_menu_lateral", keys)
         self.assertIn("menu_ativo_visao_geral", keys)
         self.assertNotIn("menu_administracao_tecnica", keys)
+        self.assertNotIn("menu_entrada_de_dados", keys)
         self.assertNotIn("menu_atribuir_turmas", keys)
         self.assertIn("menu_meu_perfil", keys)
 
@@ -651,6 +652,21 @@ atribuicao.render()
         at_a.run()
         self.assertFalse(at_a.exception, at_a.exception)
         self.assertTrue(any("Permissão insuficiente" in e.value for e in at_a.error))
+
+        snippet_entrada_prof = f"""
+import sys
+sys.path.insert(0, {str(FRONTEND_DIR)!r})
+import streamlit as st
+from pages import entrada_dados
+st.session_state["logado"] = True
+st.session_state["usuario_api"] = {{"id": "u2", "papel": "professor"}}
+st.session_state["perfil"] = "professor"
+entrada_dados.render()
+"""
+        at_p = AppTest.from_string(snippet_entrada_prof, default_timeout=10)
+        at_p.run()
+        self.assertFalse(at_p.exception, at_p.exception)
+        self.assertTrue(any("Permissão insuficiente" in e.value for e in at_p.error))
 
 
 if __name__ == "__main__":

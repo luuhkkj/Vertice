@@ -107,23 +107,32 @@ def montar_paginas_internas():
             title="Estudantes",
             url_path="estudantes",
         ),
-        st.Page(
-            entrada_dados.render,
-            title="Entrada de Dados",
-            url_path="entrada-de-dados",
-        ),
-        st.Page(
-            assistente_ia.render,
-            title="Assistente IA",
-            url_path="assistente-ia",
-        ),
-        pagina_mapa,
-        st.Page(
-            participacao.render,
-            title="Participação",
-            url_path="participacao",
-        ),
     ]
+
+    if papel == "gestor":
+        paginas_menu.append(
+            st.Page(
+                entrada_dados.render,
+                title="Entrada de Dados",
+                url_path="entrada-de-dados",
+            )
+        )
+
+    paginas_menu.extend(
+        [
+            st.Page(
+                assistente_ia.render,
+                title="Assistente IA",
+                url_path="assistente-ia",
+            ),
+            pagina_mapa,
+            st.Page(
+                participacao.render,
+                title="Participação",
+                url_path="participacao",
+            ),
+        ]
+    )
 
     if papel == "gestor":
         paginas_menu.append(

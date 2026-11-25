@@ -244,7 +244,7 @@ def test_fase8_autenticacao_papeis_canonicos_e_expiracao_sessao(
         assert "Administração Técnica" in titulos_por_papel["administrador"]
         assert "Entrada de Dados" in titulos_por_papel["gestor"]
         assert "Atribuir turmas" in titulos_por_papel["gestor"]
-        assert "Entrada de Dados" in titulos_por_papel["professor"]
+        assert "Entrada de Dados" not in titulos_por_papel["professor"]
         assert "Atribuir turmas" not in titulos_por_papel["professor"]
 
         # Logout limpa toda a sessão
