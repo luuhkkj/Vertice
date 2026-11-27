@@ -40,8 +40,8 @@ from tests.test_fase4_modulos_pedagogicos import (
     _login_headers,
 )
 
-# Garante que a pasta `Frontend vertice/` possa ser importada nos testes integrados
-FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "Frontend vertice"
+# Garante que a pasta `frontend/` possa ser importada nos testes integrados
+FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 if str(FRONTEND_DIR) not in sys.path:
     sys.path.insert(0, str(FRONTEND_DIR))
 

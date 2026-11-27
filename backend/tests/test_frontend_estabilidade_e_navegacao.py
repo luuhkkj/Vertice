@@ -32,7 +32,7 @@ from tests.test_fase8_integracao_final import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FRONTEND_DIR = REPO_ROOT / "Frontend vertice"
+FRONTEND_DIR = REPO_ROOT / "frontend"
 
 
 def _instalar_metodos_container_stub(st_mod: Any) -> list[dict[str, Any]]:

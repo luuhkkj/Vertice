@@ -66,7 +66,7 @@ from tests.test_fase5_mapa_acertos_e_frontend import (
 from tests.test_fase6_participacao import _adaptar_client_para_api_client
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FRONTEND_DIR = REPO_ROOT / "Frontend vertice"
+FRONTEND_DIR = REPO_ROOT / "frontend"
 
 
 def _preparar_frontend() -> Any:

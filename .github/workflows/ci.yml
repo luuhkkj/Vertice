@@ -24,8 +24,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install "ruff>=0.8.0,<1.0.0"
 
-      - name: Executar Ruff lint em backend e Frontend vertice
-        run: ruff check backend "Frontend vertice"
+      - name: Executar Ruff lint em backend e frontend
+        run: ruff check backend frontend
 
   backend-sqlite-tests:
     name: Backend — Compilação, OpenAPI e Testes Unitários/Integração (SQLite)
@@ -123,15 +123,15 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: "Frontend vertice/requirements.txt"
+          cache-dependency-path: "frontend/requirements.txt"
 
       - name: Instalar dependências do frontend Streamlit
         run: |
           python -m pip install --upgrade pip
-          pip install -r "Frontend vertice/requirements.txt"
+          pip install -r "frontend/requirements.txt"
 
       - name: Verificar compilação, imports essenciais, ausência de mock_data e testes E2E Streamlit
-        working-directory: "Frontend vertice"
+        working-directory: "frontend"
         run: |
           python -m compileall -q .
           python -c "import streamlit, httpx, pandas, plotly, openpyxl, config; from data import api_client; print('Frontend deps & api_client OK:', streamlit.__version__)"

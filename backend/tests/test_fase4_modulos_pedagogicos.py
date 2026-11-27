@@ -1208,7 +1208,7 @@ def test_download_modelo_csv_com_novas_colunas(
     # Verifica também que o frontend define exatamente as 16 colunas atualizadas
     caminho_frontend = (
         Path(__file__).resolve().parent.parent.parent
-        / "Frontend vertice"
+        / "frontend"
         / "pages"
         / "entrada_dados.py"
     )
