@@ -4,7 +4,7 @@ import logging
 
 import streamlit as st
 
-from components import auth_animada
+from pages import login as auth_animada
 from components.estilos import carregar_estilos
 from components.layout import render_header, render_sidebar
 from config import NOME_APP
