@@ -16,7 +16,7 @@ if not api_url:
     api_url = os.environ.get("VERTICE_API_URL", "")
 
 if not api_url:
-    api_url = "http://127.0.0.1:8000/api/v1"
+    api_url = "https://vertice-zndj.onrender.com/api/v1"
 
 API_BASE_URL = api_url.rstrip("/")
 
